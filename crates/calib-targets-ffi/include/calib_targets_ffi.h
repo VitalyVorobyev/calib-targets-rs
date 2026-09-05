@@ -611,6 +611,11 @@ typedef struct ct_marker_board_layout_t {
   uint32_t cols;
   struct ct_optional_f32_t cell_size;
   struct ct_marker_circle_spec_t circles[3];
+  /**
+   * Printed disk diameter as a fraction of the square side (typically 0.5).
+   * Every radius the circle scorer probes is relative to this.
+   */
+  float circle_diameter_rel;
 } ct_marker_board_layout_t;
 
 /**
@@ -618,7 +623,6 @@ typedef struct ct_marker_board_layout_t {
  */
 typedef struct ct_circle_score_params_t {
   size_t patch_size;
-  float diameter_frac;
   float ring_thickness_frac;
   float ring_radius_mul;
   float min_contrast;
@@ -631,7 +635,6 @@ typedef struct ct_circle_score_params_t {
  */
 typedef struct ct_circle_match_params_t {
   size_t max_candidates_per_polarity;
-  struct ct_optional_f32_t max_distance_cells;
   size_t min_offset_inliers;
 } ct_circle_match_params_t;
 

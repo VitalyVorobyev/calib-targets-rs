@@ -529,7 +529,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-ffi"
-version = "4.0.0"
+version = "5.0.0"
 dependencies = [
  "calib-targets",
  "cbindgen",

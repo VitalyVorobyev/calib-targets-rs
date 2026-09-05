@@ -102,8 +102,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Corners** — ChESS X-junction corners (facade runs corner detection
   for you).
 - [`MarkerBoardSpec`] — `rows` × `cols` squares, three [`MarkerCircleSpec`]
-  entries (cell + polarity), and optional `cell_size` (mm) that controls
-  `target_position` output.
+  entries (cell + polarity), `circle_diameter_rel` (the printed disc
+  diameter as a fraction of the square side — every radius the circle
+  scorer probes is relative to it), and optional `cell_size` (mm) that
+  controls `target_position` output.
 - [`MarkerBoardParams`] — detector tuning: embedded `chessboard:
   ChessboardParams`, `circle_score: CircleScoreParams`, `match_params:
   CircleMatchParams`.
@@ -119,13 +121,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 | `alignment: Option<GridAlignment>` | Canonical affine `GridTransform` (under the semantic alias) aligning chessboard `(i, j)` to the layout frame. Always `Some` on a successful `detect` / `detect_with_corners` — the three-circles-can't-be-placed case is now the typed `Err(MarkerBoardDetectError::AlignmentFailed { .. })` rather than an `Ok` result with `alignment: None`. |
 
 `MarkerBoardDetectError` is `#[non_exhaustive]` and distinguishes
-`ChessboardNotDetected` (no grid at all) from `AlignmentFailed { matched,
-candidates }` (grid found, circles did not pin it to the layout) — match
-it with a wildcard arm.
+`ChessboardNotDetected` (no grid at all), `AlignmentFailed { matched,
+candidates }` (grid found, too few circles pinned it to the layout), and
+`AlignmentAmbiguous { inliers, runner_up }` (grid found, but a second
+board frame explains the circles just as well) — match it with a
+wildcard arm.
+
+The ambiguous case is a failure on purpose. The circles exist only to
+break the board's 4-fold rotational symmetry, so a second frame that
+explains them equally well means they have failed at that, and returning
+either frame would put a wrong `(i, j)` label on every corner. A miss is
+recoverable; a rotated board is not.
 
 The detection *evidence* — every scored `circle_candidates` hypothesis,
 the `circle_matches` pairing each expected circle to a detected one, the
-per-corner `inliers` provenance, and the `alignment_inliers` count —
+per-corner `inliers` provenance, and the frame-sweep counts
+(`alignment_inliers`, `alignment_runner_up_inliers`,
+`alignment_ambiguous`) —
 lives in `MarkerBoardDiagnostics`. Use the `diagnose` (or
 `diagnose_with_corners`) entry point (gated behind the off-by-default
 `diagnostics` feature) to obtain it — diagnostics come back even when
@@ -135,7 +147,14 @@ detection fails.
 
 Three circles are placed at three distinct chessboard cells with explicit
 polarity (`Black` = dark disc on white square, `White` = bright disc on
-black square). The three-circle pattern must uniquely identify the board
+black square). Polarity is not free: the checkerboard's colour phase is
+fixed — square `(0, 0)` is black — so a disc is only visible when it
+contrasts with the square underneath, which makes `White` on an even
+`i + j` and `Black` on an odd one the only printable combinations.
+`calib-targets-print` rejects the others rather than rendering an
+invisible marker.
+
+The three-circle pattern must also uniquely identify the board
 orientation — rotations of the pattern around the board centre must
 produce different polarity / cell sequences. The facade-generated specs
 in [`testdata/printable/marker_board_a4.json`](../../testdata/printable/marker_board_a4.json)
@@ -146,18 +165,25 @@ are a known-good starting point.
 | Group | Key knobs | Effect |
 |---|---|---|
 | Chessboard | `chessboard: ChessboardParams` | Upstream corner/grid detector. Tune there first. |
-| Circle scoring | `circle_score.patch_size`, `diameter_frac`, `ring_thickness_frac`, `min_contrast`, `samples` | Image-space disc + ring contrast check per cell. Raise `patch_size` (default 64) if cells are larger than ~30 px; drop to 32 for small cells. Raise `min_contrast` to suppress false positives in glare regions. |
-| Circle match | `match_params.max_candidates_per_polarity`, `min_offset_inliers` | Combinatorial match of candidates to expected circles. Raise `max_candidates_per_polarity` (default 6) for busy backgrounds. |
+| Circle scoring | `circle_score.patch_size`, `ring_thickness_frac`, `min_contrast`, `samples` | Image-space disc + ring contrast check per cell, followed by a shape gate that rejects anything whose level set is not a centred disc. Raise `patch_size` (default 64) if cells are larger than ~30 px; drop to 32 for small cells. Raise `min_contrast` to suppress false positives in glare regions. The disc *size* is not here — it is `board.circle_diameter_rel`, so it cannot disagree with what was printed. |
+| Circle match | `match_params.max_candidates_per_polarity`, `min_offset_inliers` | Frame sweep over the four rotations. `min_offset_inliers` defaults to `3` — the whole layout; lowering it trades the never-a-wrong-frame guarantee for recall on a board with an occluded marker. Raise `max_candidates_per_polarity` (default 6) for busy backgrounds. |
 
 ## Tuning difficult cases
 
 - **Circles not found** — check that the three layout cells actually
   contain discs in the printed target; `detector.detect` returns
-  `Err(MarkerBoardDetectError::AlignmentFailed { .. })` if fewer than two
-  circles are matched (or `Err(ChessboardNotDetected)` if no grid was
-  found at all). Visualise `MarkerBoardDiagnostics::circle_candidates`
-  (from a `diagnose` / `diagnose_with_corners` call) to see what the
-  scorer saw.
+  `Err(MarkerBoardDetectError::AlignmentFailed { .. })` when fewer than
+  `min_offset_inliers` circles are matched (or `ChessboardNotDetected` if
+  no grid was found at all). Visualise
+  `MarkerBoardDiagnostics::circle_candidates` (from a `diagnose` /
+  `diagnose_with_corners` call) to see what the scorer saw; each
+  candidate carries a `squareness` reading, which is what the shape gate
+  measured.
+- **Circles found but the frame is ambiguous** — `AlignmentAmbiguous`
+  means two board frames explain the circles equally well. Either the
+  layout is rotationally symmetric (choose cells whose rotations differ)
+  or the scorer produced spurious same-polarity candidates; the
+  `circle_candidates` dump distinguishes the two.
 - **Two chessboards fighting for the grid** — out of scope. Crop the
   image so only one board is visible.
 - **Glare on the circles** — enable `multi_threshold`-style imaging

@@ -13,7 +13,8 @@ use tracing::instrument;
 )]
 pub(crate) fn detect_circles_via_square_warp(
     img: &GrayImageView<'_>,
-    map: &CornerMap, // (i,j) -> pixel corner
+    map: &CornerMap,    // (i,j) -> pixel corner
+    diameter_frac: f32, // printed disk diameter, as a fraction of the square side
     score_params: &CircleScoreParams,
     // optional ROI in grid cell coords to avoid scanning whole board:
     roi: Option<(i32, i32, i32, i32)>, // (i_min, j_min, i_max, j_max) on CELL indices
@@ -51,7 +52,9 @@ pub(crate) fn detect_circles_via_square_warp(
             };
 
             let cell = CellCoords { i, j };
-            if let Some(c) = score_circle_in_square(img, &corners_img, cell, score_params) {
+            if let Some(c) =
+                score_circle_in_square(img, &corners_img, cell, diameter_frac, score_params)
+            {
                 out.push(c);
             }
         }
@@ -108,7 +111,8 @@ mod tests {
     fn detect_circles_empty_map_returns_empty() {
         let img = dummy_image();
         let map = CornerMap::new();
-        let out = detect_circles_via_square_warp(&img, &map, &CircleScoreParams::default(), None);
+        let out =
+            detect_circles_via_square_warp(&img, &map, 0.5, &CircleScoreParams::default(), None);
         assert!(out.is_empty());
     }
 
@@ -119,7 +123,8 @@ mod tests {
         map.insert(Coord::new(0, 0), Point2::new(0.0, 0.0));
         map.insert(Coord::new(1, 0), Point2::new(1.0, 0.0));
 
-        let out = detect_circles_via_square_warp(&img, &map, &CircleScoreParams::default(), None);
+        let out =
+            detect_circles_via_square_warp(&img, &map, 0.5, &CircleScoreParams::default(), None);
         assert!(out.is_empty());
     }
 }

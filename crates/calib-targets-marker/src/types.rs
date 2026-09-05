@@ -42,6 +42,22 @@ pub struct MarkerBoardSpec {
     pub cell_size: Option<f32>,
     /// Expected circle markers.
     pub circles: [MarkerCircleSpec; 3],
+    /// Printed circle diameter as a fraction of the square side.
+    ///
+    /// Every radius the circle scorer probes is relative to this, so it is the
+    /// one place the disk size is stated: it is a property of the printed
+    /// board, not of the imaging conditions, and a second copy in
+    /// [`CircleScoreParams`] could only ever disagree with what was printed.
+    /// Matches `circle_diameter_rel` on the printable spec.
+    #[serde(default = "default_circle_diameter_rel")]
+    pub circle_diameter_rel: f32,
+}
+
+/// The printed circle diameter assumed when a board layout does not say.
+///
+/// Matches `calib-targets-print`'s own default for the same field.
+pub fn default_circle_diameter_rel() -> f32 {
+    0.5
 }
 
 impl MarkerBoardSpec {
@@ -54,6 +70,7 @@ impl MarkerBoardSpec {
             cols,
             cell_size: None,
             circles,
+            circle_diameter_rel: default_circle_diameter_rel(),
         }
     }
 
@@ -64,10 +81,20 @@ impl MarkerBoardSpec {
         self.cell_size = Some(cell_size);
         self
     }
+
+    /// Override the printed circle diameter, as a fraction of the square side.
+    #[must_use]
+    pub fn with_circle_diameter_rel(mut self, circle_diameter_rel: f32) -> Self {
+        self.circle_diameter_rel = circle_diameter_rel;
+        self
+    }
 }
 
 impl Default for MarkerBoardSpec {
     fn default() -> Self {
+        // An L whose polarities alternate with `(i + j)` parity, so each disk
+        // contrasts with the square it is printed on. The previous default put
+        // a white disk on a white square — a marker that renders as nothing.
         Self {
             rows: 6,
             cols: 8,
@@ -82,10 +109,11 @@ impl Default for MarkerBoardSpec {
                     polarity: CirclePolarity::Black,
                 },
                 MarkerCircleSpec {
-                    cell: CellCoords { i: 2, j: 3 },
+                    cell: CellCoords { i: 3, j: 3 },
                     polarity: CirclePolarity::White,
                 },
             ],
+            circle_diameter_rel: default_circle_diameter_rel(),
         }
     }
 }
@@ -95,11 +123,18 @@ impl Default for MarkerBoardSpec {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CircleMatchParams {
-    /// Keep only the top-N candidates per polarity before matching.
+    /// Keep only the top-N candidates per polarity, ranked by contrast,
+    /// before the frame sweep.
     pub max_candidates_per_polarity: usize,
-    /// Optional max distance in cell units to accept a match.
-    pub max_distance_cells: Option<f32>,
-    /// Minimum number of consistent matches needed to return a grid alignment.
+    /// Expected circles that must agree on one board frame before it is
+    /// returned.
+    ///
+    /// Defaults to `3` — the whole layout. The three circles exist for exactly
+    /// one reason, to break the board's 4-fold rotational symmetry, and fewer
+    /// than all three cannot do it: any single circle is consistent with all
+    /// four rotations, and two leave no redundancy to check a wrong pairing
+    /// against. Lowering this trades the "never a false label" half of the
+    /// detection contract for recall on a board with an occluded marker.
     pub min_offset_inliers: usize,
 }
 
@@ -107,8 +142,7 @@ impl Default for CircleMatchParams {
     fn default() -> Self {
         Self {
             max_candidates_per_polarity: 6,
-            max_distance_cells: None,
-            min_offset_inliers: 1,
+            min_offset_inliers: 3,
         }
     }
 }
@@ -211,9 +245,6 @@ pub struct CircleMatch {
     /// Index into the detected-candidate list of the matched circle;
     /// `None` when no candidate matched.
     pub matched_index: Option<usize>,
-    /// Distance, in cell units, between expected and matched cell;
-    /// `None` when unmatched.
-    pub distance_cells: Option<f32>,
     /// Detected-to-board cell offset implied by this match; `None` when
     /// unmatched.
     pub offset_cells: Option<CellOffset>,
@@ -225,22 +256,15 @@ impl CircleMatch {
         Self {
             expected,
             matched_index: None,
-            distance_cells: None,
             offset_cells: None,
         }
     }
 
-    /// Record the matched candidate, its cell-space distance, and the implied
-    /// detected-to-board offset.
+    /// Record the matched candidate and the detected-to-board cell offset of
+    /// the frame that explained it.
     #[must_use]
-    pub fn with_match(
-        mut self,
-        matched_index: usize,
-        distance_cells: f32,
-        offset_cells: CellOffset,
-    ) -> Self {
+    pub fn with_match(mut self, matched_index: usize, offset_cells: CellOffset) -> Self {
         self.matched_index = Some(matched_index);
-        self.distance_cells = Some(distance_cells);
         self.offset_cells = Some(offset_cells);
         self
     }

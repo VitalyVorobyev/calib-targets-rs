@@ -41,7 +41,6 @@ def main() -> None:
         chessboard=ct.ChessboardParams(),
         circle_score=ct.CircleScoreParams(
             patch_size=64,
-            diameter_frac=0.5,
             ring_thickness_frac=0.35,
             ring_radius_mul=1.6,
             min_contrast=10.0,
@@ -50,7 +49,7 @@ def main() -> None:
         ),
         match_params=ct.CircleMatchParams(
             max_candidates_per_polarity=6,
-            min_offset_inliers=1,
+            min_offset_inliers=3,
         ),
     )
 

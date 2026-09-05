@@ -112,14 +112,27 @@ the field existed.
 
 The inset is drawn *inside* a square, so it moves no corner intersection: the
 resolved target points are identical with and without it, and detection is too.
-Measured across `inner_square_rel` 0.0 through 0.9, the chessboard and ChArUco
-detectors return the same corner counts, grid extents, marker ids and marker
-rotations. ChESS corners fire on saddle / X-junctions and an inset corner is an
-L-corner, so no supported range narrower than `[0, 1)` applies.
+Measured across `inner_square_rel` 0.0 through 0.9, the chessboard, ChArUco and
+marker-board detectors return the same corner counts, grid extents, marker ids,
+board frame and marker rotations. ChESS corners fire on saddle / X-junctions and
+an inset corner is an L-corner, so no supported range narrower than `[0, 1)`
+applies.
 
-Two limits are worth stating plainly. On a ChArUco board the inset applies only
-to the plain black checker squares, never to an ArUco marker's bit cells.
-Puzzleboard targets do not support it at all.
+Three limits are worth stating plainly. On a ChArUco board the inset applies
+only to the plain black checker squares, never to an ArUco marker's bit cells.
+On a marker board it likewise skips the three circle cells: the inset is drawn
+in the same white a marker disk needs, so leaving it in merges the two — and
+once `inner_square_rel` reaches `circle_diameter_rel` it swallows the disk
+whole. Puzzleboard targets do not support it at all.
+
+The marker-board claim above is the one that had to be earned. Until 0.15.0 the
+inset was painted under the circles *and* the detector's circle scorer measured
+only a light-versus-dark level difference, with no test that the bright region
+was actually round — so every white inset on the board scored as a marker disk,
+and the detector could resolve the board frame 180 degrees rotated while still
+reporting three clean circle matches (issue #96). Both halves are fixed, and
+`crates/calib-targets-print/tests/marker_board_roundtrip.rs` renders the sweep
+and detects it back on every commit.
 
 In the DXF, an inset square becomes *two* closed polylines — the square and its
 hole, the hole wound opposite to the square — rather than a white shape layered

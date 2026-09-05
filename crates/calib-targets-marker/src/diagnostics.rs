@@ -44,7 +44,13 @@ pub struct MarkerBoardDiagnostics {
     /// One entry per expected layout circle, recording the detected
     /// candidate it was paired with (if any) and the offset in cell units.
     pub circle_matches: Vec<CircleMatch>,
-    /// Number of circles consistent with the chosen grid alignment.
-    /// `0` when no alignment was found.
+    /// Number of circles consistent with the best board frame the sweep
+    /// found — whether or not that frame was accepted.
     pub alignment_inliers: usize,
+    /// Number of circles consistent with the best *competing* board frame.
+    /// Equal to `alignment_inliers` exactly when the frame was ambiguous.
+    pub alignment_runner_up_inliers: usize,
+    /// A second frame explained the circles as well as the best one, so no
+    /// alignment was returned.
+    pub alignment_ambiguous: bool,
 }

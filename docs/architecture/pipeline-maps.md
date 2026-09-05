@@ -106,8 +106,8 @@ truth. Entry: `marker detector.rs::MarkerBoardDetector`.
 | 1 | Chessboard grid | `marker detector.rs` → `chess ChessboardDetector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
 | 2 | Corner map | `marker detector.rs::build_corner_map` | grid→pixel map | **Local** (parallel to charuco's) |
 | 3 | Circle scoring | `marker detect.rs::detect_circles_via_square_warp` → `circle_score.rs::score_circle_in_square` | Circle scoring + detection (§12) | **Local** |
-| 4 | Circle matching | `marker match_circles.rs::match_expected_circles` | Circle matching (§12) | **Local** |
-| 5 | Alignment | `marker match_circles.rs::estimate_grid_alignment` | Grid-alignment from circles (§12) | **Local** |
+| 4 | Board-frame resolution | `marker match_circles.rs::resolve_board_frame` | Frame sweep over `C4` (§12) | **Local** |
+| 5 | Corner-frame shift | `marker detector.rs::corner_frame` | Square indices → inner-corner indices | **Local** |
 
 ## 5. Standalone grid library — `pg detect_grid` / `detect_grid_all`
 

@@ -29,7 +29,9 @@
   - `circle_candidates`: scored circles per cell.
   - `circle_matches`: matched circles (with offsets).
   - `inliers`: per-corner provenance back into the input ChESS-corner slice.
-  - `alignment_inliers`: number of circle matches used for the alignment.
+  - `alignment_inliers`: circles consistent with the best board frame.
+  - `alignment_runner_up_inliers`: circles consistent with the best *competing* frame.
+  - `alignment_ambiguous`: a second frame explained the circles just as well, so no alignment was returned.
 
 ## Parameters
 
@@ -38,6 +40,7 @@
 - `rows`, `cols`: inner corner counts.
 - `cell_size`: optional square size in your world units (when set, `target_position` is populated).
 - `circles`: three `MarkerCircleSpec` entries with `cell` (top-left corner indices) and `polarity`.
+- `circle_diameter_rel`: printed disc diameter as a fraction of the square side (default `0.5`). Every radius the circle scorer probes is relative to this, so it is the one place the disc size is stated — it matches `circle_diameter_rel` on the printable spec.
 
 `MarkerBoardParams` configures detection:
 
@@ -53,7 +56,6 @@
 `CircleScoreParams` controls scoring:
 
 - `patch_size`: canonical square size in pixels.
-- `diameter_frac`: circle diameter relative to the square.
 - `ring_thickness_frac`: ring thickness relative to circle radius.
 - `ring_radius_mul`: ring radius relative to circle radius.
 - `min_contrast`: minimum accepted disk-vs-ring contrast.
@@ -63,10 +65,12 @@
 `CircleMatchParams` controls matching:
 
 - `max_candidates_per_polarity`: top-N candidates to keep per polarity.
-- `max_distance_cells`: optional maximum distance for a match.
-- `min_offset_inliers`: minimum agreeing circles to return an alignment.
+- `min_offset_inliers`: circles that must agree on one board frame before it is returned. Defaults to `3` — the whole layout.
 
 ## Notes
 
 - Cell coordinates `(i, j)` refer to **square cells**, expressed by the top-left corner indices. The cell center is at `(i + 0.5, j + 0.5)`.
-- `alignment` maps detected grid coordinates into board coordinates using a dihedral transform and translation.
+- `alignment` maps detected grid coordinates into board coordinates using a rotation and a translation, and it is the frame the returned corner labels are already expressed in.
+- A circle's polarity is fixed by the square underneath it: `white` on an even `i + j`, `black` on an odd one. Any other combination draws a disc the same colour as its square, and `calib-targets-print` rejects it.
+- The frame search covers only the four **rotations**, not the eight dihedral transforms. A camera imaging the printed side of an opaque board cannot produce a reflection, so including them would only let physically unreachable hypotheses compete with the true one.
+- Resolving the frame is all-or-nothing by design. A single circle is consistent with all four rotations, and two leave no redundancy, so anything short of the full layout agreeing — or a second frame agreeing equally well — comes back as a typed error rather than a guess.

@@ -576,7 +576,6 @@ pub struct ct_charuco_detector_config_t {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_circle_score_params_t {
     pub patch_size: usize,
-    pub diameter_frac: f32,
     pub ring_thickness_frac: f32,
     pub ring_radius_mul: f32,
     pub min_contrast: f32,
@@ -589,7 +588,6 @@ pub struct ct_circle_score_params_t {
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_circle_match_params_t {
     pub max_candidates_per_polarity: usize,
-    pub max_distance_cells: ct_optional_f32_t,
     pub min_offset_inliers: usize,
 }
 
@@ -601,6 +599,9 @@ pub struct ct_marker_board_layout_t {
     pub cols: u32,
     pub cell_size: ct_optional_f32_t,
     pub circles: [ct_marker_circle_spec_t; 3],
+    /// Printed disk diameter as a fraction of the square side (typically 0.5).
+    /// Every radius the circle scorer probes is relative to this.
+    pub circle_diameter_rel: f32,
 }
 
 /// Marker-board detector parameters.

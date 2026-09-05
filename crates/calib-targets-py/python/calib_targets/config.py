@@ -1307,10 +1307,14 @@ class MarkerCircleSpec:
 
 
 def _default_marker_circles() -> tuple[MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec]:
+    # White / black / white on an L anchored at an even-parity cell, so each
+    # disk contrasts with the square underneath it. Cells (3, 2) and (2, 3)
+    # share a parity, so the old triple asked for two different colours on two
+    # squares of the same colour: no printable board matched it.
     return (
         MarkerCircleSpec(i=2, j=2, polarity=CirclePolarity.WHITE),
         MarkerCircleSpec(i=3, j=2, polarity=CirclePolarity.BLACK),
-        MarkerCircleSpec(i=2, j=3, polarity=CirclePolarity.WHITE),
+        MarkerCircleSpec(i=3, j=3, polarity=CirclePolarity.WHITE),
     )
 
 
@@ -1322,12 +1326,17 @@ class MarkerBoardSpec:
         default_factory=_default_marker_circles
     )
     cell_size: float | None = None
+    # Printed disk diameter as a fraction of the square side. Every radius the
+    # circle scorer probes is relative to this, so it is the one place the disk
+    # size is stated.
+    circle_diameter_rel: float = 0.5
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
             "rows": self.rows,
             "cols": self.cols,
             "circles": [c.to_dict() for c in self.circles],
+            "circle_diameter_rel": self.circle_diameter_rel,
         }
         if self.cell_size is not None:
             d["cell_size"] = self.cell_size
@@ -1351,6 +1360,7 @@ class MarkerBoardSpec:
             cols=data.get("cols", 8),
             circles=circles,
             cell_size=data.get("cell_size"),
+            circle_diameter_rel=data.get("circle_diameter_rel", 0.5),
         )
 
 
@@ -1361,7 +1371,6 @@ MarkerBoardLayout = MarkerBoardSpec
 @dataclass(slots=True)
 class CircleScoreParams:
     patch_size: int = 64
-    diameter_frac: float = 0.5
     ring_thickness_frac: float = 0.35
     ring_radius_mul: float = 1.6
     min_contrast: float = 10.0
@@ -1371,7 +1380,6 @@ class CircleScoreParams:
     def to_dict(self) -> dict[str, Any]:
         return {
             "patch_size": self.patch_size,
-            "diameter_frac": self.diameter_frac,
             "ring_thickness_frac": self.ring_thickness_frac,
             "ring_radius_mul": self.ring_radius_mul,
             "min_contrast": self.min_contrast,
@@ -1384,7 +1392,6 @@ class CircleScoreParams:
         d = cls()
         return cls(
             patch_size=data.get("patch_size", d.patch_size),
-            diameter_frac=data.get("diameter_frac", d.diameter_frac),
             ring_thickness_frac=data.get("ring_thickness_frac", d.ring_thickness_frac),
             ring_radius_mul=data.get("ring_radius_mul", d.ring_radius_mul),
             min_contrast=data.get("min_contrast", d.min_contrast),
@@ -1396,17 +1403,16 @@ class CircleScoreParams:
 @dataclass(slots=True)
 class CircleMatchParams:
     max_candidates_per_polarity: int = 6
-    max_distance_cells: float | None = None
-    min_offset_inliers: int = 1
+    # Expected circles that must agree on one board frame. Defaults to the
+    # whole layout: the three circles exist only to break the board's 4-fold
+    # rotational symmetry, and fewer than all three cannot do it.
+    min_offset_inliers: int = 3
 
     def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {
+        return {
             "max_candidates_per_polarity": self.max_candidates_per_polarity,
             "min_offset_inliers": self.min_offset_inliers,
         }
-        if self.max_distance_cells is not None:
-            d["max_distance_cells"] = self.max_distance_cells
-        return d
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> CircleMatchParams:
@@ -1415,7 +1421,6 @@ class CircleMatchParams:
             max_candidates_per_polarity=data.get(
                 "max_candidates_per_polarity", d.max_candidates_per_polarity
             ),
-            max_distance_cells=data.get("max_distance_cells"),
             min_offset_inliers=data.get("min_offset_inliers", d.min_offset_inliers),
         )
 

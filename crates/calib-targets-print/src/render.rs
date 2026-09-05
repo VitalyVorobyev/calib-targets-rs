@@ -175,6 +175,24 @@ fn build_chessboard(
     layout: &ResolvedTargetLayout,
 ) -> Result<(), PrintableTargetError> {
     validate_chessboard_spec(spec)?;
+    push_checker_squares(scene, spec, layout, &[]);
+    Ok(())
+}
+
+/// Lay down the checkerboard squares of a chessboard-shaped board.
+///
+/// `inset_exempt` names cells that must be drawn as plain squares even when
+/// the spec asks for an inset. A marker board's circle cells are exempt for
+/// the same reason a ChArUco marker's bit cells are: the inset is drawn in the
+/// same colour as the disk that has to sit on top of it, so leaving it in
+/// merges the two — and at `inner_square_rel >= circle_diameter_rel` swallows
+/// the disk whole.
+fn push_checker_squares(
+    scene: &mut Scene,
+    spec: &crate::model::ChessboardTargetSpec,
+    layout: &ResolvedTargetLayout,
+    inset_exempt: &[[u32; 2]],
+) {
     let squares_x = spec.inner_cols + 1;
     let squares_y = spec.inner_rows + 1;
     for sy in 0..squares_y {
@@ -184,24 +202,28 @@ fn build_chessboard(
             } else {
                 Fill::White
             };
+            let inner_square_rel = if inset_exempt.contains(&[sx, sy]) {
+                None
+            } else {
+                spec.inner_square_rel
+            };
             push_square(
                 scene,
                 layout.board_origin_mm[0] + sx as f64 * spec.square_size_mm,
                 layout.board_origin_mm[1] + sy as f64 * spec.square_size_mm,
                 spec.square_size_mm,
                 fill,
-                spec.inner_square_rel,
+                inner_square_rel,
             );
         }
     }
-    Ok(())
 }
 
 /// Push one board square, cutting a centred white [`Primitive::RectWithHole`]
 /// inset instead of a plain [`Primitive::Rect`] when `inner_square_rel` names
-/// an active (non-zero) inset. Shared by [`build_chessboard`] and the plain
-/// checker squares of [`build_charuco`] — never applied to ChArUco marker bit
-/// cells.
+/// an active (non-zero) inset. Shared by [`push_checker_squares`] and the
+/// plain checker squares of [`build_charuco`] — never applied to ChArUco
+/// marker bit cells, nor to a marker board's circle cells.
 fn push_square(
     scene: &mut Scene,
     x_mm: f64,
@@ -390,7 +412,7 @@ fn build_marker_board(
     layout: &ResolvedTargetLayout,
 ) -> Result<(), PrintableTargetError> {
     validate_marker_board_spec(spec)?;
-    build_chessboard(
+    push_checker_squares(
         scene,
         &crate::model::ChessboardTargetSpec {
             inner_rows: spec.inner_rows,
@@ -399,7 +421,8 @@ fn build_marker_board(
             inner_square_rel: spec.inner_square_rel,
         },
         layout,
-    )?;
+        &spec.circles.map(|circle| [circle.i, circle.j]),
+    );
     let radius_mm = 0.5 * spec.circle_diameter_rel * spec.square_size_mm;
     for circle in spec.circles {
         scene.primitives.push(Primitive::Circle {
@@ -769,17 +792,17 @@ mod tests {
                     MarkerCircleSpec {
                         i: 3,
                         j: 2,
-                        polarity: CirclePolarity::White,
-                    },
-                    MarkerCircleSpec {
-                        i: 4,
-                        j: 2,
                         polarity: CirclePolarity::Black,
                     },
                     MarkerCircleSpec {
                         i: 4,
-                        j: 3,
+                        j: 2,
                         polarity: CirclePolarity::White,
+                    },
+                    MarkerCircleSpec {
+                        i: 4,
+                        j: 3,
+                        polarity: CirclePolarity::Black,
                     },
                 ],
                 circle_diameter_rel: 0.5,

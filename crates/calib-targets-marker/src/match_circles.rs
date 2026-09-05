@@ -1,204 +1,181 @@
+//! Board-frame resolution from scored circle candidates.
+//!
+//! The three marker circles exist for exactly one reason: to break the board's
+//! 4-fold rotational symmetry. Resolving the frame is therefore a
+//! hypothesis-and-verify problem, not a matching problem — the same shape the
+//! ChArUco and PuzzleBoard anchoring paths use. Each `(rotation, translation)`
+//! pair is a complete answer; we enumerate them, count how many expected
+//! circles each one explains, and accept only a frame that explains the whole
+//! layout and is strictly better than every alternative.
+//!
+//! Matching the circles *first* and inferring the frame afterwards cannot
+//! work: the only cheap similarity available before alignment is the distance
+//! between a board cell index and a detected cell index, and comparing those
+//! presumes the very translation the alignment is meant to establish.
+
 use crate::circle_score::CircleCandidate;
-use crate::coords::{CellCoords, CellOffset};
+use crate::coords::CellOffset;
 use crate::types::{CircleMatch, CircleMatchParams, MarkerCircleSpec};
-use calib_targets_core::{Coord, GridAlignment, GridTransform, GRID_TRANSFORMS_D4};
+use calib_targets_core::{Coord, GridAlignment, GRID_TRANSFORMS_C4};
 
-use std::collections::HashMap;
-
-#[derive(Clone, Copy, Debug)]
-struct MatchOption {
-    index: usize,
-    distance: f32,
-    offset: CellOffset,
+/// One frame hypothesis: which `C4` relabelling, and the integer translation
+/// that carries detected cell coordinates onto board cell coordinates.
+///
+/// Ordered so the hypothesis sweep is independent of iteration order — a
+/// `HashMap` here is how the previous implementation resolved ties
+/// non-deterministically.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct FrameKey {
+    transform: usize,
+    translation: [i32; 2],
 }
 
-fn distance_cells(a: CellCoords, b: CellCoords) -> f32 {
-    let di = (a.i - b.i) as f32;
-    let dj = (a.j - b.j) as f32;
-    (di * di + dj * dj).sqrt()
+/// Outcome of the frame sweep.
+///
+/// `matches` always describes the best hypothesis found, even when that
+/// hypothesis is rejected, so the diagnostics channel can show what the
+/// detector was looking at.
+pub(crate) struct FrameSearch {
+    /// One entry per expected circle, in layout order.
+    pub matches: Vec<CircleMatch>,
+    /// The accepted frame; `None` when the sweep found nothing acceptable.
+    pub alignment: Option<GridAlignment>,
+    /// Expected circles explained by the best hypothesis.
+    pub inliers: usize,
+    /// Expected circles explained by the best *other* hypothesis.
+    pub runner_up_inliers: usize,
+    /// The best hypothesis tied with another distinct frame.
+    pub ambiguous: bool,
 }
 
-fn build_match_options(
-    expected: MarkerCircleSpec,
-    candidates: &[CircleCandidate],
-    params: &CircleMatchParams,
-) -> Vec<MatchOption> {
-    let mut out = Vec::new();
-    for (idx, cand) in candidates.iter().enumerate() {
-        if cand.polarity != expected.polarity {
-            continue;
-        }
-        let dist = distance_cells(expected.cell, cand.cell);
-        if let Some(max_dist) = params.max_distance_cells {
-            if dist > max_dist {
-                continue;
-            }
-        }
-        let offset = CellOffset {
-            di: expected.cell.i - cand.cell.i,
-            dj: expected.cell.j - cand.cell.j,
-        };
-        out.push(MatchOption {
-            index: idx,
-            distance: dist,
-            offset,
-        });
-    }
-    out
-}
-
-/// Match expected circles to detected candidates, enforcing polarity.
-pub(crate) fn match_expected_circles(
+/// Enumerate every board frame consistent with at least one circle, and accept
+/// the one that explains the layout outright.
+///
+/// A frame is accepted when it explains at least `min_offset_inliers` expected
+/// circles *and* strictly beats every other distinct frame. The uniqueness
+/// requirement is not a tie-break convenience: two frames that explain the
+/// layout equally well mean the marker constellation failed at its only job,
+/// and picking either one would ship a wrong `(i, j)` label on every corner.
+pub(crate) fn resolve_board_frame(
     expected: &[MarkerCircleSpec],
     candidates: &[CircleCandidate],
     params: &CircleMatchParams,
-) -> Vec<CircleMatch> {
-    let options: Vec<Vec<MatchOption>> = expected
+) -> FrameSearch {
+    let unmatched = || {
+        expected
+            .iter()
+            .copied()
+            .map(CircleMatch::unmatched)
+            .collect()
+    };
+
+    // Every hypothesis is pinned by one expected-circle-to-candidate seed, so
+    // enumerating the seeds enumerates every frame that explains anything at
+    // all. Dedup keeps the runner-up honest: the same frame reached from two
+    // different seeds is one frame, not two.
+    let mut frames: Vec<FrameKey> = Vec::new();
+    for (transform_index, transform) in GRID_TRANSFORMS_C4.iter().enumerate() {
+        for spec in expected {
+            for cand in candidates {
+                if cand.polarity != spec.polarity {
+                    continue;
+                }
+                let rotated = transform.apply(Coord::new(cand.cell.i, cand.cell.j));
+                frames.push(FrameKey {
+                    transform: transform_index,
+                    translation: [spec.cell.i - rotated.u, spec.cell.j - rotated.v],
+                });
+            }
+        }
+    }
+    frames.sort_unstable();
+    frames.dedup();
+
+    let mut best: Option<(FrameKey, Vec<Option<usize>>, usize)> = None;
+    let mut runner_up_inliers = 0usize;
+    let mut ambiguous = false;
+
+    for frame in frames {
+        let (assignment, inliers) = verify_frame(expected, candidates, frame);
+        let best_inliers = best.as_ref().map(|(_, _, n)| *n).unwrap_or(0);
+        if inliers > best_inliers {
+            runner_up_inliers = best_inliers;
+            ambiguous = false;
+            best = Some((frame, assignment, inliers));
+        } else if inliers == best_inliers && best.is_some() {
+            runner_up_inliers = runner_up_inliers.max(inliers);
+            ambiguous = true;
+        } else {
+            runner_up_inliers = runner_up_inliers.max(inliers);
+        }
+    }
+
+    let Some((frame, assignment, inliers)) = best else {
+        return FrameSearch {
+            matches: unmatched(),
+            alignment: None,
+            inliers: 0,
+            runner_up_inliers: 0,
+            ambiguous: false,
+        };
+    };
+
+    let transform = GRID_TRANSFORMS_C4[frame.transform];
+    let alignment = transform.with_translation(frame.translation);
+    let matches = expected
         .iter()
-        .map(|&spec| build_match_options(spec, candidates, params))
+        .zip(&assignment)
+        .map(|(&spec, assigned)| match assigned {
+            Some(index) => CircleMatch::unmatched(spec).with_match(
+                *index,
+                CellOffset {
+                    di: frame.translation[0],
+                    dj: frame.translation[1],
+                },
+            ),
+            None => CircleMatch::unmatched(spec),
+        })
         .collect();
 
-    let mut best: Option<(usize, f32, Vec<Option<MatchOption>>)> = None;
-    let mut current: Vec<Option<MatchOption>> = vec![None; expected.len()];
-    let mut used: Vec<bool> = vec![false; candidates.len()];
-
-    fn search(
-        idx: usize,
-        options: &[Vec<MatchOption>],
-        used: &mut [bool],
-        current: &mut [Option<MatchOption>],
-        best: &mut Option<(usize, f32, Vec<Option<MatchOption>>)>,
-    ) {
-        if idx == options.len() {
-            let matches = current.iter().filter(|m| m.is_some()).count();
-            let total_dist: f32 = current
-                .iter()
-                .filter_map(|m| m.map(|opt| opt.distance))
-                .sum();
-            let should_take = match best {
-                None => true,
-                Some((best_matches, best_dist, _)) => {
-                    matches > *best_matches || (matches == *best_matches && total_dist < *best_dist)
-                }
-            };
-            if should_take {
-                *best = Some((matches, total_dist, current.to_vec()));
-            }
-            return;
-        }
-
-        current[idx] = None;
-        search(idx + 1, options, used, current, best);
-
-        for opt in &options[idx] {
-            if used[opt.index] {
-                continue;
-            }
-            used[opt.index] = true;
-            current[idx] = Some(*opt);
-            search(idx + 1, options, used, current, best);
-            current[idx] = None;
-            used[opt.index] = false;
-        }
+    let accepted = inliers >= params.min_offset_inliers && !ambiguous;
+    FrameSearch {
+        matches,
+        alignment: accepted.then_some(alignment),
+        inliers,
+        runner_up_inliers,
+        ambiguous,
     }
-
-    search(0, &options, &mut used, &mut current, &mut best);
-
-    let assignments = best
-        .map(|(_, _, assign)| assign)
-        .unwrap_or_else(|| vec![None; expected.len()]);
-
-    expected
-        .iter()
-        .zip(assignments)
-        .map(|(&spec, assigned)| CircleMatch {
-            expected: spec,
-            matched_index: assigned.map(|opt| opt.index),
-            distance_cells: assigned.map(|opt| opt.distance),
-            offset_cells: assigned.map(|opt| opt.offset),
-        })
-        .collect()
 }
 
-/// Estimate a dihedral alignment from detected cell coordinates to board cell coordinates.
+/// Count the expected circles one frame explains, and record which candidate
+/// explains each.
 ///
-/// The returned alignment maps `(cell_i, cell_j)` from the detected grid coordinate system into
-/// the board-anchored coordinate system: `dst = transform(src) + translation`.
-pub(crate) fn estimate_grid_alignment(
-    matches: &[CircleMatch],
+/// Cell coordinates are integers and the frame is a bijection on them, so
+/// "explains" is exact coincidence — there is no continuum to threshold, and
+/// a candidate can satisfy at most one expected circle.
+fn verify_frame(
+    expected: &[MarkerCircleSpec],
     candidates: &[CircleCandidate],
-    min_inliers: usize,
-) -> Option<(GridAlignment, usize)> {
-    #[derive(Clone, Copy)]
-    struct Pair {
-        sx: i32,
-        sy: i32,
-        ex: i32,
-        ey: i32,
-        weight: f32,
-    }
-
-    let mut pairs = Vec::new();
-    for m in matches {
-        let Some(idx) = m.matched_index else {
-            continue;
-        };
-        let cand = candidates.get(idx)?;
-        let ex = m.expected.cell.i;
-        let ey = m.expected.cell.j;
-        pairs.push(Pair {
-            sx: cand.cell.i,
-            sy: cand.cell.j,
-            ex,
-            ey,
-            weight: cand.contrast.max(0.0),
-        });
-    }
-
-    if pairs.is_empty() {
-        return None;
-    }
-
-    type Candidate = (f32, usize, GridTransform, [i32; 2]);
-    let mut best: Option<Candidate> = None;
-
-    for transform in GRID_TRANSFORMS_D4 {
-        let mut counts: HashMap<[i32; 2], (f32, usize)> = HashMap::new();
-        for p in &pairs {
-            let r = transform.apply(Coord::new(p.sx, p.sy));
-            let translation = [p.ex - r.u, p.ey - r.v];
-            let entry = counts.entry(translation).or_insert((0.0, 0));
-            entry.0 += p.weight;
-            entry.1 += 1;
-        }
-
-        let Some((translation, (weight_sum, count))) =
-            counts.into_iter().max_by(|(_, a), (_, b)| {
-                a.0.partial_cmp(&b.0)
-                    .unwrap_or(std::cmp::Ordering::Equal)
-                    .then_with(|| a.1.cmp(&b.1))
-            })
-        else {
-            continue;
-        };
-
-        let candidate = (weight_sum, count, transform, translation);
-        match best {
-            None => best = Some(candidate),
-            Some((best_w, best_n, _, _)) => {
-                if candidate.0 > best_w || (candidate.0 == best_w && candidate.1 > best_n) {
-                    best = Some(candidate);
-                }
+    frame: FrameKey,
+) -> (Vec<Option<usize>>, usize) {
+    let transform = GRID_TRANSFORMS_C4[frame.transform];
+    let mut assignment = Vec::with_capacity(expected.len());
+    let mut inliers = 0usize;
+    for spec in expected {
+        let found = candidates.iter().position(|cand| {
+            if cand.polarity != spec.polarity {
+                return false;
             }
+            let rotated = transform.apply(Coord::new(cand.cell.i, cand.cell.j));
+            rotated.u + frame.translation[0] == spec.cell.i
+                && rotated.v + frame.translation[1] == spec.cell.j
+        });
+        if found.is_some() {
+            inliers += 1;
         }
+        assignment.push(found);
     }
-
-    let (_, inliers, transform, translation) = best?;
-    if inliers < min_inliers {
-        return None;
-    }
-
-    Some((transform.with_translation(translation), inliers))
+    (assignment, inliers)
 }
 
 #[cfg(test)]
@@ -214,111 +191,162 @@ mod tests {
             cell,
             polarity,
             score: 0.0,
-            contrast: 0.0,
+            contrast: 40.0,
+            squareness: 0.0,
         }
     }
 
-    #[test]
-    fn match_expected_circles_prefers_complete_assignment() {
-        let expected = [
+    /// The layout from issue #96: an L whose polarities alternate with
+    /// `(i + j)` parity.
+    fn layout() -> [MarkerCircleSpec; 3] {
+        [
             MarkerCircleSpec {
-                cell: CellCoords { i: 5, j: 5 },
+                cell: CellCoords { i: 3, j: 3 },
                 polarity: CirclePolarity::White,
             },
             MarkerCircleSpec {
-                cell: CellCoords { i: 6, j: 5 },
+                cell: CellCoords { i: 4, j: 3 },
                 polarity: CirclePolarity::Black,
             },
             MarkerCircleSpec {
-                cell: CellCoords { i: 6, j: 6 },
+                cell: CellCoords { i: 4, j: 4 },
                 polarity: CirclePolarity::White,
             },
-        ];
-
-        let candidates = vec![
-            candidate(CellCoords { i: 5, j: 5 }, CirclePolarity::White),
-            candidate(CellCoords { i: 6, j: 5 }, CirclePolarity::Black),
-            candidate(CellCoords { i: 6, j: 6 }, CirclePolarity::White),
-        ];
-
-        let params = CircleMatchParams {
-            max_candidates_per_polarity: 6,
-            max_distance_cells: Some(0.1),
-            min_offset_inliers: 1,
-        };
-
-        let matches = match_expected_circles(&expected, &candidates, &params);
-        let matched: Vec<Option<usize>> = matches.iter().map(|m| m.matched_index).collect();
-        assert_eq!(matched, vec![Some(0), Some(1), Some(2)]);
+        ]
     }
 
-    fn candidate_with_contrast(
-        cell: CellCoords,
-        polarity: CirclePolarity,
-        contrast: f32,
-    ) -> CircleCandidate {
-        CircleCandidate {
-            center_img: Point2::new(0.0, 0.0),
-            cell,
-            polarity,
-            score: 0.0,
-            contrast,
+    fn params(min_offset_inliers: usize) -> CircleMatchParams {
+        CircleMatchParams {
+            max_candidates_per_polarity: 6,
+            min_offset_inliers,
         }
     }
 
     #[test]
-    fn estimate_grid_alignment_recovers_transform_and_translation() {
+    fn resolves_a_translated_layout_to_the_identity_rotation() {
         let candidates = vec![
-            candidate_with_contrast(CellCoords { i: 2, j: 3 }, CirclePolarity::White, 10.0),
-            candidate_with_contrast(CellCoords { i: 5, j: 1 }, CirclePolarity::Black, 10.0),
-            candidate_with_contrast(CellCoords { i: -1, j: 4 }, CirclePolarity::White, 10.0),
+            candidate(CellCoords { i: 2, j: 2 }, CirclePolarity::White),
+            candidate(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+            candidate(CellCoords { i: 3, j: 3 }, CirclePolarity::White),
         ];
+        let search = resolve_board_frame(&layout(), &candidates, &params(3));
+        let alignment = search.alignment.expect("frame resolved");
+        assert_eq!(alignment.matrix(), [[1, 0], [0, 1]]);
+        assert_eq!(alignment.translation(), [1, 1]);
+        assert_eq!(search.inliers, 3);
+        assert!(!search.ambiguous);
+        assert_eq!(
+            search
+                .matches
+                .iter()
+                .map(|m| m.matched_index)
+                .collect::<Vec<_>>(),
+            vec![Some(0), Some(1), Some(2)]
+        );
+    }
 
-        let transform = GRID_TRANSFORMS_D4[6]; // swap axes: (i, j) -> (j, i)
-        let translation = [10, 20];
-
-        let matches = vec![
-            CircleMatch {
-                expected: MarkerCircleSpec {
-                    cell: CellCoords {
-                        i: transform.apply(Coord::new(2, 3)).u + translation[0],
-                        j: transform.apply(Coord::new(2, 3)).v + translation[1],
-                    },
-                    polarity: CirclePolarity::White,
-                },
-                matched_index: Some(0),
-                distance_cells: None,
-                offset_cells: None,
-            },
-            CircleMatch {
-                expected: MarkerCircleSpec {
-                    cell: CellCoords {
-                        i: transform.apply(Coord::new(5, 1)).u + translation[0],
-                        j: transform.apply(Coord::new(5, 1)).v + translation[1],
-                    },
-                    polarity: CirclePolarity::Black,
-                },
-                matched_index: Some(1),
-                distance_cells: None,
-                offset_cells: None,
-            },
-            CircleMatch {
-                expected: MarkerCircleSpec {
-                    cell: CellCoords {
-                        i: transform.apply(Coord::new(-1, 4)).u + translation[0],
-                        j: transform.apply(Coord::new(-1, 4)).v + translation[1],
-                    },
-                    polarity: CirclePolarity::White,
-                },
-                matched_index: Some(2),
-                distance_cells: None,
-                offset_cells: None,
-            },
+    #[test]
+    fn recovers_a_genuinely_rotated_board() {
+        // The same L imaged after a quarter turn: (i, j) -> (-j, i).
+        let candidates = vec![
+            candidate(CellCoords { i: -3, j: 3 }, CirclePolarity::White),
+            candidate(CellCoords { i: -3, j: 4 }, CirclePolarity::Black),
+            candidate(CellCoords { i: -4, j: 4 }, CirclePolarity::White),
         ];
+        let search = resolve_board_frame(&layout(), &candidates, &params(3));
+        let alignment = search.alignment.expect("frame resolved");
+        assert_eq!(search.inliers, 3);
+        for (spec, m) in layout().iter().zip(&search.matches) {
+            let index = m.matched_index.expect("matched");
+            let cell = candidates[index].cell;
+            let mapped = alignment.apply(Coord::new(cell.i, cell.j));
+            assert_eq!((mapped.u, mapped.v), (spec.cell.i, spec.cell.j));
+        }
+    }
 
-        let (est, inliers) = estimate_grid_alignment(&matches, &candidates, 3).expect("align");
-        assert_eq!(inliers, 3);
-        assert_eq!(est.matrix(), transform.matrix());
-        assert_eq!(est.translation(), translation);
+    /// The failure issue #96 reported: spurious same-polarity candidates that
+    /// happen to complete the layout under a second rotation. Two frames
+    /// explain all three circles, so neither may be returned.
+    #[test]
+    fn rejects_a_frame_a_second_rotation_explains_equally_well() {
+        let candidates = vec![
+            candidate(CellCoords { i: 3, j: 3 }, CirclePolarity::White),
+            candidate(CellCoords { i: 4, j: 3 }, CirclePolarity::Black),
+            candidate(CellCoords { i: 4, j: 4 }, CirclePolarity::White),
+            // The two cells a half-turn about the black circle needs.
+            candidate(CellCoords { i: 5, j: 3 }, CirclePolarity::White),
+            candidate(CellCoords { i: 4, j: 2 }, CirclePolarity::White),
+        ];
+        let search = resolve_board_frame(&layout(), &candidates, &params(3));
+        assert!(search.ambiguous, "half-turn twin must be seen");
+        assert_eq!(search.inliers, 3);
+        assert_eq!(search.runner_up_inliers, 3);
+        assert!(
+            search.alignment.is_none(),
+            "an ambiguous frame is not a frame"
+        );
+    }
+
+    /// A single circle is consistent with all four rotations, so it can never
+    /// determine an orientation however clean it looks.
+    #[test]
+    fn one_circle_never_determines_a_frame() {
+        let candidates = vec![candidate(CellCoords { i: 3, j: 2 }, CirclePolarity::Black)];
+        let search = resolve_board_frame(&layout(), &candidates, &params(3));
+        assert_eq!(search.inliers, 1);
+        assert!(search.ambiguous);
+        assert!(search.alignment.is_none());
+    }
+
+    /// Why the sweep is restricted to rotations.
+    ///
+    /// This layout's two white circles are interchangeable, so a mirrored
+    /// observation of it is the *same* relabelling as a quarter turn. Over the
+    /// full dihedral group both would explain all three circles and the frame
+    /// would be reported ambiguous — a legitimate detection lost to a
+    /// hypothesis a camera imaging the printed side of an opaque board cannot
+    /// produce. Over `C4` there is one answer.
+    #[test]
+    fn a_mirrored_observation_resolves_as_the_rotation_it_is() {
+        let expected = layout();
+        let candidates = vec![
+            candidate(CellCoords { i: -3, j: 3 }, CirclePolarity::White),
+            candidate(CellCoords { i: -4, j: 3 }, CirclePolarity::Black),
+            candidate(CellCoords { i: -4, j: 4 }, CirclePolarity::White),
+        ];
+        let search = resolve_board_frame(&expected, &candidates, &params(3));
+        let alignment = search.alignment.expect("frame resolved");
+        assert_eq!(search.inliers, 3);
+        assert!(!search.ambiguous);
+        assert_eq!(
+            alignment.determinant(),
+            1,
+            "the accepted frame is always a rotation"
+        );
+        for (spec, m) in expected.iter().zip(&search.matches) {
+            let cell = candidates[m.matched_index.expect("matched")].cell;
+            let mapped = alignment.apply(Coord::new(cell.i, cell.j));
+            assert_eq!((mapped.u, mapped.v), (spec.cell.i, spec.cell.j));
+        }
+    }
+
+    /// Same inputs, same answer, every time — the previous implementation
+    /// broke ties by `HashMap` iteration order.
+    #[test]
+    fn frame_resolution_is_deterministic() {
+        let candidates = vec![
+            candidate(CellCoords { i: 2, j: 2 }, CirclePolarity::White),
+            candidate(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+            candidate(CellCoords { i: 3, j: 3 }, CirclePolarity::White),
+            candidate(CellCoords { i: 7, j: 7 }, CirclePolarity::White),
+        ];
+        let expected = layout();
+        let first = resolve_board_frame(&expected, &candidates, &params(3));
+        for _ in 0..64 {
+            let again = resolve_board_frame(&expected, &candidates, &params(3));
+            assert_eq!(again.alignment, first.alignment);
+            assert_eq!(again.inliers, first.inliers);
+            assert_eq!(again.runner_up_inliers, first.runner_up_inliers);
+        }
     }
 }
