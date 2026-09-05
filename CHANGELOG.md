@@ -7,7 +7,21 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.14.1
+
+A patch: one additive field on three printable-target specs, and nothing else. No
+type removed or renamed, no existing document's serialization changed, the C ABI
+unchanged at 4.0.0. A consumer pinning `0.14` picks this up with `cargo update`
+and needs no manifest edit.
+
+It finishes what 0.14.0 started. That release removed most of the reason a second
+implementation of the printable-target geometry existed downstream — the binding
+was narrower than the library, so an application needing a page or a margin had
+to rebuild the renderer. This removes the last one: the white square inset that
+the downstream generator's laser-calibration boards have always carried, and that
+no document round-tripped through this library could express. The fork can now be
+deleted rather than kept in sync, which is the point — it was a drifting fork
+that shipped its ChArUco markers rotated 180 degrees.
 
 ### Added
 

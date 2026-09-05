@@ -13,9 +13,9 @@ version, not the workspace version.
 
 ## ABI 4.0.0 — breaking
 
-Paired with workspace 0.13.0, and unchanged in 0.14.0 — the 0.14.0 archives
-carry this same ABI, so a consumer already built against 4.0.0 needs no
-action. Recompile; do not relink.
+Paired with workspace 0.13.0, and unchanged in both 0.14.0 and 0.14.1 — the
+archives for those releases carry this same ABI, so a consumer already built
+against 4.0.0 needs no action. Recompile; do not relink.
 
 **Three entry points renamed.** The `_with_diagnostics` / `detect_diagnostics`
 spelling is gone workspace-wide; `diagnose` is the one name for "run the

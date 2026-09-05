@@ -21,10 +21,13 @@ Generation writes one output bundle:
 - `<stem>.json`
 - `<stem>.svg`
 - `<stem>.png`
+- `<stem>.dxf`
 
-The normalized `.json` file records the exact document that was rendered. SVG
-and PNG are emitted from the same internal scene description, so they describe
-the same board geometry.
+The normalized `.json` file records the exact document that was rendered. SVG,
+PNG and DXF are emitted from the same internal scene description, so they all
+describe the same board geometry. The DXF is the chrome-on-glass
+photolithography handoff: it carries only the black regions of the board, as
+closed boundary polylines in a Y-up millimetre frame.
 
 All physical dimensions are expressed in millimeters. The board is centered in
 the printable area, and generation fails if the chosen page and margins do not
@@ -68,6 +71,61 @@ Matching examples also exist for chessboard and marker-board targets:
 - `testdata/printable/puzzleboard_small.json`
 - `testdata/printable/puzzleboard_mid.json`
 
+## The inner white square
+
+Chessboard, ChArUco and marker-board targets accept an optional
+`inner_square_rel`: a white square inset, centred inside every black square,
+whose side is that fraction of the square side. It is what a board destined for
+laser calibration usually wants, and a document that carries it round-trips
+through this library unchanged.
+
+```json
+"target": {
+  "kind": "chessboard",
+  "inner_rows": 6,
+  "inner_cols": 8,
+  "square_size_mm": 20.0,
+  "inner_square_rel": 0.4
+}
+```
+
+Complete fixtures for all three target families live alongside the others:
+
+- `testdata/printable/chessboard_inner_square.json`
+- `testdata/printable/charuco_inner_square.json`
+- `testdata/printable/marker_board_inner_square.json`
+
+The same field is available as a flag on every `init` and `gen` subcommand that
+accepts it, in both the Rust and the Python CLI:
+
+```bash
+calib-targets gen chessboard \
+  --out-stem tmpdata/printable/chessboard \
+  --inner-rows 6 --inner-cols 8 --square-size-mm 20 \
+  --inner-square-rel 0.4
+```
+
+The value must lie in `[0, 1)`. `1.0` and above are rejected, because the inset
+would erase the square it is cut from. Omitting the field and passing `0` both
+mean "no inset", and a document without one serializes exactly as it did before
+the field existed.
+
+The inset is drawn *inside* a square, so it moves no corner intersection: the
+resolved target points are identical with and without it, and detection is too.
+Measured across `inner_square_rel` 0.0 through 0.9, the chessboard and ChArUco
+detectors return the same corner counts, grid extents, marker ids and marker
+rotations. ChESS corners fire on saddle / X-junctions and an inset corner is an
+L-corner, so no supported range narrower than `[0, 1)` applies.
+
+Two limits are worth stating plainly. On a ChArUco board the inset applies only
+to the plain black checker squares, never to an ArUco marker's bit cells.
+Puzzleboard targets do not support it at all.
+
+In the DXF, an inset square becomes *two* closed polylines — the square and its
+hole, the hole wound opposite to the square — rather than a white shape layered
+on a black one, so a fab that fills the boundary polylines cuts the inset out
+instead of flooding over it.
+
 ## Rust quickstart
 
 If you are using the published Rust crates today, you can either depend on the
@@ -85,6 +143,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{}", written.json_path.display());
     println!("{}", written.svg_path.display());
     println!("{}", written.png_path.display());
+    println!("{}", written.dxf_path.display());
     Ok(())
 }
 ```
