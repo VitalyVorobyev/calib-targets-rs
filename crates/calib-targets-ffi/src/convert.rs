@@ -532,7 +532,11 @@ pub(crate) fn convert_marker_board_layout(
         convert_marker_circle_spec(&layout.circles[1], "marker.layout.circles[1]")?,
         convert_marker_circle_spec(&layout.circles[2], "marker.layout.circles[2]")?,
     ];
-    let mut spec = MarkerBoardSpec::new(layout.rows, layout.cols, circles);
+    let mut spec = MarkerBoardSpec::new(layout.rows, layout.cols, circles)
+        .with_circle_diameter_rel(require_positive(
+            layout.circle_diameter_rel,
+            "marker.layout.circle_diameter_rel",
+        )?);
     if let Some(value) = optional_f32_to_option(&layout.cell_size, "marker.layout.cell_size")? {
         spec = spec.with_cell_size(require_positive(value, "marker.layout.cell_size")?);
     }
@@ -559,8 +563,6 @@ pub(crate) fn convert_circle_score_params(
     }
     let mut out = CircleScoreParams::default();
     out.patch_size = params.patch_size;
-    out.diameter_frac =
-        require_positive(params.diameter_frac, "marker.circle_score.diameter_frac")?;
     out.ring_thickness_frac = require_positive(
         params.ring_thickness_frac,
         "marker.circle_score.ring_thickness_frac",
@@ -581,16 +583,6 @@ pub(crate) fn convert_circle_match_params(
 ) -> FfiResult<CircleMatchParams> {
     let mut out = CircleMatchParams::default();
     out.max_candidates_per_polarity = params.max_candidates_per_polarity;
-    out.max_distance_cells = match optional_f32_to_option(
-        &params.max_distance_cells,
-        "marker.match_params.max_distance_cells",
-    )? {
-        Some(value) => Some(require_positive(
-            value,
-            "marker.match_params.max_distance_cells",
-        )?),
-        None => None,
-    };
     out.min_offset_inliers = params.min_offset_inliers;
     Ok(out)
 }

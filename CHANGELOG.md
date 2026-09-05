@@ -7,6 +7,131 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Fixed
+
+- **A marker board with `inner_square_rel` above ~0.3 could resolve a board
+  frame 90 or 180 degrees rotated, silently** ([#96]). The detector reported
+  three clean circle matches and no error while every corner carried a wrong
+  `(i, j)` label — the exact failure the three circles exist to prevent. A
+  rotated frame is unrecoverable downstream, so this was a contract violation,
+  not a tuning matter.
+
+  Two independent defects had to line up, and both are fixed:
+
+  **The circle scorer had no shape term.** It compared the mean intensity on a
+  disk-radius ring against the mean on an outer ring — a pure light-versus-dark
+  *level* test that accepts any centred blob of roughly the right size. The
+  white square inset that `inner_square_rel` draws inside every black square is
+  exactly such a blob, so every black square on the board scored as a white
+  marker disk. On the reported board the candidate count went from 3 to 7 (six
+  white, capped by `max_candidates_per_polarity`, plus the one black circle),
+  and the real markers could be outranked by insets whose disks were cleaner
+  than their own.
+
+  The scorer now also requires the candidate to be *round*. A disk is radially
+  symmetric about the cell centre at every radius; an axis-aligned square is
+  not — it straddles a probe ring of radius `p` exactly when its half-side lies
+  in `(p / sqrt(2), p)`, and there it modulates the ring 4-fold. Sampling a
+  ladder of eleven probe rings from `0.50 r` to `2.02 r` and measuring the
+  4-theta harmonic *minus* the 2-theta one catches every inset size that could
+  alias, and catches nothing else: a square reads `0.45..0.64` of the disk-ring
+  contrast, while a disk reads `0` at every radius, whatever its printed
+  diameter, and so does a foreshortened one — perspective makes an ellipse,
+  whose pattern is 2-fold, so its 4-theta content is only the overtone of a
+  larger 2-theta one and subtracts away. The cut sits at `0.20`, midway between
+  two derived values rather than fitted to a frame. Each `CircleCandidate` now
+  reports what the gate measured, as `squareness`.
+
+  **Frame resolution scored the wrong thing.** Circles were matched first — by
+  distance between a board cell index and a detected cell index, which presumes
+  the very translation the alignment was supposed to establish — and the
+  alignment then picked, per transform, the highest *contrast-weighted*
+  translation bucket, with the inlier count only a tie-break. Two bright false
+  candidates could therefore outvote three real ones, and ties resolved by
+  `HashMap` iteration order, so the answer was not even deterministic.
+
+  It is now hypothesis-and-verify, the shape the ChArUco and PuzzleBoard
+  anchoring paths already use: every `(rotation, translation)` pinned by one
+  circle-to-candidate seed is enumerated, deduped, and scored by how many
+  expected circles it explains exactly. Only the four **rotations** are
+  searched, not the eight dihedral transforms — a camera imaging the printed
+  side of an opaque board cannot produce a reflection, so including them only
+  lets unreachable hypotheses compete (`GRID_TRANSFORMS_C4`, the same move
+  PuzzleBoard made in #88). A frame is accepted only when it explains at least
+  `min_offset_inliers` circles **and** strictly beats every other frame;
+  otherwise the new `MarkerBoardDetectError::AlignmentAmbiguous` says so.
+
+- **`MarkerBoardTargetSpec::default_circles` returned three invisible
+  circles on any board whose centre cell has odd parity** — a 6x8 board among
+  them, where it emitted the exact polarity inverse of every shipped fixture.
+  The renderer draws the requested colour without checking the square
+  underneath, so a white disk on a white square renders nothing at all. The
+  default L is now anchored on an even-parity cell, and
+  `validate_marker_board_spec` rejects any circle that matches its square with
+  `PrintableTargetError::InvisibleCircle`. `MarkerBoardSpec::default()` on the
+  detector side carried the same inconsistency — cells `(3, 2)` and `(2, 3)`
+  share a parity but were given opposite polarities — and now matches.
+
+- **The inner-square inset is no longer painted under a marker circle.** It is
+  drawn in the same white a marker disk needs, so leaving it in merged the two,
+  and once `inner_square_rel` reached `circle_diameter_rel` it swallowed the
+  disk whole. Marker cells are now exempt, exactly as an ArUco marker's bit
+  cells already were.
+
+- **A fully detected marker board dropped the board id and `target_position`
+  of its last row and column** — 13 of 48 corners on a 6x8 board. A circle
+  layout names *squares*, so the resolved frame labelled corners `1..=cols`,
+  outside the board's own index range, and left the labelled set's bounding-box
+  minimum at `(1, 1)` rather than `(0, 0)`. The frame is now shifted onto the
+  inner-corner indexing every other surface uses, and `target_position`
+  measures from the board's outer corner, matching the printable spec's
+  `resolved_points`.
+
+### Changed
+
+- **`CircleMatchParams::min_offset_inliers` now defaults to `3`** — the whole
+  layout — rather than `1`. One circle is consistent with all four rotations
+  and cannot determine an orientation however clean it looks; two leave no
+  redundancy to check a wrong pairing against. This costs nothing on a board
+  where all three markers are visible and costs recall on one where they are
+  not, which is the acceptable half of the detection contract.
+
+- **The printed disk diameter lives on the board, not in the scorer's tuning.**
+  `MarkerBoardSpec` gains `circle_diameter_rel` (default `0.5`) and
+  `CircleScoreParams` loses `diameter_frac`. They were the same physical
+  quantity stated twice, and the copies could disagree: a board printed at
+  `circle_diameter_rel: 0.45` was probed at `0.5`, putting every radius the
+  scorer uses — the shape gate's included — 11% off. `MarkerBoardSpec` also
+  stopped dropping the value when converted to a printable spec.
+
+### Breaking
+
+Detector-side marker-board API only. Nothing outside `calib-targets-marker`,
+its printable model, and the bindings that mirror them is affected.
+
+- `CircleScoreParams::diameter_frac` removed; use
+  `MarkerBoardSpec::circle_diameter_rel`.
+- `CircleMatchParams::max_distance_cells` and `CircleMatch::distance_cells`
+  removed. Both encoded the pre-alignment cell-distance idea the frame sweep
+  replaced; after it, a match is an exact integer coincidence, so the fields
+  could only ever have reported a constant.
+- `CircleMatch::with_match` drops its `distance_cells` argument.
+- `MarkerBoardDetectError` gains `AlignmentAmbiguous`; the enum is
+  `#[non_exhaustive]`, so a consumer with a wildcard arm is unaffected.
+- `MarkerBoardDiagnostics` gains `alignment_runner_up_inliers` and
+  `alignment_ambiguous`; `CircleCandidate` gains `squareness`.
+- `PrintableTargetError` gains `InvisibleCircle`. A previously accepted spec
+  whose circle polarity contradicts its square is now rejected — it was
+  rendering an invisible marker.
+- **C ABI 4.0.0 -> 5.0.0.** `ct_marker_board_layout_t` gains
+  `circle_diameter_rel`, `ct_circle_score_params_t` loses `diameter_frac`, and
+  `ct_circle_match_params_t` loses `max_distance_cells` — three
+  struct-layout-breaking changes.
+
+[#96]: https://github.com/VitalyVorobyev/calib-targets-rs/issues/96
+
 ## 0.14.1
 
 A patch: one additive field on three printable-target specs, and nothing else. No

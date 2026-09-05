@@ -101,25 +101,41 @@ impl MarkerBoardTargetSpec {
     }
 
     /// Compute a centred default 3-circle layout for the given board size.
+    ///
+    /// The L is anchored on an **even-parity** cell, so its white / black /
+    /// white polarities land on black / white / black squares and all three
+    /// disks are actually visible. Anchoring on the geometric centre alone —
+    /// as this did before — inverted every polarity on any board whose centre
+    /// happens to be odd, drawing three markers that render as nothing.
     pub fn default_circles(inner_rows: u32, inner_cols: u32) -> [MarkerCircleSpec; 3] {
         let squares_x = inner_cols + 1;
         let squares_y = inner_rows + 1;
-        let cx = squares_x / 2;
-        let cy = squares_y / 2;
+        let anchor_j = (squares_y / 2).saturating_sub(1);
+        let mut anchor_i = (squares_x / 2).saturating_sub(1);
+        if !(anchor_i + anchor_j).is_multiple_of(2) {
+            // Step towards the board origin when there is room, away from it
+            // otherwise; either keeps the L inside a board with at least three
+            // squares on a side, which `validate_inner_corner_grid` requires.
+            anchor_i = if anchor_i >= 1 {
+                anchor_i - 1
+            } else {
+                anchor_i + 1
+            };
+        }
         [
             MarkerCircleSpec {
-                i: cx.saturating_sub(1),
-                j: cy.saturating_sub(1),
+                i: anchor_i,
+                j: anchor_j,
                 polarity: CirclePolarity::White,
             },
             MarkerCircleSpec {
-                i: cx,
-                j: cy.saturating_sub(1),
+                i: anchor_i + 1,
+                j: anchor_j,
                 polarity: CirclePolarity::Black,
             },
             MarkerCircleSpec {
-                i: cx,
-                j: cy,
+                i: anchor_i + 1,
+                j: anchor_j + 1,
                 polarity: CirclePolarity::White,
             },
         ]
@@ -142,7 +158,7 @@ impl MarkerBoardTargetSpec {
                 try_printable_circle_from_detector_spec(circle1)?,
                 try_printable_circle_from_detector_spec(circle2)?,
             ],
-            circle_diameter_rel: default_circle_diameter_rel(),
+            circle_diameter_rel: f64::from(layout.circle_diameter_rel),
             inner_square_rel: None,
         })
     }
@@ -169,8 +185,31 @@ pub(crate) fn validate_marker_board_spec(
         if !seen.insert((circle.i, circle.j)) {
             return Err(PrintableTargetError::DuplicateCircleCells);
         }
+        if !circle_contrasts_with_square(circle) {
+            return Err(PrintableTargetError::InvisibleCircle {
+                i: circle.i,
+                j: circle.j,
+            });
+        }
     }
     Ok(())
+}
+
+/// Whether a circle's polarity contrasts with the square it sits on.
+///
+/// `build_chessboard` fills square `(i, j)` black when `i + j` is even, so a
+/// white disk is only visible on an even cell and a black disk only on an odd
+/// one. Nothing in the renderer checks this — it draws the requested colour —
+/// so the spec has to.
+pub(crate) fn circle_contrasts_with_square(circle: MarkerCircleSpec) -> bool {
+    let square_is_black = (circle.i + circle.j).is_multiple_of(2);
+    // NOTE: update this adapter when new CirclePolarity variants are added
+    // upstream (guarded by `circle_polarity_variant_guard`).
+    match circle.polarity {
+        CirclePolarity::White => square_is_black,
+        CirclePolarity::Black => !square_is_black,
+        _ => false,
+    }
 }
 
 pub(crate) fn try_printable_circle_from_detector_spec(
@@ -181,4 +220,51 @@ pub(crate) fn try_printable_circle_from_detector_spec(
         j: u32::try_from(circle.cell.j).map_err(|_| PrintableTargetError::InvalidCircleCell)?,
         polarity: circle.polarity,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every board size the spec accepts must get a default layout whose
+    /// three disks are visible. `default_circles` used to invert all three on
+    /// any board whose centre cell was odd — a 6x8 board among them.
+    #[test]
+    fn default_circles_are_always_visible() {
+        for inner_rows in 2..14u32 {
+            for inner_cols in 2..14u32 {
+                let spec = MarkerBoardTargetSpec::new(
+                    inner_rows,
+                    inner_cols,
+                    20.0,
+                    MarkerBoardTargetSpec::default_circles(inner_rows, inner_cols),
+                );
+                validate_marker_board_spec(&spec).unwrap_or_else(|err| {
+                    panic!("default layout for {inner_rows}x{inner_cols} is invalid: {err}")
+                });
+            }
+        }
+    }
+
+    /// A disk the same colour as its square renders nothing, so the spec is
+    /// rejected rather than silently producing a board with fewer markers than
+    /// it claims.
+    #[test]
+    fn a_circle_matching_its_square_is_rejected() {
+        let spec = MarkerBoardTargetSpec::new(
+            6,
+            8,
+            20.0,
+            [
+                // (2, 2) is even, i.e. a black square: a black disk vanishes.
+                MarkerCircleSpec::new(2, 2, CirclePolarity::Black),
+                MarkerCircleSpec::new(3, 2, CirclePolarity::Black),
+                MarkerCircleSpec::new(3, 3, CirclePolarity::White),
+            ],
+        );
+        assert!(matches!(
+            validate_marker_board_spec(&spec),
+            Err(PrintableTargetError::InvisibleCircle { i: 2, j: 2 })
+        ));
+    }
 }

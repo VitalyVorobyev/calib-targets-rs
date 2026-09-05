@@ -308,6 +308,9 @@ class CircleCandidate:
     polarity: CirclePolarity
     score: float
     contrast: float
+    # 4-fold angular modulation not explained as an elliptical overtone, as a
+    # fraction of ``contrast``: 0 for a disk, 0.45..0.64 for a square inset.
+    squareness: float
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import circle_candidate_to_dict
@@ -342,7 +345,6 @@ class MarkerCircleExpectation:
 class CircleMatch:
     expected: MarkerCircleExpectation
     matched_index: int | None
-    distance_cells: float | None
     offset_cells: CellOffset | None
 
     def to_dict(self) -> dict[str, Any]:

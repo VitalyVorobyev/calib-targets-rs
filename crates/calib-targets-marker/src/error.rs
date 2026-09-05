@@ -21,4 +21,18 @@ pub enum MarkerBoardDetectError {
         /// Total scored circle candidates considered.
         candidates: usize,
     },
+    /// Two or more board frames explain the detected circles equally well.
+    ///
+    /// The three marker circles exist to break the board's 4-fold rotational
+    /// symmetry; when a second frame explains them just as well they have
+    /// failed at that, and returning either one would put a wrong `(i, j)`
+    /// label on every corner. Reported as a failure rather than silently
+    /// resolved, because a rotated frame is unrecoverable downstream.
+    #[error("circle-marker alignment is ambiguous ({inliers} circles agree, and so do {runner_up} under another frame)")]
+    AlignmentAmbiguous {
+        /// Expected circles the best frame explained.
+        inliers: usize,
+        /// Expected circles the best competing frame explained.
+        runner_up: usize,
+    },
 }

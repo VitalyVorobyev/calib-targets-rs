@@ -622,11 +622,16 @@ export interface MarkerBoardSpec {
   /** Optional square size in world units; enables `target_position` on corners. */
   cell_size?: number;
   circles: [MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec];
+  /**
+   * Printed disk diameter as a fraction of the square side (default `0.5`).
+   * Every radius the circle scorer probes is relative to this, so it is the
+   * one place the disk size is stated.
+   */
+  circle_diameter_rel?: number;
 }
 
 export interface CircleScoreParams {
   patch_size: number;
-  diameter_frac: number;
   ring_thickness_frac: number;
   ring_radius_mul: number;
   min_contrast: number;
@@ -636,6 +641,11 @@ export interface CircleScoreParams {
 
 export interface CircleMatchParams {
   max_candidates_per_polarity: number;
+  /**
+   * Expected circles that must agree on one board frame. Defaults to `3` —
+   * the whole layout. The three circles exist only to break the board's
+   * 4-fold rotational symmetry, and fewer than all three cannot do it.
+   */
   min_offset_inliers: number;
 }
 
@@ -857,13 +867,18 @@ export interface CircleCandidate {
   polarity: CirclePolarity;
   score: number;
   contrast: number;
+  /**
+   * 4-fold angular modulation not explained as an elliptical overtone, as a
+   * fraction of `contrast`: `0` for a disk or a foreshortened disk,
+   * `0.45..0.64` for the square an `inner_square_rel` inset draws.
+   */
+  squareness: number;
 }
 
 /** An expected-to-detected circle pairing (Rust `CircleMatch`). */
 export interface CircleMatch {
   expected: MarkerCircleSpec;
   matched_index: number | null;
-  distance_cells: number | null;
   offset_cells: CellOffset | null;
 }
 
@@ -875,7 +890,12 @@ export interface MarkerBoardDiagnostics {
   circle_candidates: CircleCandidate[];
   /** Empty on the corners-only detection path. */
   circle_matches: CircleMatch[];
+  /** Circles consistent with the best board frame, accepted or not. */
   alignment_inliers: number;
+  /** Circles consistent with the best *competing* board frame. */
+  alignment_runner_up_inliers: number;
+  /** A second frame explained the circles as well, so no alignment was returned. */
+  alignment_ambiguous: boolean;
 }
 
 // --- PuzzleBoard diagnostics (Rust `PuzzleBoardDiagnostics`) ---------------

@@ -985,17 +985,17 @@ mod tests {
                     MarkerCircleSpec {
                         i: 3,
                         j: 2,
-                        polarity: CirclePolarity::White,
-                    },
-                    MarkerCircleSpec {
-                        i: 4,
-                        j: 2,
                         polarity: CirclePolarity::Black,
                     },
                     MarkerCircleSpec {
                         i: 4,
-                        j: 3,
+                        j: 2,
                         polarity: CirclePolarity::White,
+                    },
+                    MarkerCircleSpec {
+                        i: 4,
+                        j: 3,
+                        polarity: CirclePolarity::Black,
                     },
                 ],
                 circle_diameter_rel: 0.5,
@@ -1013,12 +1013,13 @@ mod tests {
         // would be the signal of a leak).
         assert!(!dxf.contains("ACCENT"));
         assert!(!dxf.contains("GUIDE"));
-        // Exactly one black circle in the scene (cell 4,2 polarity
-        // Black). The DXF must contain one CIRCLE; not two or three.
+        // Two black circles in the scene (cells 3,2 and 4,3); the white one
+        // on cell 4,2 carries no pattern. The DXF must contain two CIRCLEs,
+        // not three.
         assert_eq!(
             count_entities(dxf, "CIRCLE"),
-            1,
-            "only the one MarkerCircleSpec with polarity Black should reach DXF"
+            2,
+            "only the MarkerCircleSpecs with polarity Black should reach DXF"
         );
     }
 

@@ -208,14 +208,20 @@ class MarkerBoardTargetSpec:
     def default_circles(inner_rows: int, inner_cols: int) -> tuple[
         MarkerCircleSpec, MarkerCircleSpec, MarkerCircleSpec
     ]:
+        # The L is anchored on an even-parity cell so its white / black /
+        # white polarities land on black / white / black squares and all three
+        # disks are visible. Anchoring on the geometric centre alone inverted
+        # every polarity on any board whose centre happens to be odd.
         squares_x = inner_cols + 1
         squares_y = inner_rows + 1
-        cx = squares_x // 2
-        cy = squares_y // 2
+        anchor_j = max(squares_y // 2 - 1, 0)
+        anchor_i = max(squares_x // 2 - 1, 0)
+        if (anchor_i + anchor_j) % 2 != 0:
+            anchor_i = anchor_i - 1 if anchor_i >= 1 else anchor_i + 1
         return (
-            MarkerCircleSpec(i=max(cx - 1, 0), j=max(cy - 1, 0), polarity=CirclePolarity.WHITE),
-            MarkerCircleSpec(i=cx, j=max(cy - 1, 0), polarity=CirclePolarity.BLACK),
-            MarkerCircleSpec(i=cx, j=cy, polarity=CirclePolarity.WHITE),
+            MarkerCircleSpec(i=anchor_i, j=anchor_j, polarity=CirclePolarity.WHITE),
+            MarkerCircleSpec(i=anchor_i + 1, j=anchor_j, polarity=CirclePolarity.BLACK),
+            MarkerCircleSpec(i=anchor_i + 1, j=anchor_j + 1, polarity=CirclePolarity.WHITE),
         )
 
     def to_dict(self) -> dict[str, Any]:

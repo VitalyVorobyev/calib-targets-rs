@@ -168,11 +168,11 @@ fn marker_board_config_crop_png() -> ct_marker_board_detector_config_t {
                         polarity: CT_CIRCLE_POLARITY_WHITE,
                     },
                 ],
+                circle_diameter_rel: 0.5,
             },
             chessboard: chessboard_params_with_strength(0.2),
             circle_score: ct_circle_score_params_t {
                 patch_size: 64,
-                diameter_frac: 0.5,
                 ring_thickness_frac: 0.35,
                 ring_radius_mul: 1.6,
                 min_contrast: 60.0,
@@ -181,8 +181,7 @@ fn marker_board_config_crop_png() -> ct_marker_board_detector_config_t {
             },
             match_params: ct_circle_match_params_t {
                 max_candidates_per_polarity: 3,
-                max_distance_cells: ct_optional_f32_t::none(),
-                min_offset_inliers: 1,
+                min_offset_inliers: 3,
             },
             has_roi_cells: CT_FALSE,
             roi_cells: [0; 4],

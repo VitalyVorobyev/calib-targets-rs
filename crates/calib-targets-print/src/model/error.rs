@@ -64,6 +64,19 @@ pub enum PrintableTargetError {
     /// Two or more marker circles are placed in the same board cell.
     #[error("marker circle cells must be unique")]
     DuplicateCircleCells,
+    /// A marker circle carries the same colour as the square it is drawn on,
+    /// which renders nothing at all.
+    ///
+    /// The checkerboard's colour phase is fixed — square `(0, 0)` is black —
+    /// so a disk's polarity is determined by its cell: white on an even
+    /// `i + j`, black on an odd one. Nothing else is a marker.
+    #[error("marker circle at ({i}, {j}) matches the square underneath and would render invisible: a white circle needs an even `i + j`, a black circle an odd one")]
+    InvisibleCircle {
+        /// Cell column index of the offending circle.
+        i: u32,
+        /// Cell row index of the offending circle.
+        j: u32,
+    },
     /// The chosen ArUco dictionary has fewer codes than the board needs.
     #[error("board needs {needed} markers, dictionary has {available}")]
     NotEnoughDictionaryCodes {

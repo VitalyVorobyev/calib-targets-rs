@@ -16,8 +16,14 @@ name = "calib-targets-ffi"
 # `ct_*_detector_diagnose_json` (exported-symbol renames), and grows two
 # PuzzleBoard structs: `ct_puzzleboard_decode_config_t` gains `symmetry_mode`
 # and `ct_puzzleboard_result_t` gains the three period-3 consensus fields —
-# both struct-layout-breaking.
-version = "4.0.0"
+# both struct-layout-breaking. v5.0.0 reshapes the marker-board surface after
+# issue #96: `ct_marker_board_layout_t` gains `circle_diameter_rel` — the one
+# place the printed disk size is now stated — `ct_circle_score_params_t` loses
+# the `diameter_frac` copy of it, and `ct_circle_match_params_t` loses
+# `max_distance_cells`, a pre-alignment cell-distance gate the new
+# hypothesis-and-verify frame search has no use for. Three struct-layout
+# breaking changes.
+version = "5.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true
 license.workspace = true

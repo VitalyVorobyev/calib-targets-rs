@@ -24,6 +24,10 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+# `diagnostics` is enabled for tests only (resolver 2 keeps dev-dep features
+# out of the normal build) so the marker-board round-trip can inspect the
+# scored circle candidates, not just the final detection.
+calib-targets-marker = { workspace = true, features = ["diagnostics"] }
 tempfile.workspace = true
 
 [package.metadata.docs.rs]

@@ -567,6 +567,7 @@ def circle_candidate_to_dict(value: CircleCandidate) -> dict[str, Any]:
         "polarity": value.polarity.value,
         "score": float(value.score),
         "contrast": float(value.contrast),
+        "squareness": float(value.squareness),
     }
 
 
@@ -574,8 +575,8 @@ def circle_candidate_from_dict(data: Mapping[str, Any]) -> CircleCandidate:
     obj = _ensure_mapping(data, "CircleCandidate")
     _validate_keys(
         obj,
-        allowed={"center_img", "cell", "polarity", "score", "contrast"},
-        required={"center_img", "cell", "polarity", "score", "contrast"},
+        allowed={"center_img", "cell", "polarity", "score", "contrast", "squareness"},
+        required={"center_img", "cell", "polarity", "score", "contrast", "squareness"},
         ctx="CircleCandidate",
     )
     return CircleCandidate(
@@ -584,6 +585,7 @@ def circle_candidate_from_dict(data: Mapping[str, Any]) -> CircleCandidate:
         polarity=_to_circle_polarity(obj["polarity"], "CircleCandidate.polarity"),
         score=_to_float(obj["score"], "CircleCandidate.score"),
         contrast=_to_float(obj["contrast"], "CircleCandidate.contrast"),
+        squareness=_to_float(obj["squareness"], "CircleCandidate.squareness"),
     )
 
 
@@ -612,9 +614,6 @@ def circle_match_to_dict(value: CircleMatch) -> dict[str, Any]:
     return {
         "expected": marker_circle_expectation_to_dict(value.expected),
         "matched_index": int(value.matched_index) if value.matched_index is not None else None,
-        "distance_cells": float(value.distance_cells)
-        if value.distance_cells is not None
-        else None,
         "offset_cells": cell_offset_to_dict(value.offset_cells)
         if value.offset_cells is not None
         else None,
@@ -625,20 +624,16 @@ def circle_match_from_dict(data: Mapping[str, Any]) -> CircleMatch:
     obj = _ensure_mapping(data, "CircleMatch")
     _validate_keys(
         obj,
-        allowed={"expected", "matched_index", "distance_cells", "offset_cells"},
-        required={"expected", "matched_index", "distance_cells", "offset_cells"},
+        allowed={"expected", "matched_index", "offset_cells"},
+        required={"expected", "matched_index", "offset_cells"},
         ctx="CircleMatch",
     )
     matched_index = obj["matched_index"]
-    distance_cells = obj["distance_cells"]
     offset_cells = obj["offset_cells"]
     return CircleMatch(
         expected=marker_circle_expectation_from_dict(obj["expected"]),
         matched_index=_to_int(matched_index, "CircleMatch.matched_index")
         if matched_index is not None
-        else None,
-        distance_cells=_to_float(distance_cells, "CircleMatch.distance_cells")
-        if distance_cells is not None
         else None,
         offset_cells=cell_offset_from_dict(offset_cells)
         if offset_cells is not None

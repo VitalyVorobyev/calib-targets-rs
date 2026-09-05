@@ -2,8 +2,8 @@ use crate::circle_score::CircleCandidate;
 use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
 use crate::diagnostics::MarkerBoardDiagnostics;
 use crate::error::MarkerBoardDetectError;
-use crate::match_circles::{estimate_grid_alignment, match_expected_circles};
-use crate::types::{CircleMatch, MarkerBoardDetection, MarkerBoardParams};
+use crate::match_circles::{resolve_board_frame, FrameSearch};
+use crate::types::{MarkerBoardDetection, MarkerBoardParams};
 
 use nalgebra::Point2;
 
@@ -12,7 +12,7 @@ use calib_targets_chessboard::{
     ChessboardDetection, ChessboardDetector as ChessDetector, ChessboardParamsError,
 };
 use calib_targets_core::{
-    Coord, CornerMap, GrayImageView, GridAlignment, LabeledCorner, TargetDetection, TargetKind,
+    CornerMap, GrayImageView, GridAlignment, LabeledCorner, TargetDetection, TargetKind,
 };
 
 /// Marker board detector: chessboard + three circle markers.
@@ -163,8 +163,13 @@ impl MarkerBoardDetector {
             .roi_cells
             .map(|[i0, j0, i1, j1]| (i0, j0, i1, j1));
 
-        let mut candidates =
-            detect_circles_via_square_warp(image, &corner_map, &self.params.circle_score, roi);
+        let mut candidates = detect_circles_via_square_warp(
+            image,
+            &corner_map,
+            self.params.board.circle_diameter_rel,
+            &self.params.circle_score,
+            roi,
+        );
 
         let max_per = self.params.match_params.max_candidates_per_polarity;
         if max_per > 0 && !candidates.is_empty() {
@@ -172,59 +177,46 @@ impl MarkerBoardDetector {
             candidates = [white, black].concat();
         }
 
-        let mut matches = match_expected_circles(
+        let frame = resolve_board_frame(
             &self.params.board.circles,
             &candidates,
             &self.params.match_params,
         );
-        let (alignment, alignment_inliers) = estimate_grid_alignment(
-            &matches,
-            &candidates,
-            self.params.match_params.min_offset_inliers,
-        )
-        .map(|(alignment, inliers)| (Some(alignment), inliers))
-        .unwrap_or((None, 0));
 
-        let Some(alignment) = alignment else {
+        let Some(alignment) = frame.alignment else {
             // Counted before the vectors move into the diagnostics struct.
-            let matched = matches.iter().filter(|m| m.matched_index.is_some()).count();
+            let matched = frame
+                .matches
+                .iter()
+                .filter(|m| m.matched_index.is_some())
+                .count();
             let candidate_count = candidates.len();
-            return (
-                Err(MarkerBoardDetectError::AlignmentFailed {
+            let error = if frame.ambiguous {
+                MarkerBoardDetectError::AlignmentAmbiguous {
+                    inliers: frame.inliers,
+                    runner_up: frame.runner_up_inliers,
+                }
+            } else {
+                MarkerBoardDetectError::AlignmentFailed {
                     matched,
                     candidates: candidate_count,
-                }),
+                }
+            };
+            return (
+                Err(error),
                 MarkerBoardDiagnostics {
                     inliers: Vec::new(),
                     circle_candidates: candidates,
-                    circle_matches: matches,
-                    alignment_inliers: 0,
+                    circle_matches: frame.matches,
+                    alignment_inliers: frame.inliers,
+                    alignment_runner_up_inliers: frame.runner_up_inliers,
+                    alignment_ambiguous: frame.ambiguous,
                 },
             );
         };
-        for m in &mut matches {
-            let Some(idx) = m.matched_index else {
-                continue;
-            };
-            let Some(cand) = candidates.get(idx) else {
-                continue;
-            };
-            let r = alignment
-                .with_translation([0, 0])
-                .apply(Coord::new(cand.cell.i, cand.cell.j));
-            m.offset_cells = Some(crate::coords::CellOffset {
-                di: m.expected.cell.i - r.u,
-                dj: m.expected.cell.j - r.v,
-            });
-        }
 
-        let (detection, diagnostics) = self.result_from_chessboard(
-            chess,
-            candidates,
-            matches,
-            Some(alignment),
-            alignment_inliers,
-        );
+        let (detection, diagnostics) =
+            self.result_from_chessboard(chess, candidates, frame, corner_frame(alignment));
         (Ok(detection), diagnostics)
     }
 
@@ -232,62 +224,95 @@ impl MarkerBoardDetector {
         &self,
         chess: ChessboardDetection,
         circle_candidates: Vec<CircleCandidate>,
-        circle_matches: Vec<CircleMatch>,
-        alignment: Option<GridAlignment>,
-        alignment_inliers: usize,
+        frame: FrameSearch,
+        alignment: GridAlignment,
     ) -> (MarkerBoardDetection, MarkerBoardDiagnostics) {
         let (target, inliers) = chessboard_detection_to_target(&chess);
         let mut detection = relabel_as_marker(target);
-        if let Some(alignment) = alignment {
-            for corner in &mut detection.corners {
-                if let Some(grid) = &mut corner.grid {
-                    let g = alignment.apply(*grid);
-                    grid.u = g.u;
-                    grid.v = g.v;
-                }
-            }
-
-            let cols = i32::try_from(self.params.board.cols).ok();
-            let rows = i32::try_from(self.params.board.rows).ok();
-            if let Some((cols, rows)) = cols.zip(rows) {
-                let cell_size = self.params.board.cell_size;
-                for corner in &mut detection.corners {
-                    let Some(grid) = corner.grid else {
-                        continue;
-                    };
-                    if grid.u < 0 || grid.v < 0 || grid.u >= cols || grid.v >= rows {
-                        continue;
-                    }
-                    let id = (grid.v as u32)
-                        .checked_mul(self.params.board.cols)
-                        .and_then(|base| base.checked_add(grid.u as u32));
-                    corner.id = id;
-                    if let Some(size) = cell_size.filter(|s| s.is_finite() && *s > 0.0) {
-                        corner.target_position =
-                            Some(Point2::new(grid.u as f32 * size, grid.v as f32 * size));
-                    }
-                }
-
-                detection.corners.sort_by(|a, b| {
-                    // INVARIANT: grid coordinates are always populated for every corner
-                    // at this point — they are assigned in the loop above via the
-                    // `set_grid_coords_from_chess` call before this sort.
-                    let ga = a.grid.unwrap();
-                    let gb = b.grid.unwrap();
-                    (ga.v, ga.u).cmp(&(gb.v, gb.u))
-                });
-            }
-        }
+        self.apply_board_frame(&mut detection, alignment);
         (
-            MarkerBoardDetection::from_target_detection(detection, alignment),
+            MarkerBoardDetection::from_target_detection(detection, Some(alignment)),
             MarkerBoardDiagnostics {
                 inliers,
                 circle_candidates,
-                circle_matches,
-                alignment_inliers,
+                circle_matches: frame.matches,
+                alignment_inliers: frame.inliers,
+                alignment_runner_up_inliers: frame.runner_up_inliers,
+                alignment_ambiguous: frame.ambiguous,
             },
         )
     }
+
+    /// Relabel every corner into the board frame, then attach the
+    /// board-canonical id and physical position to the ones that land inside
+    /// the board.
+    fn apply_board_frame(&self, detection: &mut TargetDetection, alignment: GridAlignment) {
+        for corner in &mut detection.corners {
+            if let Some(grid) = &mut corner.grid {
+                let g = alignment.apply(*grid);
+                grid.u = g.u;
+                grid.v = g.v;
+            }
+        }
+
+        let Some((cols, rows)) = i32::try_from(self.params.board.cols)
+            .ok()
+            .zip(i32::try_from(self.params.board.rows).ok())
+        else {
+            return;
+        };
+        let cell_size = self
+            .params
+            .board
+            .cell_size
+            .filter(|s| s.is_finite() && *s > 0.0);
+        for corner in &mut detection.corners {
+            let Some(grid) = corner.grid else {
+                continue;
+            };
+            if grid.u < 0 || grid.v < 0 || grid.u >= cols || grid.v >= rows {
+                continue;
+            }
+            corner.id = (grid.v as u32)
+                .checked_mul(self.params.board.cols)
+                .and_then(|base| base.checked_add(grid.u as u32));
+            if let Some(size) = cell_size {
+                // Inner corner `(u, v)` sits one full square in from the
+                // board's outer corner, which is where board space starts —
+                // the same origin the printable spec's `resolved_points`
+                // measures from.
+                corner.target_position = Some(Point2::new(
+                    (grid.u + 1) as f32 * size,
+                    (grid.v + 1) as f32 * size,
+                ));
+            }
+        }
+
+        detection.corners.sort_by(|a, b| {
+            // INVARIANT: every corner reaching this stage came from the
+            // chessboard detector with a grid coordinate, and the relabelling
+            // above preserves it.
+            let ga = a.grid.unwrap();
+            let gb = b.grid.unwrap();
+            (ga.v, ga.u).cmp(&(gb.v, gb.u))
+        });
+    }
+}
+
+/// Re-express an accepted board frame in inner-corner coordinates.
+///
+/// A circle layout is written in *square* indices — cell `(i, j)` is the
+/// square whose top-left corner is grid `(i, j)` — so a frame that carries
+/// detected cells onto board cells labels corners `1..=cols`, leaving the last
+/// row and column of a fully detected board outside the board's own index
+/// range and stripped of their ids. Every other surface indexes inner corners
+/// from zero: the printable spec's `resolved_points`, the board-canonical
+/// corner ids, and the workspace rule that a labelled set's bounding-box
+/// minimum is `(0, 0)`. One shift converts, and it belongs here rather than in
+/// the layout, so a hand-written `MarkerBoardSpec` keeps naming squares.
+fn corner_frame(alignment: GridAlignment) -> GridAlignment {
+    let [di, dj] = alignment.translation();
+    alignment.with_translation([di - 1, dj - 1])
 }
 
 /// Adapt a [`ChessboardDetection`] into the generic [`TargetDetection`]

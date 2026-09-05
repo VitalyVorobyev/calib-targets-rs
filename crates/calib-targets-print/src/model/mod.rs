@@ -565,9 +565,9 @@ mod tests {
             6,
             8,
             [
-                DetectorMarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::White),
-                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 2 }, CirclePolarity::Black),
-                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 3 }, CirclePolarity::White),
+                DetectorMarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 2 }, CirclePolarity::White),
+                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 3 }, CirclePolarity::Black),
             ],
         )
         .with_cell_size(20.0);
@@ -581,17 +581,17 @@ mod tests {
                 MarkerCircleSpec {
                     i: 3,
                     j: 2,
-                    polarity: CirclePolarity::White,
-                },
-                MarkerCircleSpec {
-                    i: 4,
-                    j: 2,
                     polarity: CirclePolarity::Black,
                 },
                 MarkerCircleSpec {
                     i: 4,
-                    j: 3,
+                    j: 2,
                     polarity: CirclePolarity::White,
+                },
+                MarkerCircleSpec {
+                    i: 4,
+                    j: 3,
+                    polarity: CirclePolarity::Black,
                 },
             ]
         );
@@ -604,9 +604,9 @@ mod tests {
             6,
             8,
             [
-                DetectorMarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::White),
-                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 2 }, CirclePolarity::Black),
-                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 3 }, CirclePolarity::White),
+                DetectorMarkerCircleSpec::new(CellCoords { i: 3, j: 2 }, CirclePolarity::Black),
+                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 2 }, CirclePolarity::White),
+                DetectorMarkerCircleSpec::new(CellCoords { i: 4, j: 3 }, CirclePolarity::Black),
             ],
         )
         .with_cell_size(20.0);

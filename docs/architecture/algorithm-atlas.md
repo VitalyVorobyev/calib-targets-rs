@@ -199,10 +199,9 @@ Grid delegated to `chess`; circles are the pose anchor, not decoded markers.
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Circle scoring | `marker circle_score.rs::score_circle_in_square` | warped cell + params → (center, contrast, polarity) | Fit a circle to cell contrast, report center + polarity. | ✅ |
+| Circle scoring | `marker circle_score.rs::score_circle_in_square` | warped cell + params → (center, contrast, polarity, squareness) | Disk-vs-ring level contrast, then a shape gate: the 4-theta harmonic of a probe ladder, minus the 2-theta one an ellipse would explain, must stay near zero. | ✅ |
 | Circle detection via warp | `marker detect.rs::detect_circles_via_square_warp` | image + corner map → candidates | Warp each cell, score circles, rank by polarity. | ✅ |
-| Circle matching | `marker match_circles.rs::match_expected_circles` | expected + candidates → matches | Permutation search minimising total distance with polarity + offset consistency. | ✅ |
-| Grid-alignment from circles | `marker match_circles.rs::estimate_grid_alignment` | matched circles → alignment | Offset-consensus rotation + translation. | ✅ |
+| Board-frame resolution | `marker match_circles.rs::resolve_board_frame` | expected + candidates → alignment + matches | Hypothesis-and-verify over `C4`: enumerate every seeded `(rotation, translation)`, score by circles explained exactly, accept only a unique full-layout frame. | ✅ |
 
 ---
 
