@@ -124,6 +124,42 @@ coupling `projective-grid` to a target family.
 
 ---
 
+### Gap 21 — Hex and low-orientation square lattices have no real-image evidence
+
+`projective-grid`'s hex `Positions`, `Oriented1` and `Oriented3` modes, and the
+square `Positions` / `Oriented1` modes, have deterministic synthetic coverage
+and nothing else. They are exercised by construction, not by a camera, so they
+remain **experimental**: nothing here should be read as a production-readiness
+claim for them until a representative real-image campaign exists.
+
+**Fix.** A real-image campaign per mode, blessed the way the chessboard
+baselines are. Until then, `book/src/overview.md#gaps-and-early-stage-areas`
+should keep saying so.
+
+### Gap 22 — The `expert` namespace is not yet a compatibility boundary
+
+`projective_grid::expert` is deliberately useful to detector builders, and it is
+the seam a sibling crate reaches through. But it has never been reviewed as a
+*stable* surface, so it is not a 1.0-quality compatibility boundary and the
+crate should not be called 1.0 while that is true.
+
+**Fix.** An API-surface pass over `expert` specifically: what is genuinely a
+building block, what leaked out of a refactor, and what should be `#[doc(hidden)]`.
+
+### Gap 23 — The global projective fit is a diagnostic approximation
+
+Under strong lens distortion no single homography represents the board, so the
+global projective fit is an approximation and its residual is a diagnostic
+signal rather than a gate. The chessboard's final geometry check is deliberately
+local for that reason and does not produce a second global-fit residual — so
+there is no global number to compare across frames, by design.
+
+**Fix.** None needed as a defect; recorded so the absence of a global residual
+is not read as an oversight. See the architectural-direction note below on why
+precision at the frontier stays local.
+
+---
+
 ## Architectural-direction summary
 
 The next architectural move is the **distortion-recall** line: recovering

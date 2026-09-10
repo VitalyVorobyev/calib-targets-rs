@@ -1,8 +1,21 @@
-# Refactor gates — projective-grid generalization effort
+# Refactor gates — for any change that can move a label
 
-Every phase of the projective-grid generalization / workspace-hardening effort
-(plan: production-ready calib-targets-rs) lands behind the same gate. PRs
-reference this file instead of restating the protocol.
+The gate below is the standing protocol for **any** change that could alter
+which corners get labelled or how — a detector algorithm, a grid-build stage, a
+validation predicate, a scoring change. It is heavier than the everyday gate in
+[`release-gates.md`](release-gates.md) because it adds the two regression cells
+and the bless protocol: a change that shifts a `(i, j)` label is not caught by
+`cargo test`.
+
+It was written for the projective-grid generalization effort, which has since
+finished. The protocol outlived it — nothing here was specific to that plan —
+so this file is now scoped by *what a change touches*, not by which effort it
+belongs to. PRs reference it instead of restating the protocol.
+
+**When it does not apply.** A change that provably cannot move a label — a doc
+fix, a new target type that adds a code path without touching an existing one,
+a binding surface — takes the everyday gate only. If you are unsure whether a
+change can move a label, it can; run this.
 
 ## The standing gate
 
