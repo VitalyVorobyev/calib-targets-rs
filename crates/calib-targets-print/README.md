@@ -1,7 +1,8 @@
 # calib-targets-print
 
 Printable-target generation for the [calib-targets] workspace. A single
-JSON document describes a target (chessboard, ChArUco, PuzzleBoard, or
+JSON document describes a target (chessboard, ChArUco, PuzzleBoard,
+PuzzlePole, or
 marker board) plus a page size; the renderer emits a matching `.json` +
 `.svg` + `.png` bundle. Same API is re-exported from the facade as
 `calib_targets::printable`.
@@ -64,7 +65,7 @@ and load them via `PrintableTargetDocument::load_json`.
 | Field | Type | Purpose |
 |---|---|---|
 | `schema_version` | `u32` | Currently `1`. |
-| `target` | [`TargetSpec`] | Discriminated union: `Chessboard`, `Charuco`, `MarkerBoard`, `PuzzleBoard`. |
+| `target` | [`TargetSpec`] | Discriminated union: `Chessboard`, `Charuco`, `MarkerBoard`, `PuzzleBoard`, `PuzzlePole`. |
 | `page` | [`PageSpec`] | `size` (`A4` / `Letter` / `Custom`), `orientation`, `margin_mm`. |
 | `render` | [`RenderOptions`] | `debug_annotations`, `png_dpi`. |
 
@@ -79,6 +80,7 @@ board does not fit inside the printable area after margins.
 | [`CharucoTargetSpec`] | `rows`, `cols`, `square_size_mm`, `marker_size_rel`, `dictionary`, `border_bits`, `marker_layout` |
 | [`MarkerBoardTargetSpec`] | `inner_rows`, `inner_cols`, `square_size_mm`, `circles: [MarkerCircleSpec; 3]`, `circle_diameter_rel` |
 | [`PuzzleBoardTargetSpec`] | `rows`, `cols`, `square_size_mm`, `origin_row`, `origin_col`, `dot_diameter_rel` |
+| [`PuzzlePoleTargetSpec`] | `circumference_squares`, `start_row`, `axial_squares`, `square_size_mm`, `axial_start_col`, `dot_diameter_rel` — a wrap strip for a cylinder; the circumference must be a period that closes |
 
 ## Outputs
 

@@ -12,7 +12,8 @@ published Rust crates, the repo-local CLI, and the Python bindings.
 The input is one canonical JSON-backed document with:
 
 - `schema_version`
-- `target`: `chessboard`, `charuco`, `marker_board`, or `puzzle_board`
+- `target`: `chessboard`, `charuco`, `marker_board`, `puzzle_board`, or
+  `puzzlepole`
 - `page`: size, orientation, and margin in millimeters
 - `render`: debug overlay toggle and PNG DPI
 
@@ -70,6 +71,27 @@ Matching examples also exist for chessboard and marker-board targets:
 - `testdata/printable/marker_board_a4.json`
 - `testdata/printable/puzzleboard_small.json`
 - `testdata/printable/puzzleboard_mid.json`
+
+## The cylindrical target
+
+`puzzlepole` is the one target here that is not printed flat and used flat. It
+is a PuzzleBoard strip cut to wrap a cylinder, and it differs from every other
+spec in two ways worth stating here rather than only in the how-to:
+
+- **The size is not free.** The pattern closes at only a few circumferences, so
+  the resulting diameter is quantised at `circumference_squares * square_size_mm
+  / π`. An unsupported circumference is rejected rather than rounded — there is
+  no nearest fit that still meets itself.
+- **The sheet is bigger than the target.** The strip is printed
+  `circumference_squares + 2` pieces around, two more than wrap, so it can be
+  trimmed mid-piece at both ends and still leave one piece of glue overlap.
+
+Everything else is the same document, the same bundle, and the same renderer:
+the strip *is* a sub-rectangle of the master pattern, so it goes through the
+PuzzleBoard drawing path rather than a parallel one.
+
+See [Print and wrap a PuzzlePole](howto_print_puzzlepole.md) for the diameter
+table, the trim lines, and the coordinate frame.
 
 ## The inner white square
 
