@@ -90,6 +90,31 @@ impl PuzzlePolePeriod {
         self.squares + 1
     }
 
+    /// The piece size that makes this period wrap a cylinder of `diameter_mm`.
+    ///
+    /// The usual situation is the reverse of the one
+    /// [`PuzzlePoleSpec::new`](super::PuzzlePoleSpec::new) assumes: you have a
+    /// tube, and you need a target that fits it. Since
+    /// `diameter = squares × piece / π`, the piece size follows —
+    ///
+    /// ```
+    /// use calib_targets_puzzleboard::PuzzlePolePeriod;
+    ///
+    /// // A 75 mm tube, wrapped at each supported circumference.
+    /// for period in PuzzlePolePeriod::all_with_squares(18) {
+    ///     let piece = period.piece_size_for_diameter(75.0);
+    ///     assert!((piece - 13.09).abs() < 0.01);
+    /// }
+    /// ```
+    ///
+    /// Every period can wrap every diameter; what changes is how big a piece
+    /// is, and therefore how many pixels a code dot gets. Prefer the largest
+    /// piece the tube and the sheet allow.
+    #[must_use]
+    pub fn piece_size_for_diameter(self, diameter_mm: f32) -> f32 {
+        core::f32::consts::PI * diameter_mm / self.squares as f32
+    }
+
     /// Look up a verified period by its `(squares, start_row)` pair.
     ///
     /// Returns `None` for any pair not in [`SUPPORTED_PERIODS`], even if it
@@ -384,6 +409,21 @@ mod tests {
             !piece_rows_agree(73, 118),
             "the two period-12 strips would be the same pattern"
         );
+    }
+
+    /// The reverse question — "I have this tube, what piece size do I need?" —
+    /// must round-trip against the forward one.
+    #[test]
+    fn the_piece_size_for_a_diameter_reproduces_that_diameter() {
+        for p in SUPPORTED_PERIODS {
+            let piece = p.piece_size_for_diameter(75.0);
+            let back = p.squares as f32 * piece / core::f32::consts::TAU * 2.0;
+            assert!(
+                (back - 75.0).abs() < 1e-3,
+                "period {} round-tripped a 75 mm tube to {back} mm",
+                p.squares
+            );
+        }
     }
 
     #[test]

@@ -59,6 +59,26 @@ period is really a trade between **piece size** — how many pixels a code dot
 gets, so how far away it still reads — and **how much of the circumference is
 visible at once**. A bigger pole needs a bigger sheet, not a different period.
 
+### If you already have the tube
+
+The more common situation is the reverse: you have a tube and need a target
+that fits it. `diameter = p × piece / π` rearranges, so
+
+```rust
+use calib_targets::puzzleboard::PuzzlePolePeriod;
+
+// A 75 mm tube: what piece size does each circumference need?
+for squares in [12, 18, 24, 30, 36, 42, 48] {
+    let period = PuzzlePolePeriod::canonical(squares).expect("a supported circumference");
+    println!("{squares:2} pieces -> {:.1} mm", period.piece_size_for_diameter(75.0));
+}
+// 12 -> 19.6   18 -> 13.1   24 -> 9.8   30 -> 7.9   36 -> 6.5   42 -> 5.6   48 -> 4.9
+```
+
+Every period wraps every diameter; what changes is how large a piece is, and
+so how many pixels a code dot gets. Take the largest piece the tube and the
+sheet both allow.
+
 ## 2. Generate the strip
 
 ```bash
