@@ -49,29 +49,58 @@ pub struct Camera {
 
 impl Camera {
     /// A camera at `distance` from the pole's axis, on the azimuth `theta_deg`,
-    /// at height `z_mm` up the pole, looking straight at the axis.
+    /// looking at the point `look_at_z` up the pole from an elevation of
+    /// `elevation_deg`.
     ///
     /// `theta_deg` is in the pole's own frame, so `0` looks straight at the
     /// seam — which is how a test asks for a seam-crossing view.
+    ///
+    /// **Elevation is the interesting parameter.** At `0` the camera is level
+    /// with its target and the cylinder axis lies in the image plane, which is
+    /// the *easy* case for a validator that assumes straight grid lines: the
+    /// circumferential rows project to arcs of near-zero sagitta. Raise the
+    /// elevation and the axis tilts out of the image plane, the rows bow, and a
+    /// straight-line prior starts to strain. A test that only ever passes `0`
+    /// is not testing curvature at all.
     pub fn looking_at_pole(
         theta_deg: f32,
         distance_mm: f32,
-        z_mm: f32,
+        look_at_z: f32,
+        width: u32,
+        height: u32,
+        fx: f32,
+    ) -> Self {
+        Self::looking_at_pole_from(theta_deg, 0.0, distance_mm, look_at_z, width, height, fx)
+    }
+
+    /// As [`Camera::looking_at_pole`], with an explicit elevation.
+    pub fn looking_at_pole_from(
+        theta_deg: f32,
+        elevation_deg: f32,
+        distance_mm: f32,
+        look_at_z: f32,
         width: u32,
         height: u32,
         fx: f32,
     ) -> Self {
         let theta = theta_deg.to_radians();
-        // Camera centre in pole coordinates.
-        let eye = Point3::new(distance_mm * theta.cos(), distance_mm * theta.sin(), z_mm);
-        // Camera looks at the axis at the same height: forward is -radial.
-        let forward = Vector3::new(-theta.cos(), -theta.sin(), 0.0);
-        // Image +y points down the pole, so camera "down" is pole -Z.
-        let down = Vector3::new(0.0, 0.0, -1.0);
-        let right = down.cross(&forward);
+        let elevation = elevation_deg.to_radians();
+        let target = Point3::new(0.0, 0.0, look_at_z);
+        let eye = Point3::new(
+            distance_mm * elevation.cos() * theta.cos(),
+            distance_mm * elevation.cos() * theta.sin(),
+            look_at_z + distance_mm * elevation.sin(),
+        );
 
-        // Rows of R are the camera axes expressed in pole coordinates, which is
-        // exactly the map from pole directions to camera directions.
+        let forward = (target - eye).normalize();
+        // World up is the pole's own axis; the camera's "down" is whatever is
+        // left after removing the forward component, so the image stays level.
+        let world_up = Vector3::new(0.0, 0.0, 1.0);
+        let right = forward.cross(&world_up).normalize();
+        let down = forward.cross(&right);
+
+        // Rows of R are the camera axes in pole coordinates, which is exactly
+        // the map from pole directions to camera directions.
         let r_cam_pole =
             Matrix3::from_rows(&[right.transpose(), down.transpose(), forward.transpose()]);
         let t_cam_pole = -r_cam_pole * eye.coords;

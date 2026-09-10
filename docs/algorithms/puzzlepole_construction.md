@@ -389,11 +389,16 @@ is measured, so it is not the threshold-tightening the contract forbids.
 
 ## 10. Still open
 
-- **Grid assembly on a curved surface** — §6 of this note localises the risk to
-  `shared/validate/lines.rs`, which fits *straight* lines to grid rows and
-  columns. On a cylinder the axial lines stay straight and the circumferential
-  ones project to conics. Needs a measurement on rendered cylinders before any
-  change.
+- **Grid assembly on a curved surface** — **measured, and it does not fire.**
+  §6 localised the risk to `shared/validate/lines.rs`, which fits *straight*
+  lines to grid rows and columns while a cylinder's circumferential rows project
+  to conics. Rendering analytic cylinders and running the real grid builder over
+  them shows a single component and essentially total labelling at both the
+  smallest and largest shipped circumference, across axis tilts to 45° — see
+  Gap 24 in [`algorithmic_gaps.md`](algorithmic_gaps.md) for the numbers and
+  for the conditions under which it should be re-checked. The sagitta estimate
+  that raised the alarm was pessimistic: the tolerance is relative to the local
+  cell size, which foreshortens along with the residual it bounds.
 - **The colour bit is not modelled** in the floor measurement, matching the
   planar harness: a dot readout carries no parity. Withholding information can
   only raise a floor, so every number above is an upper bound.

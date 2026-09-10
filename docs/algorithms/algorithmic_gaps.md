@@ -158,30 +158,41 @@ there is no global number to compare across frames, by design.
 is not read as an oversight. See the architectural-direction note below on why
 precision at the frontier stays local.
 
-### Gap 24 — Straight-line validation on a curved target
+### Gap 24 — Straight-line validation on a curved target — **measured, not observed**
 
-`shared/validate/lines.rs` fits a **total-least-squares straight line** to every
-grid row and column in pixel space and flags members beyond
-`line_tol_rel × scale`. That is right for a plane and wrong for a cylinder: a
-PuzzlePole's axial grid lines are generatrices and do project to straight lines,
-but its circumferential lines lie on circles and project to **conics**. Over a
-120–180° visible sector the sagitta can exceed the tolerance, and the
-attribution rule "flagged in ≥ 2 lines ⇒ outlier" would then blacklist genuine
-corners. `run_geometry_check` is mandatory on the chessboard path, so there is
-no way to opt out of it today.
+**The hypothesis.** `shared/validate/lines.rs` fits a total-least-squares
+*straight* line to every grid row and column and flags members beyond
+`line_tol_rel × scale`. On a cylinder the axial grid lines are generatrices and
+project to straight lines, but the circumferential ones lie on circles and
+project to **conics**. A sagitta estimate suggested the check would start
+flagging once the pole's axis tilted more than a few degrees out of the image
+plane, which would drop genuine corners — and `run_geometry_check` is mandatory
+on the chessboard path, so there is no opting out.
 
-**Fix.** Structural, not a loosened tolerance: a straight line is the degenerate
-conic, so the principled generalisation is a curvature-continuity /
-second-difference predicate along the grid line, which subsumes the planar case
-rather than special-casing the cylinder. This also matches the workspace rule
-preferring second-order criteria to first-order magnitude thresholds.
+**The measurement.** `calib-targets-puzzleboard`'s
+`puzzlepole_synthetic::the_grid_builder_survives_a_cylinder` renders analytic
+cylinders and runs the real grid builder over them, sweeping the two parameters
+that strain a straight-line prior: axis tilt, and circumference (a row's sagitta
+in *cell* units goes as the radius in cells, `p / 2π`, so `p = 48` bows twice as
+hard per visible arc as `p = 24`).
 
-**Measure first.** Render a synthetic cylinder, run the grid build with
-per-stage diagnostics, and report which stage drops which corners before
-changing anything. The local-homography check is *not* expected to be the
-problem — a cylinder is locally near-planar — and the global-homography
-extension fails safe by refusing to attach. Recorded from the PuzzlePole design
-note (`docs/algorithms/puzzlepole_construction.md`).
+At every geometry where corners are plentiful the grid builds in a **single
+component** and labels essentially all of them — 77/77, 53/55, 30/31 at `p = 48`
+across tilts of 0°, 15° and 30°, and at or above the detected count at
+`p = 24`. The only row that yields nothing is `p = 48` at 45°, where **three**
+corners are visible at all: a visibility limit, not a validator failure.
+
+**So the gap does not fire, and the sagitta estimate was pessimistic.** The
+likely reason is that the tolerance is relative to the *local* cell size, which
+foreshortens along with the residual it is bounding, so the two move together.
+
+**Left open rather than closed**, because the measurement covers what the crate
+ships and not more. Re-check if any of these change: a visible sector wider than
+about ±60° (the fairness line the test uses), a tighter `line_tol_rel`, or a
+circumference beyond 48. The structural fix, if it is ever needed, is stated
+above: a straight line is the degenerate conic, so the general predicate is
+curvature continuity along the grid line, which subsumes the planar case rather
+than special-casing the cylinder.
 
 ---
 

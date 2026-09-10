@@ -223,3 +223,106 @@ fn dump_a_rendered_pole() {
         }
     }
 }
+
+/// Does the grid builder survive a curved surface?
+///
+/// This is the measure-first step Gap 24 in
+/// `docs/algorithms/algorithmic_gaps.md` asks for, and the answer measured here
+/// is **yes** — which is not what the analysis predicted.
+///
+/// The concern is specific: `projective-grid`'s validation fits **straight**
+/// total-least-squares lines to every grid row and column, and on a cylinder
+/// the axial lines are generatrices and stay straight while the circumferential
+/// ones lie on circles and project to conics. If that check fires it drops
+/// genuine corners, and it is mandatory on the chessboard path.
+///
+/// It does not fire. At every geometry where corners are plentiful the grid
+/// builds in a **single component** and keeps essentially all of them, at both
+/// the smallest and the largest shipped circumference and at axis tilts to 45
+/// degrees. The one row that yields nothing is `p = 48` at 45 degrees, where
+/// only three corners are visible at all — a visibility limit, not a validator
+/// failure, and excluded by the `detected >= 12` guard below rather than by
+/// special-casing it.
+///
+/// The numbers are printed because the trend is the finding; the assertion only
+/// catches a regression into outright failure.
+#[test]
+fn the_grid_builder_survives_a_cylinder() {
+    use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
+
+    // Two parameters strain a straight-line prior, and both are swept.
+    //
+    // **Elevation.** At 0 the axis lies in the image plane and the
+    // circumferential rows project to arcs of near-zero sagitta -- the *easy*
+    // case. Tilting the axis out of the image plane is what makes them bow.
+    //
+    // **Circumference.** A row's sagitta in *cell* units goes as the radius in
+    // cells, which is `p / 2pi`. So a 48-piece pole bows twice as hard per
+    // visible arc as a 24-piece one, and is the worst case the crate ships.
+    let mut failures: Vec<(u32, f32, usize, usize)> = Vec::new();
+    for period in [24u32, 48] {
+        let spec = PuzzlePoleSpec::new(period, 8, 20.0).expect("a supported circumference");
+        for elevation in [0.0f32, 15.0, 30.0, 45.0] {
+            let camera =
+                Camera::looking_at_pole_from(0.0, elevation, 420.0, 80.0, 900, 700, 1400.0);
+            let img = render(&spec, &camera);
+            let expected = visible_corners(&spec, &camera, FAIR_FORESHORTENING);
+            let found = detect_corners(&img);
+            let (detected, _) = recall(&expected, &found, 2.0);
+
+            let corners: Vec<_> =
+                ChessDetector::new(default_chess_config().with_detection(|d| d.nms_radius = 3))
+                    .expect("build ChESS detector")
+                    .detect(&img)
+                    .expect("ChESS detection")
+                    .iter()
+                    .map(|c| {
+                        calib_targets_chessboard::ChessCorner::new(
+                            nalgebra::Point2::new(c.x, c.y),
+                            c.axes
+                                .map(|a| {
+                                    [
+                                        calib_targets_core::AxisEstimate {
+                                            angle: a[0].angle,
+                                            sigma: a[0].sigma,
+                                        },
+                                        calib_targets_core::AxisEstimate {
+                                            angle: a[1].angle,
+                                            sigma: a[1].sigma,
+                                        },
+                                    ]
+                                })
+                                .expect("orientation fit enabled"),
+                            c.response,
+                        )
+                    })
+                    .collect();
+
+            let mut params = ChessboardParams::default();
+            params.min_corner_strength = 33.0;
+            let grids = ChessboardDetector::new(params)
+                .expect("chessboard detector")
+                .detect_all(&corners);
+            let labelled: usize = grids.iter().map(|g| g.corners.len()).sum();
+
+            println!(
+                "p={period:2} elevation={elevation:4.0} deg: {} expected, \
+             {detected} ChESS-detected, {labelled} labelled across {} component(s)",
+                expected.len(),
+                grids.len()
+            );
+
+            // Collected rather than asserted per row, so one failure does not
+            // hide the trend -- and the trend is the finding here.
+            if detected >= 12 && (grids.is_empty() || labelled * 2 < detected) {
+                failures.push((period, elevation, detected, labelled));
+            }
+        }
+    }
+
+    assert!(
+        failures.is_empty(),
+        "grid assembly collapsed where corners were plentiful \
+         (period, elevation, detected, labelled): {failures:?}"
+    );
+}
