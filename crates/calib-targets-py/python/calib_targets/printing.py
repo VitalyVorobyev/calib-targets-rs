@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from os import fspath
 from typing import Any
@@ -286,8 +287,72 @@ class PuzzleBoardTargetSpec:
         )
 
 
+@dataclass(slots=True)
+class PuzzlePoleTargetSpec:
+    """A PuzzlePole wrap strip: the PuzzleBoard pattern, cut to wrap a cylinder.
+
+    ``circumference_squares`` must be a period that closes seamlessly -- see
+    :func:`supported_puzzlepole_periods`. The resulting cylinder diameter is
+    ``circumference_squares * square_size_mm / pi`` and is not otherwise
+    adjustable.
+    """
+
+    circumference_squares: int
+    start_row: int
+    axial_squares: int
+    square_size_mm: float
+    axial_start_col: int = 0
+    dot_diameter_rel: float = 1.0 / 3.0
+
+    @property
+    def diameter_mm(self) -> float:
+        """Diameter of the cylinder this strip is meant for."""
+        return self.circumference_squares * self.square_size_mm / math.pi
+
+    @property
+    def printed_strip_squares(self) -> int:
+        """Pieces printed around the circumference: two more than wrap."""
+        return self.circumference_squares + 2
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "puzzlepole",
+            "circumference_squares": self.circumference_squares,
+            "start_row": self.start_row,
+            "axial_start_col": self.axial_start_col,
+            "axial_squares": self.axial_squares,
+            "square_size_mm": self.square_size_mm,
+            "dot_diameter_rel": self.dot_diameter_rel,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzlePoleTargetSpec:
+        return cls(
+            circumference_squares=int(data["circumference_squares"]),
+            start_row=int(data["start_row"]),
+            axial_squares=int(data["axial_squares"]),
+            square_size_mm=float(data["square_size_mm"]),
+            axial_start_col=int(data.get("axial_start_col", 0)),
+            dot_diameter_rel=float(data.get("dot_diameter_rel", 1.0 / 3.0)),
+        )
+
+
+def supported_puzzlepole_periods() -> list[tuple[int, int]]:
+    """Every ``(circumference_squares, start_row)`` pair that closes seamlessly.
+
+    Read from the Rust extension rather than duplicated here: the table is
+    derived from the shipped code maps, so a Python copy could drift from the
+    pattern it describes.
+    """
+    return [(int(p), int(s)) for p, s in _core.puzzlepole_periods()]
+
+
 TargetSpec = (
-    ChessboardTargetSpec | CharucoTargetSpec | MarkerBoardTargetSpec | PuzzleBoardTargetSpec
+    ChessboardTargetSpec
+    | CharucoTargetSpec
+    | MarkerBoardTargetSpec
+    | PuzzleBoardTargetSpec
+    | PuzzlePoleTargetSpec
 )
 
 
@@ -310,9 +375,12 @@ def _target_to_dict(target: TargetSpec) -> dict[str, Any]:
         return target.to_dict()
     if isinstance(target, PuzzleBoardTargetSpec):
         return target.to_dict()
+    if isinstance(target, PuzzlePoleTargetSpec):
+        return target.to_dict()
     raise _type_error(
         "target",
-        "ChessboardTargetSpec | CharucoTargetSpec | MarkerBoardTargetSpec | PuzzleBoardTargetSpec",
+        "ChessboardTargetSpec | CharucoTargetSpec | MarkerBoardTargetSpec "
+        "| PuzzleBoardTargetSpec | PuzzlePoleTargetSpec",
     )
 
 
@@ -326,6 +394,8 @@ def _target_from_dict(data: dict[str, Any]) -> TargetSpec:
         return MarkerBoardTargetSpec.from_dict(data)
     if kind == "puzzle_board":
         return PuzzleBoardTargetSpec.from_dict(data)
+    if kind == "puzzlepole":
+        return PuzzlePoleTargetSpec.from_dict(data)
     raise ValueError(f"unknown target kind {kind!r}")
 
 
@@ -488,6 +558,50 @@ def puzzleboard_document(
     )
 
 
+
+def puzzlepole_document(
+    circumference_squares: int,
+    axial_squares: int,
+    square_size_mm: float,
+    *,
+    start_row: int | None = None,
+    axial_start_col: int = 0,
+    dot_diameter_rel: float | None = None,
+    page: PageSpec | None = None,
+    render: RenderOptions | None = None,
+) -> PrintableTargetDocument:
+    """Build a PuzzlePole wrap-strip document.
+
+    ``circumference_squares`` must be a period that closes seamlessly; with no
+    ``start_row`` the canonical strip for that circumference is used. Raises
+    ``ValueError`` for an unsupported circumference -- a pole's diameter is
+    quantised and there is no sensible nearest fit.
+    """
+    if start_row is None:
+        canonical = _core.puzzlepole_canonical_start_row(int(circumference_squares))
+        if canonical is None:
+            raise ValueError(
+                f"{circumference_squares} pieces around the circumference is not a "
+                "PuzzlePole period that closes seamlessly; see "
+                "supported_puzzlepole_periods()"
+            )
+        start_row = int(canonical)
+
+    kwargs: dict[str, Any] = {
+        "circumference_squares": int(circumference_squares),
+        "start_row": int(start_row),
+        "axial_squares": int(axial_squares),
+        "square_size_mm": float(square_size_mm),
+        "axial_start_col": int(axial_start_col),
+    }
+    if dot_diameter_rel is not None:
+        kwargs["dot_diameter_rel"] = float(dot_diameter_rel)
+    return PrintableTargetDocument(
+        target=PuzzlePoleTargetSpec(**kwargs),
+        page=page if page is not None else PageSpec(),
+        render=render if render is not None else RenderOptions(),
+    )
+
 def marker_board_document(
     inner_rows: int,
     inner_cols: int,
@@ -527,6 +641,7 @@ __all__ = [
     "CharucoTargetSpec",
     "MarkerBoardTargetSpec",
     "PuzzleBoardTargetSpec",
+    "PuzzlePoleTargetSpec",
     "PrintableTargetDocument",
     "GeneratedTargetBundle",
     "WrittenTargetBundle",
@@ -535,5 +650,7 @@ __all__ = [
     "chessboard_document",
     "charuco_document",
     "puzzleboard_document",
+    "puzzlepole_document",
+    "supported_puzzlepole_periods",
     "marker_board_document",
 ]

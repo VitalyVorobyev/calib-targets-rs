@@ -1051,6 +1051,29 @@ fn default_puzzleboard_params(py: Python<'_>, rows: u32, cols: u32) -> PyResult<
     json_to_py(py, &json)
 }
 
+/// Every `(circumference_squares, start_row)` pair that closes seamlessly
+/// around a cylinder.
+///
+/// Exposed rather than duplicated in Python: the table is derived from the
+/// shipped code maps and pinned by a Rust test, so a Python copy could drift
+/// from the pattern it describes.
+#[pyfunction]
+#[pyo3(signature = ())]
+fn puzzlepole_periods() -> Vec<(u32, u32)> {
+    puzzleboard::SUPPORTED_PERIODS
+        .iter()
+        .map(|p| (p.squares, p.start_row))
+        .collect()
+}
+
+/// The canonical start row for a PuzzlePole circumference, or `None` if that
+/// circumference has no seamless strip.
+#[pyfunction]
+#[pyo3(signature = (circumference_squares))]
+fn puzzlepole_canonical_start_row(circumference_squares: u32) -> Option<u32> {
+    puzzleboard::PuzzlePolePeriod::canonical(circumference_squares).map(|p| p.start_row)
+}
+
 // ---------------------------------------------------------------------------
 // Printable target functions
 // ---------------------------------------------------------------------------
@@ -1120,6 +1143,8 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(marker_board_sweep_for_board, m)?)?;
     m.add_function(wrap_pyfunction!(puzzleboard_sweep_for_board, m)?)?;
     m.add_function(wrap_pyfunction!(default_puzzleboard_params, m)?)?;
+    m.add_function(wrap_pyfunction!(puzzlepole_periods, m)?)?;
+    m.add_function(wrap_pyfunction!(puzzlepole_canonical_start_row, m)?)?;
     m.add_function(wrap_pyfunction!(render_target_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(write_target_bundle, m)?)?;
     Ok(())
