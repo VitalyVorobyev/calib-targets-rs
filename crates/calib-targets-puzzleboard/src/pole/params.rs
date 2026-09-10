@@ -163,6 +163,46 @@ fn default_sample_radius_rel() -> f32 {
     1.0 / 6.0
 }
 
+/// A pole shorter than this can never be decoded whatever the circumference
+/// span, so the spec's own minimum must not sit below the structural floor:
+/// four axial corners give two columns of `map_a`, and a 3 × 2 block of a
+/// sub-perfect map is not unique. Checked at compile time because both sides
+/// are constants and a runtime assertion would be theatre.
+const _: () = assert!(super::MIN_AXIAL_SQUARES + 1 >= 5);
+
+/// The soft-log-likelihood knobs, in the form the decoder takes them.
+pub(crate) fn soft_cfg_from(cfg: &PuzzlePoleDecodeConfig) -> crate::detector::decode::SoftLlConfig {
+    let tuning = cfg.effective_tuning();
+    crate::detector::decode::SoftLlConfig {
+        kappa: tuning.bit_likelihood_slope,
+        per_bit_floor: tuning.per_bit_floor,
+        alignment_min_margin: tuning.alignment_min_margin,
+    }
+}
+
+/// Interior edge dots a `span_a × span_b` corner window offers.
+///
+/// The planar `required_edges` assumes a square window because a flat board's
+/// two axes carry the same code. A pole's do not, so the floor is a rectangle
+/// and the count has to be one too. Reduces to `2(s-1)(s-2)` when `a == b == s`,
+/// which is the planar formula.
+#[must_use]
+pub(crate) fn required_edges_rect(span_a: u32, span_b: u32) -> usize {
+    let (a, b) = (span_a.max(2) as usize, span_b.max(2) as usize);
+    (a - 2) * (b - 1) + (a - 1) * (b - 2)
+}
+
+/// Distinct code bits a `span_a × span_b` corner window can resolve.
+///
+/// Both maps repeat every three rows or columns on their short axis, so a
+/// window's dots are not independent bits: the count is `3` per distinct long
+/// class each family reads. Reduces to the planar `6(s-2)` when `a == b == s`.
+#[must_use]
+pub(crate) fn required_logical_bits_rect(span_a: u32, span_b: u32) -> usize {
+    let (a, b) = (span_a.max(2) as usize, span_b.max(2) as usize);
+    3 * (a - 2) + 3 * (b - 2)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -174,12 +214,27 @@ mod tests {
         assert_eq!(cfg.min_axial_span, 8);
     }
 
-    /// A pole this short can never be decoded, whatever the circumference span,
-    /// so the spec's own minimum must not sit below the structural floor.
     #[test]
-    fn the_spec_cannot_declare_a_pole_below_the_structural_axial_floor() {
-        // `MIN_AXIAL_SQUARES` pieces span one more corner column.
-        assert!(super::super::MIN_AXIAL_SQUARES + 1 >= 5);
+    fn the_rectangular_counts_reduce_to_the_planar_ones() {
+        for span in 4..=10u32 {
+            assert_eq!(
+                required_edges_rect(span, span),
+                crate::detector::params::required_edges(span),
+                "edge count disagrees at span {span}"
+            );
+            assert_eq!(
+                required_logical_bits_rect(span, span),
+                crate::detector::params::required_logical_bits(span),
+                "logical bit count disagrees at span {span}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_measured_floor_offers_enough_to_decode() {
+        // 5 x 8 corners: 45 interior dots carrying 27 distinct bits.
+        assert_eq!(required_edges_rect(5, 8), 45);
+        assert_eq!(required_logical_bits_rect(5, 8), 27);
     }
 
     #[test]

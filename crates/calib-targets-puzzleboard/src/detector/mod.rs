@@ -1,10 +1,10 @@
 //! PuzzleBoard detection pipeline.
 
-mod consensus;
-mod decode;
-mod edge_sampling;
+pub(crate) mod consensus;
+pub(crate) mod decode;
+pub(crate) mod edge_sampling;
 mod error;
-mod params;
+pub(crate) mod params;
 mod pipeline;
 mod result;
 

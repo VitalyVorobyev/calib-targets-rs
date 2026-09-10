@@ -20,16 +20,18 @@
 //!
 //! An observation exists only where the detector saw a printed dot, and a dot
 //! is only sampled when the full corner neighbourhood around it was detected
-//! (`PuzzleBoardDetector::sample_all_edges`). Every observation therefore
-//! *does* lie on the printed board, and any shift that places one of them
-//! outside the board is a hypothesis that cannot describe the physical scene.
-//! The scan is restricted to shifts under which every observation lands on the
-//! board, which
+//! (`edge_sampling::sample_all_edges`). Every observation therefore *does* lie
+//! on the printed board, and any shift that places one of them outside the
+//! board is a hypothesis that cannot describe the physical scene. The scan is
+//! restricted to shifts under which every observation lands on the board, which
 //!
 //! - makes each hypothesis cost two table lookups instead of `O(N)`, since
 //!   with nothing off-board the score is exactly the class-table sum, and
 //! - stops impossible placements from competing in the uniqueness gate, where
 //!   they could only ever suppress a correct decode.
+//!
+//! "Outside the board" is per axis, not global: a wrapped axis has no outside
+//! at all, so it contributes no restriction. See [`AxisExtent`].
 //!
 //! # Cost
 //!
@@ -56,56 +58,168 @@ use super::{
     DecodeOutcome, HardRunnerUp, SoftLlConfig, H_COLS, V_COLS,
 };
 
+/// One axis of the origin space.
+///
+/// A declared planar board is a window *cut from* the master on both axes, so
+/// both are clamped: a shift that pushes an observation past an end names a
+/// placement that cannot physically exist. A PuzzlePole's circumference axis is
+/// not a window but a **ring** — the pattern closes on itself at the seam — and
+/// has no end to fall off. Spelling that as a variant rather than as a flag on
+/// a rectangle is what keeps the two apart: a cyclic axis carries no origin and
+/// no end, so there is nothing left to clamp against by accident.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum AxisExtent {
+    /// A finite run of `cells` master indices from `origin`. Shifts are
+    /// constrained so no observation falls off the end.
+    Clamped {
+        /// Master index the window starts at.
+        origin: i32,
+        /// Window length, in squares.
+        cells: i32,
+    },
+    /// A ring of `period` origins. Every shift is realisable; shifts outside
+    /// `[0, period)` are congruent to one inside it.
+    Cyclic {
+        /// Ring length, in squares.
+        period: i32,
+    },
+}
+
+/// What one edge family demands of one axis.
+///
+/// `lo` and `hi` are the inclusive bounds of that family's lookup indices along
+/// the axis, relative to the shift. `deficit` is how far short of the axis'
+/// square count the last lookup index the family may use falls; see
+/// [`BoardRect::shift_range`] for why it differs between the families and
+/// between the axes.
+#[derive(Clone, Copy, Debug)]
+struct AxisDemand {
+    lo: i32,
+    hi: i32,
+    deficit: i32,
+}
+
+impl AxisExtent {
+    /// The axis' length in squares — the window length when clamped, the ring
+    /// length when cyclic.
+    fn squares(&self) -> i32 {
+        match *self {
+            Self::Clamped { cells, .. } => cells,
+            Self::Cyclic { period } => period,
+        }
+    }
+
+    /// The master index a shift of `p` names on this axis.
+    ///
+    /// A clamped axis is a window cut from the master, so a shift is measured
+    /// from where that window starts. A cyclic axis is scored against its own
+    /// `period`-long code and *is* its own coordinate — the shift already is
+    /// the index — so there is nothing to add.
+    #[inline]
+    fn master_index(&self, p: i32) -> i32 {
+        match *self {
+            Self::Clamped { origin, .. } => origin + p,
+            Self::Cyclic { .. } => p,
+        }
+    }
+
+    /// Inclusive shift range on this axis, or `None` when the families' demands
+    /// cannot be met at once.
+    fn shift_range(&self, demands: [Option<AxisDemand>; 2]) -> Option<(i32, i32)> {
+        let cells = match *self {
+            // Nothing can fall off a ring: every index in `[0, period)` is a
+            // realisable origin, and one outside it is congruent to one inside,
+            // so the whole ring is scanned and the demands constrain nothing.
+            Self::Cyclic { period } => return Some((0, period - 1)),
+            Self::Clamped { cells, .. } => cells,
+        };
+        // Shifts stay non-negative: the fragment's local `(0, 0)` is itself a
+        // detected corner, so it cannot sit off the start of the window.
+        let (mut lo, mut hi) = (0, i32::MAX);
+        for demand in demands.into_iter().flatten() {
+            lo = lo.max(-demand.lo);
+            hi = hi.min(cells - demand.deficit - demand.hi);
+        }
+        (lo <= hi).then_some((lo, hi))
+    }
+}
+
 /// The declared board, as the decoders need it.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct BoardRect {
-    /// Master row the board is cut from.
-    pub origin_row: i32,
-    /// Master column the board is cut from.
-    pub origin_col: i32,
-    /// Board height in squares.
-    pub rows: i32,
-    /// Board width in squares.
-    pub cols: i32,
+    /// The master-row axis.
+    pub rows: AxisExtent,
+    /// The master-column axis.
+    pub cols: AxisExtent,
 }
 
 impl BoardRect {
+    /// A planar board of `rows` x `cols` squares cut from master
+    /// `(origin_row, origin_col)` — both axes clamped.
     pub(crate) fn new(origin_row: u32, origin_col: u32, rows: u32, cols: u32) -> Self {
         Self {
-            origin_row: origin_row as i32,
-            origin_col: origin_col as i32,
-            rows: rows as i32,
-            cols: cols as i32,
+            rows: AxisExtent::Clamped {
+                origin: origin_row as i32,
+                cells: rows as i32,
+            },
+            cols: AxisExtent::Clamped {
+                origin: origin_col as i32,
+                cells: cols as i32,
+            },
+        }
+    }
+
+    /// A pole: `period` origins around the circumference, `axial_cells` squares
+    /// from `axial_origin` along the cylinder.
+    ///
+    /// The circumference is the master **row** axis — the one a pole's
+    /// shortened code wraps — so that is the axis that becomes cyclic; the
+    /// axial axis stays an ordinary window cut from the master columns.
+    pub(crate) fn pole(period: u32, axial_origin: u32, axial_cells: u32) -> Self {
+        Self {
+            rows: AxisExtent::Cyclic {
+                period: period as i32,
+            },
+            cols: AxisExtent::Clamped {
+                origin: axial_origin as i32,
+                cells: axial_cells as i32,
+            },
         }
     }
 
     /// Inclusive shift range under which *every* observation lands on the
     /// board, or `None` when no such shift exists.
     ///
-    /// A board of `rows × cols` squares carries `(rows - 1) × cols` horizontal
-    /// edge cells and `rows × (cols - 1)` vertical ones; a lookup cell must
-    /// fall inside the table its orientation reads. Shifts stay non-negative:
-    /// the fragment's local `(0, 0)` is itself a detected corner, so it cannot
-    /// sit off the board.
+    /// A board of `rows` x `cols` squares carries `(rows - 1) * cols`
+    /// horizontal edge cells and `rows * (cols - 1)` vertical ones: the
+    /// horizontal family spans one row fewer than the board has and all of its
+    /// columns, and the vertical family is its mirror image. A lookup cell must
+    /// fall inside the table its orientation reads, and an inclusive last index
+    /// is one below a count — so a family's deficit against the axis' square
+    /// count is `2` where that family is one short and `1` where it is not.
+    /// That is where the `- 2` and the `- 1` come from, and why they land on
+    /// opposite orientations on the two axes.
+    ///
+    /// Each axis then folds its own two demands. A cyclic axis discards them:
+    /// a ring has no end for an observation to fall off.
     fn shift_range(&self, extent: &LookupExtent) -> Option<((i32, i32), (i32, i32))> {
-        let (mut r_lo, mut r_hi) = (0, i32::MAX);
-        let (mut c_lo, mut c_hi) = (0, i32::MAX);
-        if let Some((lr_lo, lr_hi, lc_lo, lc_hi)) = extent.horizontal {
-            r_lo = r_lo.max(-lr_lo);
-            r_hi = r_hi.min(self.rows - 2 - lr_hi);
-            c_lo = c_lo.max(-lc_lo);
-            c_hi = c_hi.min(self.cols - 1 - lc_hi);
-        }
-        if let Some((lr_lo, lr_hi, lc_lo, lc_hi)) = extent.vertical {
-            r_lo = r_lo.max(-lr_lo);
-            r_hi = r_hi.min(self.rows - 1 - lr_hi);
-            c_lo = c_lo.max(-lc_lo);
-            c_hi = c_hi.min(self.cols - 2 - lc_hi);
-        }
-        if r_lo > r_hi || c_lo > c_hi {
-            return None;
-        }
-        Some(((r_lo, r_hi), (c_lo, c_hi)))
+        let rows = self.rows.shift_range([
+            extent
+                .horizontal
+                .map(|(lo, hi, _, _)| AxisDemand { lo, hi, deficit: 2 }),
+            extent
+                .vertical
+                .map(|(lo, hi, _, _)| AxisDemand { lo, hi, deficit: 1 }),
+        ])?;
+        let cols = self.cols.shift_range([
+            extent
+                .horizontal
+                .map(|(_, _, lo, hi)| AxisDemand { lo, hi, deficit: 1 }),
+            extent
+                .vertical
+                .map(|(_, _, lo, hi)| AxisDemand { lo, hi, deficit: 2 }),
+        ])?;
+        Some((rows, cols))
     }
 }
 
@@ -332,11 +446,12 @@ fn demote_into_runner(
 fn scan(
     logical: &[PuzzleBoardObservedEdge],
     physical: Option<(&[PuzzleBoardObservedEdge], &SoftLlConfig)>,
+    geometry: CodeGeometry<'_>,
     board: BoardRect,
     transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<FixedScan> {
-    if logical.is_empty() || board.rows < 2 || board.cols < 2 {
+    if logical.is_empty() || board.rows.squares() < 2 || board.cols.squares() < 2 {
         return None;
     }
     let logical_conf: f32 = logical.iter().map(|e| e.confidence).sum();
@@ -358,7 +473,6 @@ fn scan(
         soft: soft_cfg.is_some(),
     };
 
-    let geometry = CodeGeometry::master();
     let mut scan = FixedScan::new();
     let mut logical_tables = ClassTables::new(&geometry, false);
     let mut physical_tables = ClassTables::new(&geometry, true);
@@ -378,8 +492,8 @@ fn scan(
 
         // Only the residue classes this transform's shift rectangle reaches can
         // ever be read, so the precompute skips the rest.
-        let first_row = board.origin_row + r_lo;
-        let first_col = board.origin_col + c_lo;
+        let first_row = board.rows.master_index(r_lo);
+        let first_col = board.cols.master_index(c_lo);
         let range = ClassRange::of_origin_rect(
             &geometry,
             first_row,
@@ -396,9 +510,9 @@ fn scan(
         #[cfg(feature = "tracing")]
         let _origin_span = tracing::info_span!("origin_scan").entered();
         for p_r in r_lo..=r_hi {
-            let master_row = board.origin_row + p_r;
+            let master_row = board.rows.master_index(p_r);
             for p_c in c_lo..=c_hi {
-                let master_col = board.origin_col + p_c;
+                let master_col = board.cols.master_index(p_c);
                 let logical_score =
                     score_at(&geometry, &logical_tables, master_row, master_col, false);
                 let physical_score = ctx
@@ -435,11 +549,43 @@ pub(crate) fn decode_fixed_board(
     transforms: &[GridTransform],
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
-    let voted = scan(logical, None, board, transforms, max_bit_error_rate)?;
+    decode_fixed_hard(
+        logical,
+        observed,
+        CodeGeometry::master(),
+        board,
+        transforms,
+        max_bit_error_rate,
+    )
+}
+
+/// [`decode_fixed_board`] against an arbitrary code geometry.
+///
+/// A PuzzlePole is decoded through here: its origin space is `p × axial_cells`,
+/// a few thousand hypotheses against the master's 501² = 251 001, so direct
+/// enumeration is cheap and — unlike the full-master path — needs no coprimality
+/// between the two row moduli. On a pole those are 3 and `p` with `3 | p`, so
+/// the CRT collapse `hard.rs` relies on is simply not available.
+pub(crate) fn decode_fixed_hard(
+    logical: &[PuzzleBoardObservedEdge],
+    observed: &[PuzzleBoardObservedEdge],
+    geometry: CodeGeometry<'_>,
+    board: BoardRect,
+    transforms: &[GridTransform],
+    max_bit_error_rate: f32,
+) -> Option<DecodeOutcome> {
+    let voted = scan(
+        logical,
+        None,
+        geometry,
+        board,
+        transforms,
+        max_bit_error_rate,
+    )?;
     let winner = voted.hard_best?;
     // Cross-view sanity: the winner must also be the best-supported origin on
     // the raw dots, so voting cannot silently *move* the answer.
-    let best = scan(observed, None, board, transforms, 1.0)?.hard_best?;
+    let best = scan(observed, None, geometry, board, transforms, 1.0)?.hard_best?;
     if (winner.master_origin_row, winner.master_origin_col)
         != (best.master_origin_row, best.master_origin_col)
         || winner.alignment.matrix() != best.alignment.matrix()
@@ -464,9 +610,31 @@ pub(crate) fn decode_fixed_board_soft(
     cfg: &SoftLlConfig,
     max_bit_error_rate: f32,
 ) -> Option<DecodeOutcome> {
+    decode_fixed_soft(
+        observed,
+        logical,
+        CodeGeometry::master(),
+        board,
+        transforms,
+        cfg,
+        max_bit_error_rate,
+    )
+}
+
+/// [`decode_fixed_board_soft`] against an arbitrary code geometry.
+pub(crate) fn decode_fixed_soft(
+    observed: &[PuzzleBoardObservedEdge],
+    logical: &[PuzzleBoardObservedEdge],
+    geometry: CodeGeometry<'_>,
+    board: BoardRect,
+    transforms: &[GridTransform],
+    cfg: &SoftLlConfig,
+    max_bit_error_rate: f32,
+) -> Option<DecodeOutcome> {
     let voted = scan(
         logical,
         Some((observed, cfg)),
+        geometry,
         board,
         transforms,
         max_bit_error_rate,
@@ -487,4 +655,96 @@ pub(crate) fn decode_fixed_board_soft(
             voted.hard_runner,
         ),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A `LookupExtent` carrying only horizontal observations, spanning
+    /// `rows.0..=rows.1` lookup rows and `cols.0..=cols.1` lookup columns.
+    ///
+    /// One orientation at a time is deliberate: with both present the two
+    /// deficits meet under a `min` and the asymmetry between them disappears
+    /// from the result, which is exactly what these tests are checking.
+    fn horizontal_only(rows: (i32, i32), cols: (i32, i32)) -> LookupExtent {
+        LookupExtent {
+            horizontal: Some((rows.0, rows.1, cols.0, cols.1)),
+            vertical: None,
+        }
+    }
+
+    /// The two families lose a *different* index on the two axes: a board of
+    /// `rows` x `cols` squares carries `(rows - 1) * cols` horizontal edge cells
+    /// and `rows * (cols - 1)` vertical ones. Per-axis folding must not have
+    /// smoothed that away.
+    #[test]
+    fn the_two_families_clamp_the_two_axes_differently() {
+        let board = BoardRect::new(0, 0, 10, 10);
+        // Horizontal cells reach row 8 and column 9, so a span of `0..=3`
+        // leaves shifts `0..=5` on the rows and `0..=6` on the columns.
+        assert_eq!(
+            board.shift_range(&horizontal_only((0, 3), (0, 3))),
+            Some(((0, 5), (0, 6)))
+        );
+        // Vertical cells are the mirror image: row 9, column 8.
+        let vertical_only = LookupExtent {
+            horizontal: None,
+            vertical: Some((0, 3, 0, 3)),
+        };
+        assert_eq!(board.shift_range(&vertical_only), Some(((0, 6), (0, 5))));
+    }
+
+    /// A transform can push lookup cells negative; the shift then has to start
+    /// high enough to bring them back onto the board.
+    #[test]
+    fn a_negative_lookup_span_raises_the_lower_shift() {
+        assert_eq!(
+            BoardRect::new(0, 0, 10, 10).shift_range(&horizontal_only((-2, 3), (-1, 3))),
+            Some(((2, 5), (1, 6)))
+        );
+    }
+
+    /// The circumference axis is a ring, so every origin on it is realisable no
+    /// matter how far the observations reach — including past the period, where
+    /// they simply wrap. A clamped axis of the *same length* narrows instead,
+    /// which is the whole difference between the two variants.
+    #[test]
+    fn a_cyclic_axis_admits_every_origin_on_the_ring() {
+        let pole = BoardRect::pole(12, 4, 8);
+        let planar = BoardRect::new(0, 4, 12, 8);
+        let fragment = horizontal_only((0, 3), (0, 3));
+        assert_eq!(pole.shift_range(&fragment), Some(((0, 11), (0, 4))));
+        assert_eq!(planar.shift_range(&fragment), Some(((0, 7), (0, 4))));
+        // Three periods' worth of lookup rows: nothing falls off a ring.
+        assert_eq!(
+            pole.shift_range(&horizontal_only((0, 40), (0, 3))),
+            Some(((0, 11), (0, 4)))
+        );
+        assert!(planar
+            .shift_range(&horizontal_only((0, 40), (0, 3)))
+            .is_none());
+    }
+
+    /// Making one axis cyclic must not disarm the other: a fragment wider than
+    /// the axial window still admits no shift at all.
+    #[test]
+    fn a_cyclic_row_axis_leaves_the_axial_guard_armed() {
+        let pole = BoardRect::pole(12, 4, 8);
+        assert!(pole
+            .shift_range(&horizontal_only((0, 3), (0, 20)))
+            .is_none());
+    }
+
+    /// A pole's circumference coordinate *is* the shift — its code is indexed
+    /// from the seam — while the axial axis is still measured from where its
+    /// window was cut out of the master.
+    #[test]
+    fn only_a_clamped_axis_offsets_the_shift() {
+        let pole = BoardRect::pole(12, 60, 8);
+        assert_eq!(pole.rows.master_index(5), 5);
+        assert_eq!(pole.cols.master_index(5), 65);
+        assert_eq!(pole.rows.squares(), 12);
+        assert_eq!(pole.cols.squares(), 8);
+    }
 }

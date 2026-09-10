@@ -27,9 +27,14 @@ use calib_targets_puzzleboard::PuzzlePoleSpec;
 use chess_corners::Detector as ChessDetector;
 
 /// A pole big enough in frame that its pieces span a comfortable number of
-/// pixels, which is the condition every corner detector actually cares about.
+/// pixels, and long enough axially to reach the measured decode floor.
+///
+/// The axial count is not free. A pole of `A` squares has `A + 1` corner
+/// columns, of which only the interior `A - 1` carry an X-junction — the two
+/// end columns have squares on one side and blank paper on the other. The
+/// measured floor wants 8 axial corners, so `A >= 9`.
 fn test_pole() -> PuzzlePoleSpec {
-    PuzzlePoleSpec::new(24, 8, 20.0).expect("24 is a supported circumference")
+    PuzzlePoleSpec::new(24, 12, 20.0).expect("24 is a supported circumference")
 }
 
 fn detect_corners(img: &image::GrayImage) -> Vec<(f32, f32)> {
@@ -324,5 +329,163 @@ fn the_grid_builder_survives_a_cylinder() {
         failures.is_empty(),
         "grid assembly collapsed where corners were plentiful \
          (period, elevation, detected, labelled): {failures:?}"
+    );
+}
+
+/// **The end-to-end claim.** Render a pole through a known camera, detect it,
+/// and check every corner it returns is the corner that is actually there.
+///
+/// This is what the whole feature is for, and it is the only test that
+/// exercises the cyclic decode against pixels rather than against synthetic
+/// observations. Ground truth is the projection of `object_position`, so a
+/// wrong ID shows up as a corner reported far from where its index says it
+/// should be.
+#[test]
+fn a_rendered_pole_decodes_to_the_right_corners() {
+    use calib_targets_puzzleboard::{PuzzlePoleDetector, PuzzlePoleParams};
+
+    let spec = test_pole();
+    for theta in [0.0f32, 41.0, 137.0, 250.0] {
+        let camera = Camera::looking_at_pole(theta, 420.0, 80.0, 900, 700, 1400.0);
+        let img = render(&spec, &camera);
+        let expected = visible_corners(&spec, &camera, FAIR_FORESHORTENING);
+
+        let view = calib_targets_core::GrayImageView {
+            width: img.width() as usize,
+            height: img.height() as usize,
+            data: img.as_raw(),
+        };
+        let detector = PuzzlePoleDetector::new(PuzzlePoleParams::for_pole(spec)).expect("detector");
+        let found = detector
+            .detect(&view)
+            .unwrap_or_else(|e| panic!("at {theta} deg the pole did not decode: {e}"));
+
+        assert!(
+            !found.corners.is_empty(),
+            "at {theta} deg the decode returned no corners"
+        );
+
+        let mut errors: Vec<(i32, i32, f32)> = Vec::new();
+        // **Precision.** Every returned corner must sit where its own indices
+        // say it does. A wrong ID is the one failure this workspace's contract
+        // does not allow, so this is an assertion about all of them, not most.
+        for corner in &found.corners {
+            let truth = camera
+                .project(spec.object_position(corner.grid.u as u32, corner.grid.v as u32))
+                .expect("a decoded corner is in front of the camera");
+            let err = ((corner.position.x - truth.0).powi(2)
+                + (corner.position.y - truth.1).powi(2))
+            .sqrt();
+            errors.push((corner.grid.u, corner.grid.v, err));
+        }
+        let bad: Vec<_> = errors.iter().filter(|(_, _, e)| *e > 3.0).collect();
+        let worst = errors.iter().map(|(_, _, e)| *e).fold(0.0f32, f32::max);
+        println!(
+            "theta={theta:5.0}: {} corners, {} beyond 3 px, worst {worst:.2}",
+            errors.len(),
+            bad.len()
+        );
+        for (u, v, e) in bad.iter().take(8) {
+            println!("    axial {u:3} cyclic {v:3}  {e:8.2} px");
+        }
+        assert!(bad.is_empty(), "wrong labels at {theta} deg");
+
+        // **Recall.** Enough of what was visible came back to be useful.
+        let hit = expected
+            .iter()
+            .filter(|e| {
+                found
+                    .corners
+                    .iter()
+                    .any(|c| c.grid.u == e.axial as i32 && c.grid.v == e.cyclic as i32)
+            })
+            .count();
+        assert!(
+            hit * 2 >= expected.len(),
+            "at {theta} deg only {hit} of {} visible corners were decoded",
+            expected.len()
+        );
+    }
+}
+
+/// **A fragment below the floor must fail, not guess.**
+///
+/// This is the contract, and it is the half that matters: a miss is
+/// recoverable, a wrong corner ID is not. A view too tight to carry enough code
+/// has to be refused, and refused by a *named* reason rather than by producing
+/// nothing for an unclear cause.
+#[test]
+fn a_fragment_below_the_floor_is_refused() {
+    use calib_targets_puzzleboard::{PuzzlePoleDetectError, PuzzlePoleDetector, PuzzlePoleParams};
+
+    let spec = test_pole();
+    // A long lens on a near pole: a handful of pieces fill the frame, so the
+    // fragment cannot span the measured floor however clean the corners are.
+    let camera = Camera::looking_at_pole(0.0, 420.0, 80.0, 420, 340, 7000.0);
+    let img = render(&spec, &camera);
+
+    let view = calib_targets_core::GrayImageView {
+        width: img.width() as usize,
+        height: img.height() as usize,
+        data: img.as_raw(),
+    };
+    let detector = PuzzlePoleDetector::new(PuzzlePoleParams::for_pole(spec)).expect("detector");
+
+    match detector.detect(&view) {
+        Ok(found) => panic!(
+            "a fragment below the floor decoded to {} corners instead of being refused",
+            found.corners.len()
+        ),
+        Err(
+            PuzzlePoleDetectError::FragmentTooSmall { .. }
+            | PuzzlePoleDetectError::NotEnoughEdges { .. }
+            | PuzzlePoleDetectError::NotEnoughLogicalBits { .. }
+            | PuzzlePoleDetectError::DecodeFailed
+            | PuzzlePoleDetectError::ChessboardNotDetected,
+        ) => {}
+        Err(other) => panic!("refused for an unexpected reason: {other}"),
+    }
+}
+
+/// The seam is decoded, not merely tolerated.
+///
+/// At azimuth 0 the seam faces the camera, so the visible fragment straddles
+/// it — corners on both sides of the joint are in one view, and a decoder that
+/// could not close the ring would either fail or split them across two
+/// incompatible origins. This asserts the ring closed: indices from both ends
+/// of the circumference range are present, and every one of them is where its
+/// index says.
+#[test]
+fn a_seam_crossing_view_decodes_as_one_ring() {
+    use calib_targets_puzzleboard::{PuzzlePoleDetector, PuzzlePoleParams};
+
+    let spec = test_pole();
+    let camera = Camera::looking_at_pole(0.0, 420.0, 80.0, 900, 700, 1400.0);
+    let img = render(&spec, &camera);
+    let view = calib_targets_core::GrayImageView {
+        width: img.width() as usize,
+        height: img.height() as usize,
+        data: img.as_raw(),
+    };
+    let found = PuzzlePoleDetector::new(PuzzlePoleParams::for_pole(spec))
+        .expect("detector")
+        .detect(&view)
+        .expect("the seam view must decode");
+
+    let period = spec.circumference_squares as i32;
+    let cyclic: std::collections::BTreeSet<i32> = found.corners.iter().map(|c| c.grid.v).collect();
+    assert!(
+        cyclic.contains(&0),
+        "the seam row itself was not decoded: {cyclic:?}"
+    );
+    assert!(
+        cyclic.iter().any(|&k| k >= period - 3),
+        "no corner from the far side of the seam was decoded: {cyclic:?}"
+    );
+    // ...and the fragment is a short arc, not most of the pole -- which is what
+    // a bounding extent would report for indices at both ends of the range.
+    assert!(
+        cyclic.len() < period as usize,
+        "a single view decoded the entire circumference"
     );
 }

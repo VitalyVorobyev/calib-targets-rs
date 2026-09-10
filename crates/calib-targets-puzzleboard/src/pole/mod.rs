@@ -35,14 +35,18 @@
 //! report the diameter you must actually hit.
 
 pub(crate) mod code;
+mod error;
 pub mod geometry;
 mod params;
 pub mod periods;
+mod pipeline;
 mod result;
 
+pub use error::PuzzlePoleDetectError;
 pub use params::{
     PuzzlePoleDecodeConfig, PuzzlePoleParams, MIN_AXIAL_SPAN, MIN_CIRCUMFERENCE_SPAN,
 };
+pub use pipeline::PuzzlePoleDetector;
 pub use result::{PuzzlePoleCorner, PuzzlePoleDetection};
 
 use serde::{Deserialize, Serialize};

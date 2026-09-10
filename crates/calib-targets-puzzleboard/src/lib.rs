@@ -77,7 +77,9 @@ pub use diagnostics::{
 pub use params::PuzzleBoardParams;
 pub use pole::periods::{PuzzlePolePeriod, SUPPORTED_PERIODS};
 pub use pole::{
-    PuzzlePoleCorner, PuzzlePoleDetection, PuzzlePoleSpec, PuzzlePoleSpecError, MIN_AXIAL_SQUARES,
+    PuzzlePoleCorner, PuzzlePoleDecodeConfig, PuzzlePoleDetectError, PuzzlePoleDetection,
+    PuzzlePoleDetector, PuzzlePoleParams, PuzzlePoleSpec, PuzzlePoleSpecError, MIN_AXIAL_SPAN,
+    MIN_AXIAL_SQUARES, MIN_CIRCUMFERENCE_SPAN,
 };
 
 // Re-export the foreign types this crate's public API requires — the corner

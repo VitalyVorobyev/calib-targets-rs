@@ -46,16 +46,33 @@ pub(crate) struct PoleCode {
 
 impl PoleCode {
     /// Derive the code for a verified period.
+    ///
+    /// **Indexed by `master_row mod p`, not by offset from the start row.**
+    /// That is forced, and getting it wrong is silent: the decoder scores a
+    /// hypothesis by indexing this table with `master_row mod p` *and* `map_a`
+    /// with `master_row mod 3`, from the same number. Because `3 | p`, a row
+    /// and its reduction mod `p` agree mod 3 — so one coordinate serves both,
+    /// and `map_a` needs no rotation. Key this table by `row - start_row`
+    /// instead and the two indices drift apart by `start_row mod 3`, which
+    /// costs nothing at start rows divisible by 3 and corrupts every vertical
+    /// dot at the others.
     pub(crate) fn new(period: PuzzlePolePeriod) -> Self {
+        let p = period.squares as usize;
         let start = period.start_row as i32;
-        let patterns = (0..period.squares as i32)
-            .map(|t| {
-                (0..SHORT).fold(0u8, |acc, j| {
-                    acc | horizontal_edge_bit(start + t, j as i32) << j
-                })
-            })
-            .collect();
+        let mut patterns = vec![0u8; p];
+        for offset in 0..p as i32 {
+            let master_row = start + offset;
+            let bits = (0..SHORT).fold(0u8, |acc, j| {
+                acc | horizontal_edge_bit(master_row, j as i32) << j
+            });
+            patterns[master_row.rem_euclid(p as i32) as usize] = bits;
+        }
         Self { patterns }
+    }
+
+    /// The packed patterns, indexed by `master_row mod p`.
+    pub(crate) fn patterns(&self) -> &[u8] {
+        &self.patterns
     }
 
     /// Are all `3p` cyclic 3 × 3 windows of this code pairwise distinct?
@@ -105,12 +122,14 @@ mod tests {
     fn the_pole_code_reproduces_the_master_within_one_period() {
         for period in SUPPORTED_PERIODS {
             let code = PoleCode::new(*period);
-            for t in 0..period.squares {
-                let master_row = period.start_row as i32 + t as i32;
+            let p = period.squares as i32;
+            for offset in 0..p {
+                let master_row = period.start_row as i32 + offset;
                 let expected = (0..SHORT).fold(0u8, |acc, j| {
                     acc | horizontal_edge_bit(master_row, j as i32) << j
                 });
-                assert_eq!(code.patterns[t as usize], expected);
+                let index = master_row.rem_euclid(p) as usize;
+                assert_eq!(code.patterns[index], expected);
             }
         }
     }
@@ -124,25 +143,44 @@ mod tests {
             let p = period.squares as usize;
             assert_eq!(code.patterns.len(), p);
 
-            // Two rows past the seam the pole and the master still agree --
-            // that is the seam condition. The third row is where they part.
+            // One period past the seam, the master's row is the pole's row --
+            // that is the seam condition, read through the table's own index.
             let start = period.start_row as i32;
-            let master_third = (0..SHORT).fold(0u8, |acc, j| {
-                acc | horizontal_edge_bit(start + p as i32 + 2, j as i32) << j
-            });
-            let pole_third = code.patterns[2];
-            let seam_rows_agree = (0..2).all(|k| {
+            for k in 0..2 {
+                let master_row = start + p as i32 + k;
                 let master = (0..SHORT).fold(0u8, |acc, j| {
-                    acc | horizontal_edge_bit(start + p as i32 + k, j as i32) << j
+                    acc | horizontal_edge_bit(master_row, j as i32) << j
                 });
-                master == code.patterns[k as usize]
-            });
-            assert!(seam_rows_agree, "period {} broke its seam", period.squares);
-            // Not an assertion that they *differ* -- with three bits a
-            // coincidence is likely -- but the pattern-level test in `periods`
-            // proves the full rows differ. Recorded here so a reader does not
-            // expect this byte to disagree.
-            let _ = (master_third, pole_third);
+                let index = master_row.rem_euclid(p as i32) as usize;
+                assert_eq!(
+                    code.patterns[index], master,
+                    "period {} broke its seam at row {k}",
+                    period.squares
+                );
+            }
+        }
+    }
+
+    /// **The indexing invariant the whole decode rests on.** The scorer derives
+    /// both family indices from one number: this table by `mod p`, and `map_a`
+    /// by `mod 3`. That is only sound if a pole coordinate and the master row
+    /// it stands for agree mod 3 — which `3 | p` guarantees, and which a table
+    /// keyed by offset from the start row would break.
+    #[test]
+    fn a_pole_coordinate_agrees_with_its_master_row_mod_three() {
+        for period in SUPPORTED_PERIODS {
+            let p = period.squares as i32;
+            assert_eq!(p % 3, 0, "period {p} is not a multiple of 3");
+            for offset in 0..p {
+                let master_row = period.start_row as i32 + offset;
+                let coordinate = master_row.rem_euclid(p);
+                assert_eq!(
+                    coordinate.rem_euclid(3),
+                    master_row.rem_euclid(3),
+                    "period {p}: coordinate {coordinate} and master row {master_row} \
+                     disagree mod 3, so map_a would be read off by a row"
+                );
+            }
         }
     }
 
@@ -169,13 +207,13 @@ mod tests {
             .find(|&s| PuzzlePolePeriod::lookup(12, s).is_none())
             .expect("some start row is not a supported period");
         // Construct the code directly, bypassing the verified table.
-        let patterns: Vec<u8> = (0..12)
-            .map(|t| {
-                (0..SHORT).fold(0u8, |acc, j| {
-                    acc | horizontal_edge_bit(unsupported as i32 + t, j as i32) << j
-                })
-            })
-            .collect();
+        let mut patterns = vec![0u8; 12];
+        for offset in 0..12 {
+            let master_row = unsupported as i32 + offset;
+            patterns[master_row.rem_euclid(12) as usize] = (0..SHORT).fold(0u8, |acc, j| {
+                acc | horizontal_edge_bit(master_row, j as i32) << j
+            });
+        }
         let code = PoleCode { patterns };
         // Whether it happens to be unique is beside the point; what matters is
         // that this code would still fail the seam test, which is why

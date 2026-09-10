@@ -81,6 +81,27 @@ impl CodeGeometry<'static> {
     }
 }
 
+impl<'a> CodeGeometry<'a> {
+    /// A PuzzlePole: the horizontal family wrapped at the pole's circumference,
+    /// the vertical family exactly the master's.
+    ///
+    /// `map_a` is used verbatim rather than sliced, because its row period is 3
+    /// and 3 divides every supported circumference — so it is already periodic
+    /// at `p`, and a pole coordinate indexes it correctly with no rotation. See
+    /// `pole::code` for why the H table has to be keyed by `master_row mod p`
+    /// for that to hold.
+    pub(crate) fn pole(h_patterns: &'a [u8]) -> Self {
+        let geometry = Self {
+            h_long: h_patterns.len(),
+            v_long: V_COLS,
+            h_patterns,
+            v_patterns: v_col_patterns(),
+        };
+        geometry.assert_lengths();
+        geometry
+    }
+}
+
 impl CodeGeometry<'_> {
     /// A pattern table shorter than its period would silently alias two long
     /// indices onto one byte; longer would leave rows unreachable. Neither

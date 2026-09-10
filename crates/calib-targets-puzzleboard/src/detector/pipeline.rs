@@ -14,10 +14,7 @@ use crate::detector::decode::{
     decode as run_decode, decode_fixed_board, decode_fixed_board_soft, decode_soft, match_stats,
     BoardRect, SoftLlConfig,
 };
-use crate::detector::edge_sampling::{
-    corner_at_map, horizontal_edge_sample_centers, local_cell_references, observed_horizontal_edge,
-    observed_vertical_edge, sample_edge_bit_with_candidates, vertical_edge_sample_centers,
-};
+use crate::detector::edge_sampling::sample_all_edges;
 use crate::detector::error::PuzzleBoardDetectError;
 use crate::detector::params::{
     ensure_min_edges, required_edges, required_logical_bits, PuzzleBoardDecodeConfig,
@@ -533,140 +530,23 @@ impl PuzzleBoardDetector {
         })
     }
 
-    #[cfg_attr(feature = "tracing", instrument(level = "info", skip_all))]
+    /// Sample every interior edge of `corners`, at the radius this detector was
+    /// configured with.
+    ///
+    /// The sampler itself lives in `edge_sampling` and takes no detector: this
+    /// binds the one parameter it needs out of `self.params`.
     fn sample_all_edges(
         &self,
         image: &GrayImageView<'_>,
         corners: &[LabeledCorner],
         inliers: &[usize],
     ) -> Vec<PuzzleBoardObservedEdge> {
-        let mut out = Vec::with_capacity(inliers.len() * 2);
-        let radius = self.params.decode.sample_radius_rel;
-
-        // Build a (i, j) → &LabeledCorner map once for O(1) neighbour lookups.
-        let grid_map: std::collections::HashMap<(i32, i32), &LabeledCorner> = corners
-            .iter()
-            .filter_map(|c| c.grid.map(|g| ((g.u, g.v), c)))
-            .collect();
-
-        // Convention: `Coord.u` = column, `.v` = row.
-        //
-        // Edge-coordinate convention (matches PStelldinger/PuzzleBoard authors' convention):
-        //
-        // The rightward horizontal edge between corners `(c, r)` and `(c+1, r)` is
-        // anchored at local corner `(c, r)` but looks up the dot in cell
-        // `(r-1, c)`, i.e.
-        //   `horizontal_edge_bit(master_origin_row + r - 1, master_origin_col + c)`.
-        // We therefore record the anchor as local `(r, c)` and let the decoder
-        // apply the `(-1, 0)` lookup offset in the original observation frame
-        // before any D4 transform.
-        //
-        // The downward vertical edge between corners `(c, r)` and `(c, r+1)` is
-        // anchored at local corner `(c, r)` but looks up the dot in cell
-        // `(r, c-1)`, i.e.
-        //   `vertical_edge_bit(master_origin_row + r, master_origin_col + c - 1)`.
-        // Again we record the anchor as local `(r, c)` and let the decoder
-        // transform the `(-1, 0)` / `(0, -1)` lookup offsets together with
-        // the edge orientation.
-        for (idx, lc) in corners.iter().enumerate() {
-            if !inliers.contains(&idx) {
-                continue;
-            }
-            let Some(grid) = lc.grid else {
-                continue;
-            };
-            let r = grid.v;
-            let c = grid.u;
-
-            // Rightward horizontal edge. Records at local (r, c).
-            if let Some(right) = corner_at_map(&grid_map, c + 1, r) {
-                if let (Some(top_left), Some(top_right), Some(bot_right), Some(bot_left)) = (
-                    corner_at_map(&grid_map, c, r - 1),
-                    corner_at_map(&grid_map, c + 1, r - 1),
-                    corner_at_map(&grid_map, c + 1, r + 1),
-                    corner_at_map(&grid_map, c, r + 1),
-                ) {
-                    let (bright, dark) = local_cell_references(
-                        image,
-                        [
-                            top_left.position,
-                            top_right.position,
-                            lc.position,
-                            right.position,
-                        ],
-                        [
-                            lc.position,
-                            right.position,
-                            bot_right.position,
-                            bot_left.position,
-                        ],
-                    );
-                    let candidates = horizontal_edge_sample_centers(
-                        [
-                            top_left.position,
-                            top_right.position,
-                            right.position,
-                            lc.position,
-                        ],
-                        [
-                            lc.position,
-                            right.position,
-                            bot_right.position,
-                            bot_left.position,
-                        ],
-                        corner_at_map(&grid_map, c - 1, r).map(|p| p.position),
-                        lc.position,
-                        right.position,
-                        corner_at_map(&grid_map, c + 2, r).map(|p| p.position),
-                    );
-                    let (bit, conf) = sample_edge_bit_with_candidates(
-                        image,
-                        lc.position,
-                        right.position,
-                        &candidates,
-                        bright,
-                        dark,
-                        radius,
-                    );
-                    out.push(observed_horizontal_edge(r, c, bit, conf));
-                }
-            }
-
-            // Downward vertical edge. Records at local (r, c).
-            if let Some(below) = corner_at_map(&grid_map, c, r + 1) {
-                if let (Some(tl), Some(tr), Some(br), Some(bl)) = (
-                    corner_at_map(&grid_map, c - 1, r),
-                    corner_at_map(&grid_map, c + 1, r),
-                    corner_at_map(&grid_map, c + 1, r + 1),
-                    corner_at_map(&grid_map, c - 1, r + 1),
-                ) {
-                    let (bright, dark) = local_cell_references(
-                        image,
-                        [tl.position, lc.position, below.position, bl.position],
-                        [lc.position, tr.position, br.position, below.position],
-                    );
-                    let candidates = vertical_edge_sample_centers(
-                        [tl.position, lc.position, below.position, bl.position],
-                        [lc.position, tr.position, br.position, below.position],
-                        corner_at_map(&grid_map, c, r - 1).map(|p| p.position),
-                        lc.position,
-                        below.position,
-                        corner_at_map(&grid_map, c, r + 2).map(|p| p.position),
-                    );
-                    let (bit, conf) = sample_edge_bit_with_candidates(
-                        image,
-                        lc.position,
-                        below.position,
-                        &candidates,
-                        bright,
-                        dark,
-                        radius,
-                    );
-                    out.push(observed_vertical_edge(r, c, bit, conf));
-                }
-            }
-        }
-        out
+        sample_all_edges(
+            image,
+            corners,
+            inliers,
+            self.params.decode.sample_radius_rel,
+        )
     }
 }
 
