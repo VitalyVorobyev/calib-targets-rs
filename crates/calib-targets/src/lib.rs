@@ -39,7 +39,8 @@
 //! - `calib_targets::chessboard`: chessboard detection from ChESS corners.
 //! - `calib_targets::aruco`: ArUco/AprilTag dictionaries and marker decoding.
 //! - `calib_targets::charuco`: ChArUco board alignment and IDs.
-//! - `calib_targets::puzzleboard`: PuzzleBoard edge-code decoding and IDs.
+//! - `calib_targets::puzzleboard`: PuzzleBoard edge-code decoding and IDs,
+//!   and PuzzlePole, the same pattern wrapped round a cylinder.
 //! - `calib_targets::marker`: checkerboard + circle marker boards.
 //! - `calib_targets::printable`: printable target generation and JSON/SVG/PNG output.
 //! - `calib_targets::detect` (feature `image`): end-to-end helpers from `image::GrayImage`.

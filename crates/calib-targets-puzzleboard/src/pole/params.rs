@@ -71,6 +71,40 @@ impl PuzzlePoleParams {
     }
 }
 
+impl PuzzlePoleParams {
+    /// Multi-config sweep preset, for `detect_puzzlepole_best`.
+    ///
+    /// The same shape as the planar sweep: the chessboard front-end sweep
+    /// crossed with two scoring settings — the default soft scorer at the
+    /// default bit-error budget, and the legacy hard-weighted scorer at the
+    /// paper's 40 % allowance, which recovers heavily foreshortened fragments
+    /// the soft path's margin gate declines.
+    ///
+    /// A pole makes the second pass matter more than a flat board does: near
+    /// the limb every dot is compressed, so a view that reads cleanly across
+    /// the middle of the sector can still carry a low-confidence tail.
+    #[must_use]
+    pub fn sweep_for_pole(pole: &PuzzlePoleSpec) -> Vec<Self> {
+        let base = Self::for_pole(*pole);
+        let sweep = ChessboardParams::sweep_default();
+        let with_chessboard = |mut chessboard: ChessboardParams| {
+            chessboard.min_corner_strength = base.chessboard.min_corner_strength;
+            Self {
+                chessboard,
+                ..base.clone()
+            }
+        };
+        let mut configs: Vec<Self> = sweep.iter().cloned().map(with_chessboard).collect();
+        configs.extend(sweep.into_iter().map(|chessboard| {
+            let mut params = with_chessboard(chessboard);
+            params.decode.scoring_mode = PuzzleBoardScoringMode::HardWeighted;
+            params.decode.max_bit_error_rate = 0.40;
+            params
+        }));
+        configs
+    }
+}
+
 /// Decode knobs for a PuzzlePole.
 ///
 /// Deliberately not a reuse of `PuzzleBoardDecodeConfig`. Two of its fields
@@ -235,6 +269,21 @@ mod tests {
         // 5 x 8 corners: 45 interior dots carrying 27 distinct bits.
         assert_eq!(required_edges_rect(5, 8), 45);
         assert_eq!(required_logical_bits_rect(5, 8), 27);
+    }
+
+    #[test]
+    fn the_sweep_covers_both_scorers() {
+        let pole = PuzzlePoleSpec::new(24, 12, 20.0).expect("period 24 is supported");
+        let configs = PuzzlePoleParams::sweep_for_pole(&pole);
+        assert!(configs.len() >= 2);
+        assert!(configs.iter().any(|c| matches!(
+            c.decode.scoring_mode,
+            PuzzleBoardScoringMode::SoftLogLikelihood
+        )));
+        assert!(configs
+            .iter()
+            .any(|c| matches!(c.decode.scoring_mode, PuzzleBoardScoringMode::HardWeighted)));
+        assert!(configs.iter().all(|c| c.pole == pole));
     }
 
     #[test]
