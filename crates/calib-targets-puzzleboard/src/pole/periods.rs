@@ -105,6 +105,22 @@ impl PuzzlePolePeriod {
         core::f32::consts::PI * diameter_mm / self.squares as f32
     }
 
+    /// Are every one of this period's `3p` local 3 x 3 codes distinct?
+    ///
+    /// This is the decode's actual precondition — a local code has to pin its
+    /// position around the circumference, or a fragment cannot be placed. It is
+    /// what the paper's "no additional patch has been generated" amounts to,
+    /// and it is provable from the seam condition, but it is cheap enough to
+    /// check rather than argue.
+    ///
+    /// Every shipped period satisfies it (`every_supported_period_has_unique_local_codes`).
+    /// It is public because it is the test a *candidate* period has to pass:
+    /// a seam that closes is necessary and not sufficient.
+    #[must_use]
+    pub fn local_codes_are_unique(self) -> bool {
+        super::code::PoleCode::new(self).windows_are_unique()
+    }
+
     /// Look up a verified period by its `(squares, start_row)` pair.
     ///
     /// Returns `None` for any pair not in [`SUPPORTED_PERIODS`], even if it

@@ -34,6 +34,7 @@
 //! that lands nearest the tube you have, then let [`PuzzlePoleSpec::new`]
 //! report the diameter you must actually hit.
 
+pub(crate) mod code;
 pub mod geometry;
 pub mod periods;
 
