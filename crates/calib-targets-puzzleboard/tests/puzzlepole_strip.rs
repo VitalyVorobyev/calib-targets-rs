@@ -76,16 +76,10 @@ fn decode_strip_flat(period: PuzzlePolePeriod) -> Vec<(i32, i32)> {
 
     // The strip *is* a master sub-rectangle, so the planar detector needs no
     // knowledge of poles to read it. That is the point of this test.
-    let board = PuzzleBoardSpec::with_origin(
-        strip_pieces,
-        AXIAL,
-        PIECE_MM as f32,
-        period.start_row,
-        0,
-    )
-    .expect("a wrap strip is a valid planar sub-board");
-    let detector =
-        PuzzleBoardDetector::new(PuzzleBoardParams::for_board(board)).expect("detector");
+    let board =
+        PuzzleBoardSpec::with_origin(strip_pieces, AXIAL, PIECE_MM as f32, period.start_row, 0)
+            .expect("a wrap strip is a valid planar sub-board");
+    let detector = PuzzleBoardDetector::new(PuzzleBoardParams::for_board(board)).expect("detector");
 
     let view = GrayImageView {
         width: gray.width() as usize,
