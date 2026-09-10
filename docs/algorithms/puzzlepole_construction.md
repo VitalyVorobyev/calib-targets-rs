@@ -325,30 +325,84 @@ Two consequences worth stating, because they are not obvious:
   folding the axial extent mod `p` forces mismatches the planar long axis of
   167 never produces.
 
-## 9. What is not settled here
+## 9. How much a decoder must see
 
-- **The uniqueness floor.** `min_window = 7` was measured exhaustively over the
-  planar master's 251 001 positions. A pole's position space is `p x axial
-  extent`, which is far smaller, so the floor must be re-measured rather than
-  inherited. It matters: the paper's own pole is 7 corner columns axially, so a
-  floor of 7 would demand the whole pole be visible, defeating the occlusion
-  robustness that is the point.
-- **The thin-strip guard.** `WindowTooThin` rejects wide-and-short fragments —
-  the natural pole shape — because on a planar master such strips genuinely
-  false-accept. On the wrapped axis the strip closes into a ring of only `p`
-  origins, so that argument does not transfer and needs a structural
-  replacement, not a relaxed number.
-- **Grid assembly on a curved surface.** A visible cylinder sector is not
-  planar. `shared/validate/lines.rs` fits *straight* total-least-squares lines
-  to grid rows and columns; on a cylinder the axial lines are generatrices and
-  stay straight, but the circumferential ones lie on circles and project to
-  conics.
+Measured exhaustively in `research/puzzleboard-rings` (`pbr pole floor`), with
+the full write-up at
+[`report/puzzlepole-floor.md`](../../research/puzzleboard-rings/report/puzzlepole-floor.md).
+The constants below are outputs of that measurement, not choices.
 
-All three are Phase 2 work and each needs a measurement before a change.
+`min_window = 7` was measured for the *planar* master over its 251 001
+positions. A pole's position space is `p × axial extent`, so the floor had to be
+re-measured rather than inherited.
 
-## 10. References
+**The answer is a 2-D frontier, not a scalar**, because the two axes have
+different periods and a pole fragment is naturally wide-and-short. Clean on
+every supported pole at any length, in corners (circumference × axial):
+
+| group | rectangle | square |
+|---|---|---|
+| C4 (what production searches) | **5 × 8** | 7 × 7 |
+| D4 (rotations and reflections) | 5 × 10 | 9 × 9 |
+
+Two structural facts came with it:
+
+- **An axial extent of 4 corners never works**, at any circumference span: its
+  interior readout gives two columns of `map_a`, and a 3 × 2 block of a
+  sub-perfect map is not unique — sub-perfection is a 3 × 3 property.
+- **A pole longer than `500 + span_x` corner columns is undecodable** at any
+  window size, because the axial pattern's period is `lcm(3, 167) = 501`. The
+  spec's existing bound (the strip must fit the master's columns) already keeps
+  every constructible pole inside that.
+
+### The shape of the search decides whether p = 12 works
+
+The smallest circumference span anywhere on the frontier is **5, for every
+period and both groups**. A fragment of `span_y` corner rows subtends
+`(span_y − 1) · 360 / p` degrees, so the arc a decode demands is `1440 / p`:
+
+| p | 12 | 18 | 24 | 30 | 36 | 42 | 48 |
+|---|---|---|---|---|---|---|---|
+| arc demanded | **120.0°** | 80.0° | 60.0° | 48.0° | 40.0° | 34.3° | 30.0° |
+
+A cylinder shows roughly 120–140° before the limb foreshortens the pattern past
+detection — a stated modelling assumption, the one input here not derived from
+the maps. So **every supported period is single-view decodable**, refuting the
+expectation that p = 12 might not be. But p = 12 needs *exactly* the
+conservative 120°, with no margin, **and only at the wide corner of its
+frontier**: its square-ish points cost 180° (`7 × 5`) and 150° (`6 × 6`), both
+impossible from one view.
+
+**A decoder that searches square windows cannot read a 12-piece pole from a
+single view; one that searches `5 × 8` can.** The shape of the search matters
+more than the period does, and that is a design constraint on the decode path,
+not a tuning knob.
+
+### What replaces `WindowTooThin`
+
+The planar guard requires the corner span to reach `min_window` on *both* axes.
+That is a bounding-box proxy for per-family long-axis coverage, and it fails on
+a ring twice over: a fragment that wraps overstates its coverage, and the two
+long axes are no longer the same length so one number cannot describe both. The
+replacement is per-axis and per-period, taken from the frontier above — and it
+is measured, so it is not the threshold-tightening the contract forbids.
+
+## 10. Still open
+
+- **Grid assembly on a curved surface** — §6 of this note localises the risk to
+  `shared/validate/lines.rs`, which fits *straight* lines to grid rows and
+  columns. On a cylinder the axial lines stay straight and the circumferential
+  ones project to conics. Needs a measurement on rendered cylinders before any
+  change.
+- **The colour bit is not modelled** in the floor measurement, matching the
+  planar harness: a dot readout carries no parity. Withholding information can
+  only raise a floor, so every number above is an upper bound.
+
+## 11. References
 
 - `crates/calib-targets-puzzleboard/src/pole/` — the implementation.
 - [`puzzle_detection_spec.md`](puzzle_detection_spec.md) — the planar decoder.
 - [`algorithmic_gaps.md`](algorithmic_gaps.md) — open items.
-- `research/puzzleboard-rings/` — the exhaustive uniqueness harness.
+- `research/puzzleboard-rings/` — the exhaustive uniqueness harness, and
+  [`report/puzzlepole-floor.md`](../../research/puzzleboard-rings/report/puzzlepole-floor.md)
+  for the full floor measurement.

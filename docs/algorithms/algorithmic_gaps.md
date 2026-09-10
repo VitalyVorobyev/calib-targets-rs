@@ -158,6 +158,31 @@ there is no global number to compare across frames, by design.
 is not read as an oversight. See the architectural-direction note below on why
 precision at the frontier stays local.
 
+### Gap 24 — Straight-line validation on a curved target
+
+`shared/validate/lines.rs` fits a **total-least-squares straight line** to every
+grid row and column in pixel space and flags members beyond
+`line_tol_rel × scale`. That is right for a plane and wrong for a cylinder: a
+PuzzlePole's axial grid lines are generatrices and do project to straight lines,
+but its circumferential lines lie on circles and project to **conics**. Over a
+120–180° visible sector the sagitta can exceed the tolerance, and the
+attribution rule "flagged in ≥ 2 lines ⇒ outlier" would then blacklist genuine
+corners. `run_geometry_check` is mandatory on the chessboard path, so there is
+no way to opt out of it today.
+
+**Fix.** Structural, not a loosened tolerance: a straight line is the degenerate
+conic, so the principled generalisation is a curvature-continuity /
+second-difference predicate along the grid line, which subsumes the planar case
+rather than special-casing the cylinder. This also matches the workspace rule
+preferring second-order criteria to first-order magnitude thresholds.
+
+**Measure first.** Render a synthetic cylinder, run the grid build with
+per-stage diagnostics, and report which stage drops which corners before
+changing anything. The local-homography check is *not* expected to be the
+problem — a cylinder is locally near-planar — and the global-homography
+extension fails safe by refusing to attach. Recorded from the PuzzlePole design
+note (`docs/algorithms/puzzlepole_construction.md`).
+
 ---
 
 ## Architectural-direction summary
