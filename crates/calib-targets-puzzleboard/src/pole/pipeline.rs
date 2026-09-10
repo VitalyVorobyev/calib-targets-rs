@@ -210,6 +210,20 @@ impl PuzzlePoleDetector {
             ));
         }
 
+        // **Injectivity.** A wrapped pole cannot present a corner twice -- the
+        // spare piece is glued under the first -- so two image positions
+        // claiming one pole index means the target was not wrapped or the grid
+        // was mislabelled. Refuse rather than pick one: a miss beats a wrong ID,
+        // and nothing here can tell those two causes apart.
+        let mut seen: Vec<(i32, i32)> = out.iter().map(|c| (c.grid.u, c.grid.v)).collect();
+        seen.sort_unstable();
+        if let Some(pair) = seen.windows(2).find(|w| w[0] == w[1]) {
+            return Err(PuzzlePoleDetectError::InconsistentPosition {
+                axial: pair[0].0 as u32,
+                cyclic: pair[0].1 as u32,
+            });
+        }
+
         // **The window floor, in the pole's own axes.** Only now is it known
         // which way round the fragment sat: a patch 5 corners one way and 8 the
         // other decodes if the 8 runs along the axis and not if it runs around

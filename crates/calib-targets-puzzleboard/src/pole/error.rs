@@ -56,4 +56,24 @@ pub enum PuzzlePoleDetectError {
     /// No hypothesis was uniquely best, so none was accepted.
     #[error("no position on the pole uniquely explains the observed dots")]
     DecodeFailed,
+    /// Two corners at different image positions decoded to the same place on
+    /// the pole.
+    ///
+    /// A wrapped pole cannot present the same corner twice: the strip's spare
+    /// piece is glued *under* the first, so only one of the pair is ever
+    /// visible. Seeing both means either the target was never wrapped — a flat
+    /// print of the wrap strip, which is a valid thing to have but is not a
+    /// pole — or the grid was mislabelled. Neither can be told apart from here,
+    /// and the contract says a miss beats a wrong ID, so the component is
+    /// refused.
+    #[error(
+        "two corners decoded to pole position (axial {axial}, cyclic {cyclic}); a \
+         wrapped pole cannot show the same corner twice"
+    )]
+    InconsistentPosition {
+        /// Axial index claimed twice.
+        axial: u32,
+        /// Cyclic index claimed twice.
+        cyclic: u32,
+    },
 }
