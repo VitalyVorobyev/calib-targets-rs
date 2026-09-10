@@ -82,19 +82,19 @@ The issue asked for the paper's Table 1 to be verified against the shipped
 author maps rather than transcribed. It was. `is_seamless` re-derives it, and
 `pole::periods::tests` pins the result:
 
-| period | paper `start y` | `% 167` | closes? | every seamless start row |
-|---|---|---|---|---|
-| 12 | 73 | 73 | yes | 73, 118 |
-| 18 | 7 | 7 | yes | 7 |
-| 24 | 242 | 75 | yes | 75 |
-| 30 | 176 | 9 | yes | 9, 49, 114 |
-| 36 | 325 | 158 | **no** | 41, 160 |
-| 42 | 410 | 76 | yes | 76, 123 |
-| 48 | 115 | 115 | yes | 115 |
+| period | paper `start y` | closes? | every seamless start row over the master |
+|---|---|---|---|
+| 12 | 73 | yes | 73, 118, 240, 285, 407, 452 |
+| 18 | 7 | yes | 7, 174, 341 |
+| 24 | 242 | yes | 75, 242, 409 |
+| 30 | 176 | yes | 9, 49, 114, 176, 216, 281, 343, 383, 448 |
+| 36 | 325 | **no** | 41, 160, 208, 327, 375, ~~494~~ |
+| 42 | 410 | yes | 76, 123, 243, 290, 410, 457 |
+| 48 | 115 | yes | 115, 282, 449 |
 
-**Six of seven reproduce exactly. Period 36 does not.** Row 158 does not repeat
-at period 36 — not even one row, let alone two. Row 160 does, and
-`160 = 327 % 167`, one step away from the paper's 325. The maps are the
+**Six of seven reproduce exactly. Period 36 does not.** Row 325 does not repeat
+at period 36 — not even one row, let alone two. Row 327 does, and
+it is one step away from the paper's 325. The maps are the
 authors' own, pinned byte-for-byte by
 `code_maps::tests::shipped_maps_are_the_authors_code_verbatim`, and the other
 six rows agree, so a different code revision is not a plausible explanation: it
@@ -116,9 +116,38 @@ tests:
   Poles of the size as given in Figure 4" — `floor(501 / 21)` and
   `floor(501 / 7)`, the disjoint axial windows of §7.
 
-Several periods admit **more than one** seamless start row, which the paper does
-not mention. Those are genuinely different patterns (`distinct_start_rows_are_distinct_patterns`)
-and are shipped, because a pole's pattern is part of its identity.
+### A start row names a pattern modulo 501, not modulo 167
+
+Seamlessness depends on `map_b` only through `start_row % 167`, which makes it
+tempting to store the reduction. **That is wrong, and it was wrong here first.**
+`map_a` is indexed by `start_row % 3` and the checkerboard colour by
+`start_row % 2`, and 167 is neither even nor a multiple of 3 — so `s`, `s + 167`
+and `s + 334` are three *different patterns* that all close.
+
+No rotation of the circumference relates them either: undoing the `map_a` shift
+needs a rotation of `k ≢ 0 (mod 3)`, while leaving the stripe alone needs
+`k ≡ 0 (mod p)`, and `3 | p` makes those incompatible.
+
+So the shipped table stores the paper's **absolute** `start y` — 242, not 75;
+176, not 9; 327, not 160; 410, not 76 — and lists all three phases of every
+seamless residue. A board printed from the paper's parameters and one printed
+from the reduction are *not the same target*, and a decoder told the wrong one
+reads the vertical dots off by a row. `reducing_a_start_row_mod_167_names_a_different_pattern`
+pins exactly that.
+
+One phase is excluded: period 36 at start row 494 is seamless, but its `p + 2`
+piece strip runs off the master's last row and cannot be cut. It is left out
+rather than shipped as a spec that fails at render time.
+
+Two incidental facts fell out of the same analysis:
+
+- **The master's row period is 1002, not 501.** Both maps repeat after 501 rows,
+  but 501 is odd, so the checkerboard colour inverts. A seam predicate that
+  ignores the colour would call 501 a period.
+- Several periods admit **more than one** seamless residue, which the paper does
+  not mention. Those are genuinely different patterns
+  (`distinct_start_rows_are_distinct_patterns`) and are all shipped, because a
+  pole's pattern is part of its identity.
 
 ## 5. The consequence the decoder cannot ignore
 

@@ -62,9 +62,6 @@ use crate::code_maps::{horizontal_edge_bit, vertical_edge_bit};
 /// agreement across 501 columns is agreement everywhere.
 const COMPARE_COLS: i32 = crate::board::MASTER_COLS as i32;
 
-/// Master rows in the code map's fundamental period along the wrapped axis.
-const MAP_B_ROWS: u32 = crate::code_maps::EDGE_MAP_B_ROWS as u32;
-
 /// A circumference period that closes seamlessly on the shipped code maps.
 ///
 /// `squares` is the number of puzzle pieces around the cylinder, so the
@@ -165,17 +162,34 @@ impl PuzzlePolePeriod {
 /// `supported_periods_are_all_seamless`, so the table cannot drift from the
 /// maps it describes.
 ///
-/// The circumferences are the seven in the paper's Table 1. Where the paper
-/// lists one start row and the maps admit several, all are listed — they are
-/// different patterns, and a pole's pattern is part of its identity.
+/// # A start row names a pattern modulo 501, not modulo 167
+///
+/// Seamlessness depends on `map_b` only through `start_row % 167`, so it is
+/// tempting to store the reduction. That would be wrong: `map_a` is indexed by
+/// `start_row % 3` and the checkerboard colour by `start_row % 2`, and 167 is
+/// neither even nor a multiple of 3 — so `s`, `s + 167` and `s + 334` are three
+/// **different patterns** that all close. No rotation of the circumference
+/// relates them either: undoing the `map_a` shift needs a rotation of
+/// `k ≢ 0 (mod 3)`, while leaving the stripe alone needs `k ≡ 0 (mod p)`, and
+/// `3 | p` makes those incompatible.
+///
+/// So each circumference has three phases per seamless residue, all listed
+/// here, and [`PuzzlePolePeriod::canonical`] returns the paper's **absolute**
+/// `start y` rather than its reduction. A board printed from the paper's
+/// parameters and one printed from the reduction are not the same target, and
+/// a decoder told the wrong one reads the vertical dots off by a row.
 ///
 /// **The period-36 correction.** The paper gives `start y = 325` for period 36.
-/// On the shipped maps (which are the authors' own `code1` / `code2`, pinned
-/// byte-for-byte by `code_maps::tests::shipped_maps_are_the_authors_code_verbatim`)
-/// row `325 % 167 = 158` does not repeat at period 36 — not even one row. Row
-/// `327 % 167 = 160` does, and is used here. The other six rows of Table 1
-/// reproduce exactly, so this is almost certainly a transcription slip in the
-/// paper rather than a different code revision.
+/// On the shipped maps — the authors' own `code1` / `code2`, pinned byte for
+/// byte by `code_maps::tests::shipped_maps_are_the_authors_code_verbatim` — row
+/// 325 does not repeat at period 36, not even one row. Row 327 does, and is
+/// used here. The other six rows of Table 1 reproduce exactly, so this reads as
+/// a transcription slip rather than a different code revision.
+///
+/// **One exclusion.** Period 36 at start row 494 is seamless but its `p + 2`
+/// piece strip runs off the master's last row, so it cannot be cut. It is left
+/// out rather than shipped as a spec that fails at render time; the other five
+/// phases of that circumference are unaffected.
 pub const SUPPORTED_PERIODS: &[PuzzlePolePeriod] = &[
     PuzzlePolePeriod {
         squares: 12,
@@ -186,12 +200,44 @@ pub const SUPPORTED_PERIODS: &[PuzzlePolePeriod] = &[
         start_row: 118,
     },
     PuzzlePolePeriod {
+        squares: 12,
+        start_row: 240,
+    },
+    PuzzlePolePeriod {
+        squares: 12,
+        start_row: 285,
+    },
+    PuzzlePolePeriod {
+        squares: 12,
+        start_row: 407,
+    },
+    PuzzlePolePeriod {
+        squares: 12,
+        start_row: 452,
+    },
+    PuzzlePolePeriod {
         squares: 18,
         start_row: 7,
     },
     PuzzlePolePeriod {
+        squares: 18,
+        start_row: 174,
+    },
+    PuzzlePolePeriod {
+        squares: 18,
+        start_row: 341,
+    },
+    PuzzlePolePeriod {
         squares: 24,
         start_row: 75,
+    },
+    PuzzlePolePeriod {
+        squares: 24,
+        start_row: 242,
+    },
+    PuzzlePolePeriod {
+        squares: 24,
+        start_row: 409,
     },
     PuzzlePolePeriod {
         squares: 30,
@@ -206,12 +252,48 @@ pub const SUPPORTED_PERIODS: &[PuzzlePolePeriod] = &[
         start_row: 114,
     },
     PuzzlePolePeriod {
+        squares: 30,
+        start_row: 176,
+    },
+    PuzzlePolePeriod {
+        squares: 30,
+        start_row: 216,
+    },
+    PuzzlePolePeriod {
+        squares: 30,
+        start_row: 281,
+    },
+    PuzzlePolePeriod {
+        squares: 30,
+        start_row: 343,
+    },
+    PuzzlePolePeriod {
+        squares: 30,
+        start_row: 383,
+    },
+    PuzzlePolePeriod {
+        squares: 30,
+        start_row: 448,
+    },
+    PuzzlePolePeriod {
         squares: 36,
         start_row: 41,
     },
     PuzzlePolePeriod {
         squares: 36,
         start_row: 160,
+    },
+    PuzzlePolePeriod {
+        squares: 36,
+        start_row: 208,
+    },
+    PuzzlePolePeriod {
+        squares: 36,
+        start_row: 327,
+    },
+    PuzzlePolePeriod {
+        squares: 36,
+        start_row: 375,
     },
     PuzzlePolePeriod {
         squares: 42,
@@ -222,8 +304,32 @@ pub const SUPPORTED_PERIODS: &[PuzzlePolePeriod] = &[
         start_row: 123,
     },
     PuzzlePolePeriod {
+        squares: 42,
+        start_row: 243,
+    },
+    PuzzlePolePeriod {
+        squares: 42,
+        start_row: 290,
+    },
+    PuzzlePolePeriod {
+        squares: 42,
+        start_row: 410,
+    },
+    PuzzlePolePeriod {
+        squares: 42,
+        start_row: 457,
+    },
+    PuzzlePolePeriod {
         squares: 48,
         start_row: 115,
+    },
+    PuzzlePolePeriod {
+        squares: 48,
+        start_row: 282,
+    },
+    PuzzlePolePeriod {
+        squares: 48,
+        start_row: 449,
     },
 ];
 
@@ -234,10 +340,10 @@ pub const SUPPORTED_PERIODS: &[PuzzlePolePeriod] = &[
 const CANONICAL_START_ROWS: &[(u32, u32)] = &[
     (12, 73),  // paper: start y = 73
     (18, 7),   // paper: start y = 7
-    (24, 75),  // paper: start y = 242, 242 % 167 = 75
-    (30, 9),   // paper: start y = 176, 176 % 167 = 9
-    (36, 160), // paper: start y = 325 — does not close; 327 % 167 = 160 does
-    (42, 76),  // paper: start y = 410, 410 % 167 = 76
+    (24, 242), // paper: start y = 242
+    (30, 176), // paper: start y = 176
+    (36, 327), // paper: start y = 325 -- does not close; 327 does
+    (42, 410), // paper: start y = 410
     (48, 115), // paper: start y = 115
 ];
 
@@ -274,20 +380,43 @@ fn piece_rows_agree(a: i32, b: i32) -> bool {
     })
 }
 
-/// Every seamless start row for `squares`, over one fundamental period.
+/// Every seamless start row for `squares`, over the whole master.
+///
+/// The range is the master's 501 rows, not `map_b`'s 167. Seamlessness depends
+/// on `map_b` only modulo 167, but a start row names a *pattern* modulo 501,
+/// because `map_a` and the checkerboard colour move with the other two phases.
+/// Reducing a start row mod 167 therefore names a different pole — see
+/// [`SUPPORTED_PERIODS`].
 ///
 /// Exposed for the design note and the tests: it is what proves
 /// [`SUPPORTED_PERIODS`] is complete rather than a hand-picked subset.
 #[must_use]
 pub fn seamless_start_rows(squares: u32) -> Vec<u32> {
-    (0..MAP_B_ROWS)
+    (0..crate::board::MASTER_ROWS)
         .filter(|&s| is_seamless(squares, s))
         .collect()
+}
+
+/// Does a strip at this start row fit inside the master's rows?
+///
+/// The printable strip is `squares + 2` pieces tall and the renderer cuts it
+/// from a contiguous master rectangle, so a start row late enough that the
+/// strip runs off the end is seamless but unbuildable. Exactly one shipped
+/// circumference has such a phase; it is excluded rather than offered as a spec
+/// that fails at render time.
+#[must_use]
+pub fn strip_fits_master(squares: u32, start_row: u32) -> bool {
+    start_row + squares + 2 <= crate::board::MASTER_ROWS
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Rows in `map_b`'s fundamental period — the modulus that is *not* enough
+    /// to name a pattern. Only the tests need it; the shipped table works in
+    /// absolute master rows precisely so nothing else does.
+    const MAP_B_ROWS: u32 = crate::code_maps::EDGE_MAP_B_ROWS as u32;
 
     /// The shipped table is derived from the maps, not transcribed — so every
     /// entry must satisfy the predicate that defines it.
@@ -317,10 +446,14 @@ mod tests {
                 .map(|p| p.start_row)
                 .collect();
             shipped.sort_unstable();
+            let buildable: Vec<u32> = seamless_start_rows(squares)
+                .into_iter()
+                .filter(|&s| strip_fits_master(squares, s))
+                .collect();
             assert_eq!(
-                shipped,
-                seamless_start_rows(squares),
-                "the table's start rows for period {squares} are not every seamless one"
+                shipped, buildable,
+                "the table's start rows for period {squares} are not every seamless \
+                 one whose strip fits the master"
             );
         }
     }
@@ -343,11 +476,12 @@ mod tests {
         }
     }
 
-    /// Table 1 of arXiv:2511.19448, verbatim, against the authors' own maps.
-    /// Six rows reproduce; period 36 does not, and 327 is what closes.
+    /// Table 1 of arXiv:2511.19448, verbatim and **unreduced**, against the
+    /// authors' own maps. Six rows reproduce; period 36 does not, and 327 is
+    /// what closes.
     #[test]
     fn paper_table_1_reproduces_except_the_period_36_row() {
-        // (period, paper's `start y`)
+        // (period, the paper's `start y`, exactly as printed)
         const PAPER_TABLE_1: &[(u32, u32)] = &[
             (12, 73),
             (18, 7),
@@ -359,7 +493,7 @@ mod tests {
         ];
 
         for &(squares, start_y) in PAPER_TABLE_1 {
-            let closes = is_seamless(squares, start_y % MAP_B_ROWS);
+            let closes = is_seamless(squares, start_y);
             if squares == 36 {
                 assert!(!closes, "period 36 at start y = 325 unexpectedly closes");
             } else {
@@ -371,9 +505,35 @@ mod tests {
         }
 
         assert!(
-            is_seamless(36, 327 % MAP_B_ROWS),
+            is_seamless(36, 327),
             "327 is the documented correction for the period-36 row"
         );
+    }
+
+    /// The paper's start rows are shipped **unreduced**. Reducing one mod 167
+    /// keeps it seamless but names a different pattern, because `map_a` and the
+    /// checkerboard colour move with the other phases — so a board printed from
+    /// the reduction would not be the paper's board.
+    #[test]
+    fn reducing_a_start_row_mod_167_names_a_different_pattern() {
+        for squares in [24, 30, 36, 42] {
+            let canonical = PuzzlePolePeriod::canonical(squares).expect("supported");
+            let reduced = canonical.start_row % MAP_B_ROWS;
+            assert_ne!(
+                reduced, canonical.start_row,
+                "period {squares} should have a canonical row above 167"
+            );
+            assert!(
+                is_seamless(squares, reduced),
+                "the reduction still closes -- that is exactly the trap"
+            );
+            let s = canonical.start_row as i32;
+            let r = reduced as i32;
+            assert!(
+                (0..squares as i32).any(|k| !piece_rows_agree(s + k, r + k)),
+                "period {squares}: the reduction is the same pattern after all"
+            );
+        }
     }
 
     #[test]
@@ -410,7 +570,7 @@ mod tests {
         let twelve: Vec<u32> = PuzzlePolePeriod::all_with_squares(12)
             .map(|p| p.start_row)
             .collect();
-        assert_eq!(twelve, vec![73, 118]);
+        assert_eq!(twelve, vec![73, 118, 240, 285, 407, 452]);
         assert!(
             !piece_rows_agree(73, 118),
             "the two period-12 strips would be the same pattern"
