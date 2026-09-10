@@ -80,16 +80,6 @@ pub struct PuzzlePolePeriod {
 }
 
 impl PuzzlePolePeriod {
-    /// The corner rows a printable wrap strip spans: `squares + 1`.
-    ///
-    /// The first and last are the *same* row of the pattern — they land on each
-    /// other when the strip is wrapped — which is the one-piece overlap the
-    /// paper describes.
-    #[must_use]
-    pub const fn strip_corner_rows(self) -> u32 {
-        self.squares + 1
-    }
-
     /// The piece size that makes this period wrap a cylinder of `diameter_mm`.
     ///
     /// The usual situation is the reverse of the one
@@ -426,9 +416,16 @@ mod tests {
         }
     }
 
+    /// The paper describes its pole as "y corner point IDs from 73 to 85" —
+    /// `p + 1` labels for `p` distinct rows, because the last is the first.
+    /// That is a statement about the *wrapped* pattern and is not the height of
+    /// the printed sheet, which carries two extra pieces for the trim and the
+    /// glue overlap. Three units, and conflating them is the classic
+    /// PuzzleBoard error, so the identity is asserted rather than named.
     #[test]
-    fn a_strip_spans_one_more_corner_row_than_it_has_pieces() {
+    fn the_last_labelled_corner_row_is_the_first_one() {
         let p = PuzzlePolePeriod::canonical(12).expect("period 12 is supported");
-        assert_eq!(p.strip_corner_rows(), 13);
+        let s = p.start_row as i32;
+        assert!(piece_rows_agree(s, s + p.squares as i32));
     }
 }

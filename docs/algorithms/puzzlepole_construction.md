@@ -108,7 +108,9 @@ tests:
 - Its pole is "a 7 x 12 periodic PuzzleBoard pattern with the y corner point
   IDs from 73 to 85 ... edge length of a Puzzle piece is 3 centimeters ...
   diameter of 11.46cm and a height ... of 18cm." Rows 73..=85 is 13 corner rows
-  = `p + 1` with the first and last identical; `12 * 30 / pi = 114.59 mm`;
+  = `p + 1` *labels* with the first and last identical (a statement about
+  the wrapped pattern, not the height of the printed sheet — see §6);
+  `12 * 30 / pi = 114.59 mm`;
   7 corner columns = 6 cells = 180 mm. All three reproduce.
 - "23 unique PuzzlePoles of the same size as given in Figure 3 or 71 unique
   Poles of the size as given in Figure 4" — `floor(501 / 21)` and
