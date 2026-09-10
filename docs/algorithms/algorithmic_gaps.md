@@ -194,6 +194,39 @@ above: a straight line is the degenerate conic, so the general predicate is
 curvature continuity along the grid line, which subsumes the planar case rather
 than special-casing the cylinder.
 
+### Gap 25 — Telling one PuzzlePole from another — **open, unmeasured**
+
+**The claim.** Poles cut from *disjoint* axial column windows of the master
+share no corner at all, so a decoded corner identifies its pole. That is true by
+construction — it is arithmetic on the window offsets, and
+`PuzzlePoleSpec::distinct_poles` enumerates the family — and it is the basis of
+the paper's "71 distinct poles".
+
+**What is not established.** The claim is about *ids not colliding*. It is not a
+statement about the detector, and the detector cannot currently make it: a pole
+decodes through `BoardRect::pole`, whose column axis is `Clamped` to the
+configured pole's own window. Origins outside that window are never enumerated,
+so a fragment of a *different* pole is never given the chance to land where it
+belongs and be seen not to belong here. What happens instead — refusal on bit
+error, refusal on the uniqueness margin, or a wrong id — has not been measured,
+for either axis of difference: a different axial window on the same code stripe,
+or a different start row at the same circumference.
+
+The gates *should* refuse: a foreign axial window reads different `map_a`
+columns, so the bit-error rate should be high and the margin gate should decline
+it. But "should" is not a measurement, and the contract this workspace gives is
+asymmetric — a miss is acceptable, a wrong id is not.
+
+**What would close it.** Sweep ordered pairs over the shipped family: render
+pole B, decode with pole A's params, require refusal at every placement and
+azimuth. Same shape as the window-floor sweep, and it belongs in
+`research/puzzleboard-rings` beside it.
+
+**Why it is open rather than blocking.** One pole in frame is the shipped use,
+and a multi-pole scene is an explicit per-spec loop in the caller's code rather
+than something reached by accident. The tutorial states the limit where a user
+would meet it.
+
 ---
 
 ## Architectural-direction summary

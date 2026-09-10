@@ -1,6 +1,6 @@
 # How to choose a target
 
-Five target families ship here, and the differences that matter are not
+Six target families ship here, and the differences that matter are not
 subtle. This page is the decision, not the tour — each row links to the
 reference page for the family.
 
@@ -9,6 +9,10 @@ reference page for the family.
 **Calibrating one camera, board fully visible, no other constraints?** Use a
 [chessboard](chessboard.md). It is the simplest thing that works and there is
 nothing to configure.
+
+**Need pose from any direction, or from a target that cannot be kept facing
+the camera?** Use a [PuzzlePole](tutorial_puzzlepole.md) — it is the only
+family here that is not flat.
 
 **Anything else?** Read the table.
 
@@ -20,6 +24,7 @@ nothing to configure.
 | [ChArUco](charuco.md) | absolute | ✓ | an ArUco dictionary | [pipeline](pipeline_charuco.md) |
 | [PuzzleBoard](puzzleboard.md) | absolute | ✓ down to a small fragment | nothing | [pipeline](pipeline_puzzleboard.md) |
 | [Marker board](marker.md) | absolute | ✓ | a custom circle layout | [pipeline](pipeline_marker.md) |
+| [PuzzlePole](tutorial_puzzlepole.md) | absolute, **3-D** | ✓ from any azimuth | a tube to wrap it on | [how-to](howto_print_puzzlepole.md) |
 | Regular grid | none | ✗ | nothing | [pipeline](pipeline_regular_grid.md) |
 
 **Corner IDs** is the property that decides most cases. Without them a
@@ -28,7 +33,7 @@ visible for its corners to mean anything. With them every corner carries an
 absolute identity, so a partial view is still useful and the board's
 orientation is never ambiguous.
 
-## Choosing between the three identified families
+## Choosing between the identified families
 
 They differ in how the identity is encoded, which is what drives the
 resolution each one needs.
@@ -47,9 +52,19 @@ when the board will be small in frame, partly occluded, or oblique. It is the
 best-covered family in this book — see [the decode](algo_puzzleboard_decode.md)
 and [the code maps](algo_puzzleboard_code_maps.md).
 
+**PuzzlePole** is the PuzzleBoard pattern wrapped round a cylinder, so it is
+the same code read the same way — but on a surface with no back. Every other
+family here degrades as it turns away from the camera and stops working
+altogether near edge-on; a pole presents the same face at every azimuth, and its
+corners come with 3-D object points instead of points on a plane. Pick it when
+the target must be viewed from several directions at once, when it cannot be
+aimed at the camera, or when you want a single-view pose without a rig. The
+cost is that it must be wrapped accurately on a tube of the right diameter, and
+that only seven circumferences wrap seamlessly.
+
 **Marker board** is a plain checkerboard with three circular markers placed to
-break its symmetry. It carries far less information than the other two — just
-enough to fix the frame — but it prints as an ordinary chessboard with three
+break its symmetry. It carries far less information than the
+others — just enough to fix the frame — but it prints as an ordinary chessboard with three
 dots, which suits setups where the full pattern is impractical.
 
 ## Then choose the size

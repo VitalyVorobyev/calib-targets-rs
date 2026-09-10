@@ -30,6 +30,13 @@ fi
 
 cargo run --quiet -p calib-targets --example book_figures -- "$out"
 
+# The rendered PuzzlePole, from the same renderer the end-to-end tests assert
+# against. It is a PNG rather than an SVG because it is a *render* — a ray-cast
+# of a curved surface, not a drawing — and PNG bytes are not stable across
+# encoder versions, so `--check` below deliberately diffs only the SVGs. A
+# figure that changed here is reviewed by looking at it.
+cargo run --quiet -p calib-targets-puzzleboard --example render_puzzlepole -- "$out"
+
 if [[ "$check" == "1" ]]; then
   status=0
   for generated in "$out"/*.svg; do

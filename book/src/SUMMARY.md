@@ -4,6 +4,7 @@
 - [Interactive Playground](playground.md)
 - [Tutorials](tutorials.md)
   - [Getting Started](getting-started.md)
+  - [Build and detect a PuzzlePole](tutorial_puzzlepole.md)
 - [How-to](howto.md)
   - [Choose a target](howto_choose_target.md)
   - [Tune the detector](tuning.md)
