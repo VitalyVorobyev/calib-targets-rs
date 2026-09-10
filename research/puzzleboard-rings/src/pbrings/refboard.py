@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -29,14 +30,13 @@ from pathlib import Path
 from .params import REAL, Params
 from .ring import Ring
 
-#: Location of the crate's data directory, relative to this file.
-_CRATE_DATA = (
-    Path(__file__).resolve().parents[4]
-    / "crates"
-    / "calib-targets-puzzleboard"
-    / "src"
-    / "data"
+#: Location of the crate's source directory, relative to this file.
+_CRATE_SRC = (
+    Path(__file__).resolve().parents[4] / "crates" / "calib-targets-puzzleboard" / "src"
 )
+
+#: Location of the crate's data directory.
+_CRATE_DATA = _CRATE_SRC / "data"
 
 
 @dataclass(frozen=True)
@@ -59,6 +59,37 @@ def data_dir() -> Path:
             "project expects to live at <repo>/research/puzzleboard-rings"
         )
     return _CRATE_DATA
+
+
+#: `PuzzlePolePeriod { squares: N, start_row: M }`, however rustfmt breaks it.
+_PERIOD_RE = re.compile(
+    r"PuzzlePolePeriod\s*\{\s*squares:\s*(\d+)\s*,\s*start_row:\s*(\d+)\s*,?\s*\}"
+)
+
+
+@lru_cache(maxsize=None)
+def crate_pole_periods() -> tuple[tuple[int, int], ...]:
+    """``SUPPORTED_PERIODS`` as the crate ships it, read out of ``periods.rs``.
+
+    Read in place and parsed rather than transcribed, for the same reason the
+    maps are: a transcribed table is a second source of truth that drifts
+    silently. This is the *claim* the study checks — :mod:`pbrings.pole`
+    re-derives the same pairs from the maps, and the test suite asserts the two
+    agree.
+    """
+    source = _CRATE_SRC / "pole" / "periods.rs"
+    if not source.is_file():
+        raise FileNotFoundError(f"crate pole periods not found at {source}")
+    text = source.read_text()
+    marker = "pub const SUPPORTED_PERIODS"
+    start = text.index(marker)
+    end = text.index("];", start)
+    found = tuple(
+        (int(a), int(b)) for a, b in _PERIOD_RE.findall(text[start:end])
+    )
+    if not found:
+        raise ValueError(f"no PuzzlePolePeriod entries parsed out of {source}")
+    return found
 
 
 @lru_cache(maxsize=None)

@@ -33,14 +33,14 @@ READOUTS = [ALL, INTERIOR]
 def test_corner_maps_are_permutations(span):
     corners = [(r, c) for r in range(span) for c in range(span)]
     for name in D4_NAMES:
-        images = [apply_corner(name, rc, span) for rc in corners]
+        images = [apply_corner(name, rc, (span, span)) for rc in corners]
         assert sorted(images) == sorted(corners), name
 
 
 @pytest.mark.parametrize("span", [4, 6])
 @pytest.mark.parametrize("readout", READOUTS)
 def test_slot_actions_are_permutations(span, readout):
-    spec = WindowSpec(span=span, readout=readout)
+    spec = WindowSpec.square(span, readout=readout)
     for name in D4_NAMES:
         act = slot_action(name, spec)
         assert sorted(act.v_from) == list(range(len(spec.v_slots))), name
@@ -49,7 +49,7 @@ def test_slot_actions_are_permutations(span, readout):
 
 def test_rotations_swap_the_two_code_maps_but_reflections_along_an_axis_do_not():
     """A 90° turn makes vertical dots horizontal — the source of every rotation alias."""
-    spec = WindowSpec(span=5, readout=ALL)
+    spec = WindowSpec.square(5, readout=ALL)
     expected = {
         "id": False,
         "rot90": True,
@@ -97,7 +97,7 @@ def test_transform_pattern_is_an_involution_where_it_should_be(span):
 @pytest.mark.parametrize("span,readout,group", list(itertools.product([3, 4, 5], READOUTS, GROUPS)))
 def test_fast_matches_brute_on_the_toy(span, readout, group, toy, toy_rings):
     """Exhaustive over all 100 toy positions, for several valid ring pairs."""
-    spec = WindowSpec(span=span, readout=readout)
+    spec = WindowSpec.square(span, readout=readout)
     if not spec.v_slots or not spec.h_slots:
         pytest.skip("readout model leaves no dots at this span")
     pairs = [(toy_rings[0], toy_rings[0]), (toy_rings[0], toy_rings[13]), (toy_rings[7], toy_rings[41])]
@@ -109,7 +109,7 @@ def test_fast_matches_brute_on_the_toy(span, readout, group, toy, toy_rings):
 
 
 def test_fast_matches_brute_for_random_toy_pairs(toy, toy_graph, rng):
-    spec = WindowSpec(span=4, readout=ALL)
+    spec = WindowSpec.square(4, readout=ALL)
     for _ in range(15):
         ring_a = sample_ring(toy_graph, toy, rng)
         ring_b = sample_ring(toy_graph, toy, rng)
@@ -122,7 +122,7 @@ def test_fast_matches_brute_for_random_toy_pairs(toy, toy_graph, rng):
 def test_class_count_is_consistent_with_the_histogram(toy, toy_rings):
     """``n_classes`` is the report's denominator; it must reconcile with the
     hypothesis histogram rather than drift from it."""
-    spec = WindowSpec(span=4, readout=ALL)
+    spec = WindowSpec.square(4, readout=ALL)
     for group in GROUPS:
         m = evaluate_window(toy_rings[0], toy_rings[13], spec, group, toy)
         merged_positions = sum(s * n for s, n in m.class_size_histogram.items())
@@ -143,7 +143,7 @@ def test_fast_matches_brute_on_the_real_board(group):
     from pbrings import refboard
 
     b = refboard.load()
-    spec = WindowSpec(span=4, readout=ALL)
+    spec = WindowSpec.square(4, readout=ALL)
     fast = evaluate_window(b.ring_a, b.ring_b, spec, group, REAL)
     slow = brute_metrics(b.ring_a, b.ring_b, span=4, readout=ALL, group=group, p=REAL)
     assert fast.hypothesis_histogram == slow.hypothesis_histogram
