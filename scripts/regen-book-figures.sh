@@ -37,6 +37,14 @@ cargo run --quiet -p calib-targets --example book_figures -- "$out"
 # figure that changed here is reviewed by looking at it.
 cargo run --quiet -p calib-targets-puzzleboard --example render_puzzlepole -- "$out"
 
+# The same render is the Python bindings' detection fixture. Copying it here
+# rather than rendering it twice is what keeps the figure and the fixture from
+# drifting apart -- a test passing against an image the book no longer shows
+# would be worse than either problem alone.
+if [[ "$check" != "1" ]]; then
+  cp "$out/puzzlepole_view.png" testdata/puzzlepole_view.png
+fi
+
 if [[ "$check" == "1" ]]; then
   status=0
   for generated in "$out"/*.svg; do

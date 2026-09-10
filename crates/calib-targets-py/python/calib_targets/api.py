@@ -12,6 +12,7 @@ from ._convert_in import (
     chessboard_params_to_payload,
     marker_board_params_to_payload,
     puzzleboard_params_to_payload,
+    puzzlepole_params_to_payload,
 )
 from .config import (
     CharucoDetectorParams,
@@ -19,12 +20,14 @@ from .config import (
     ChessboardParams,
     MarkerBoardParams,
     PuzzleBoardParams,
+    PuzzlePoleParams,
 )
 from .results import (
     CharucoDetection,
     ChessboardDetectionResult,
     MarkerBoardDetection,
     PuzzleBoardDetection,
+    PuzzlePoleDetection,
 )
 
 
@@ -446,6 +449,83 @@ def default_puzzleboard_params(rows: int, cols: int) -> PuzzleBoardParams:
     return PuzzleBoardParams.from_dict(raw)
 
 
+def detect_puzzlepole(
+    image: npt.NDArray[np.uint8],
+    *,
+    chess_cfg: ChessConfig | None = None,
+    params: PuzzlePoleParams,
+) -> PuzzlePoleDetection:
+    """Detect a PuzzlePole — the PuzzleBoard pattern wrapped round a cylinder.
+
+    Unlike every planar target here, each identified corner carries a 3-D
+    object point; :meth:`PuzzlePoleDetection.correspondences` pairs them with
+    their image points for a PnP solver.
+    """
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    _check_type("params", params, PuzzlePoleParams)
+
+    raw = _core.detect_puzzlepole(
+        image,
+        chess_cfg=chess_config_to_payload(chess_cfg),
+        params=puzzlepole_params_to_payload(params),
+    )
+    return PuzzlePoleDetection.from_dict(raw)
+
+
+def detect_puzzlepole_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: PuzzlePoleParams,
+) -> PuzzlePoleDetection:
+    """Detect a PuzzlePole from a pre-detected corner cloud.
+
+    ``corners`` is a list of ``ChessCorner``-shaped dicts — see
+    :func:`detect_charuco_with_corners`. ``params.chess`` is not read.
+    """
+    _check_type("params", params, PuzzlePoleParams)
+
+    raw = _core.detect_puzzlepole_with_corners(
+        image,
+        corners,
+        params=puzzlepole_params_to_payload(params),
+    )
+    return PuzzlePoleDetection.from_dict(raw)
+
+
+def detect_puzzlepole_best(
+    image: npt.NDArray[np.uint8],
+    configs: list[PuzzlePoleParams],
+) -> PuzzlePoleDetection:
+    """Try multiple PuzzlePole configs, return the best result.
+
+    Build the list with :meth:`PuzzlePoleParams.sweep_for_pole`. The second
+    scoring pass matters more on a pole than on a flat board: near the limb
+    every dot is compressed, so a view that reads cleanly across the middle of
+    the visible sector can still carry a low-confidence tail.
+    """
+    payloads = []
+    for i, cfg in enumerate(configs):
+        _check_type(f"configs[{i}]", cfg, PuzzlePoleParams)
+        payloads.append(cfg.to_dict())
+
+    raw = _core.detect_puzzlepole_best(image, payloads)
+    return PuzzlePoleDetection.from_dict(raw)
+
+
+def default_puzzlepole_params(
+    circumference_squares: int, axial_squares: int, cell_size_mm: float
+) -> PuzzlePoleParams:
+    """Return Rust-side default PuzzlePole parameters for a pole.
+
+    ``circumference_squares`` must be a period that closes seamlessly; see
+    :func:`calib_targets.supported_puzzlepole_periods`.
+    """
+    raw = _core.default_puzzlepole_params(circumference_squares, axial_squares, cell_size_mm)
+    return PuzzlePoleParams.from_dict(raw)
+
+
 __all__ = [
     "detect_chessboard",
     "detect_chessboard_all",
@@ -467,4 +547,8 @@ __all__ = [
     "detect_marker_board_best",
     "detect_puzzleboard_best",
     "default_puzzleboard_params",
+    "detect_puzzlepole",
+    "detect_puzzlepole_with_corners",
+    "detect_puzzlepole_best",
+    "default_puzzlepole_params",
 ]

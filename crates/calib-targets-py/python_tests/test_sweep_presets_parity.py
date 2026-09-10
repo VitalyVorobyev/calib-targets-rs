@@ -2,7 +2,8 @@
 
 The Python ``sweep_*`` classmethods are thin delegators to the Rust presets
 exposed on ``_core`` (``chessboard_sweep_default``, ``charuco_sweep_for_board``,
-``marker_board_sweep_for_board``, ``puzzleboard_sweep_for_board``). These tests
+``marker_board_sweep_for_board``, ``puzzleboard_sweep_for_board``,
+``puzzlepole_sweep_for_pole``). These tests
 assert that what a Python caller actually sees — the parsed dataclass list —
 carries the values Rust produced: same config count, same field values.
 
@@ -72,6 +73,10 @@ def _marker_board() -> ct.MarkerBoardSpec:
 
 def _puzzle_board() -> ct.PuzzleBoardSpec:
     return ct.PuzzleBoardSpec(rows=13, cols=13, cell_size=1.014)
+
+
+def _puzzle_pole() -> ct.PuzzlePoleSpec:
+    return ct.PuzzlePoleSpec.canonical(24, 12, 20.0)
 
 
 # ---------------------------------------------------------------------------
@@ -194,6 +199,15 @@ def test_puzzleboard_sweep_for_board_matches_rust() -> None:
     )
 
 
+def test_puzzlepole_sweep_for_pole_matches_rust() -> None:
+    pole = _puzzle_pole()
+    _assert_preset_parity(
+        ct.PuzzlePoleParams.sweep_for_pole(pole),
+        _core.puzzlepole_sweep_for_pole(pole.to_dict()),
+        ct.PuzzlePoleParams,
+    )
+
+
 # ---------------------------------------------------------------------------
 # The board spec must survive into every config
 # ---------------------------------------------------------------------------
@@ -225,6 +239,12 @@ def test_board_dependent_presets_carry_the_caller_board() -> None:
             puzzle_board.to_dict(), cfg.board.to_dict(), f"puzzle[{idx}].board"
         )
 
+    pole = _puzzle_pole()
+    for idx, cfg in enumerate(ct.PuzzlePoleParams.sweep_for_pole(pole)):
+        _assert_rust_leaves_present(
+            pole.to_dict(), cfg.pole.to_dict(), f"pole[{idx}].pole"
+        )
+
 
 def test_presets_are_accepted_back_by_rust() -> None:
     """Each preset config round-trips into the Rust params struct it came from.
@@ -249,3 +269,5 @@ def test_presets_are_accepted_back_by_rust() -> None:
         ct.detect_puzzleboard_best(
             image, ct.PuzzleBoardParams.sweep_for_board(_puzzle_board())
         )
+    with contextlib.suppress(RuntimeError):
+        ct.detect_puzzlepole_best(image, ct.PuzzlePoleParams.sweep_for_pole(_puzzle_pole()))

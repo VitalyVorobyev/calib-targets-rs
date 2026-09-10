@@ -10,6 +10,10 @@ class TargetKind(str, Enum):
     CHARUCO = "charuco"
     CHECKERBOARD_MARKER = "checkerboard_marker"
     PUZZLE_BOARD = "puzzle_board"
+    # Spelled to match the printable spec's tag, which chose `puzzlepole` over
+    # the `puzzle_board` / `puzzleboard` split its sibling carries. One
+    # spelling per target across the workspace.
+    PUZZLE_POLE = "puzzlepole"
 
 
 class CirclePolarity(str, Enum):

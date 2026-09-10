@@ -13,6 +13,7 @@ computing them in one place makes that impossible.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -1804,6 +1805,249 @@ class PuzzleBoardParams:
         )
 
 
+@dataclass(slots=True)
+class PuzzlePoleSpec:
+    """A PuzzlePole: the PuzzleBoard pattern wrapped round a cylinder.
+
+    ``circumference_squares`` is not a free choice — only periods that close
+    seamlessly are accepted, and the cylinder's diameter follows from the
+    period and the piece size rather than being an input. See
+    :func:`calib_targets.supported_puzzlepole_periods`.
+
+    ``axial_start_col`` is what makes one pole different from another: poles
+    cut from disjoint column windows of the 501-column master share no corner,
+    so a corner's id identifies its pole as well as its place on it. Use
+    :meth:`distinct` rather than computing offsets by hand.
+    """
+
+    circumference_squares: int
+    start_row: int
+    axial_start_col: int
+    axial_squares: int
+    cell_size_mm: float
+
+    @classmethod
+    def canonical(
+        cls, circumference_squares: int, axial_squares: int, cell_size_mm: float
+    ) -> PuzzlePoleSpec:
+        """The paper's strip for this circumference, cut from column 0.
+
+        Mirrors Rust's ``PuzzlePoleSpec::new``. Raises :class:`ValueError` if
+        the circumference has no seamless strip.
+        """
+        start_row = _core.puzzlepole_canonical_start_row(circumference_squares)
+        if start_row is None:
+            raise ValueError(
+                f"{circumference_squares} pieces around the circumference is not a "
+                "supported period; see supported_puzzlepole_periods()"
+            )
+        return cls(
+            circumference_squares=circumference_squares,
+            start_row=int(start_row),
+            axial_start_col=0,
+            axial_squares=axial_squares,
+            cell_size_mm=cell_size_mm,
+        )
+
+    @classmethod
+    def distinct(
+        cls, circumference_squares: int, axial_squares: int, cell_size_mm: float
+    ) -> list[PuzzlePoleSpec]:
+        """Every pole of this shape that shares no corner with another.
+
+        Thin delegator to Rust ``PuzzlePoleSpec::distinct_poles``: the stride is
+        the pole's *corner-column* count, not its piece count, and getting that
+        wrong yields poles that overlap by one column.
+        """
+        return [
+            cls.from_dict(item)
+            for item in _core.puzzlepole_distinct_poles(
+                circumference_squares, axial_squares, cell_size_mm
+            )
+        ]
+
+    @property
+    def circumference_mm(self) -> float:
+        return self.circumference_squares * self.cell_size_mm
+
+    @property
+    def diameter_mm(self) -> float:
+        """Diameter of the cylinder this pole wraps. A consequence, not a knob."""
+        return self.circumference_mm / math.pi
+
+    @property
+    def radius_mm(self) -> float:
+        return self.diameter_mm / 2.0
+
+    @property
+    def axial_extent_mm(self) -> float:
+        return self.axial_squares * self.cell_size_mm
+
+    @property
+    def axial_corner_cols(self) -> int:
+        """Corner columns along the axis: one more than the piece count."""
+        return self.axial_squares + 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "circumference_squares": self.circumference_squares,
+            "start_row": self.start_row,
+            "axial_start_col": self.axial_start_col,
+            "axial_squares": self.axial_squares,
+            "cell_size_mm": self.cell_size_mm,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzlePoleSpec:
+        return cls(
+            circumference_squares=int(data["circumference_squares"]),
+            start_row=int(data["start_row"]),
+            axial_start_col=int(data.get("axial_start_col", 0)),
+            axial_squares=int(data["axial_squares"]),
+            cell_size_mm=float(data["cell_size_mm"]),
+        )
+
+
+@dataclass(slots=True)
+class PuzzlePoleDecodeConfig:
+    """PuzzlePole edge-bit decode parameters.
+
+    The same knobs as :class:`PuzzleBoardDecodeConfig` minus two that mean
+    nothing on a cylinder, plus the one that does. ``search_mode`` is gone — a
+    pole's origin space is always its own restricted rectangle, never the full
+    master — and the single ``min_window`` is replaced by a *pair*, because a
+    pole's two axes carry different codes: the circumference wraps at the
+    period while the axial axis runs the master's 501.
+
+    Both floors are measurements, not preferences. Lowering either admits
+    placements that provably alias, and an aliased placement is a wrong corner
+    id — unrecoverable downstream, where a miss is merely inconvenient.
+    """
+
+    #: Corner rows around the circumference a fragment must span.
+    min_circumference_span: int = 5
+    #: Corner columns along the axis a fragment must span. Cannot go below 5
+    #: for a structural reason: a 4-corner axial extent yields two columns of
+    #: ``map_a``, and a 3x2 block of a sub-perfect map is never unique.
+    min_axial_span: int = 8
+    min_bit_confidence: float = 0.15
+    max_bit_error_rate: float = 0.30
+    search_all_components: bool = True
+    sample_radius_rel: float = 1.0 / 6.0
+    scoring_mode: PuzzleBoardScoringMode = field(
+        default_factory=PuzzleBoardScoringMode.soft_log_likelihood
+    )
+    symmetry_mode: PuzzleBoardSymmetryMode = field(
+        default_factory=PuzzleBoardSymmetryMode.rotations
+    )
+    # --- Advanced (opt-in, unstable; serialised under "advanced") -----------
+    bit_likelihood_slope: float = 12.0
+    per_bit_floor: float = -6.0
+    alignment_min_margin: float = 0.02
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "min_circumference_span": self.min_circumference_span,
+            "min_axial_span": self.min_axial_span,
+            "min_bit_confidence": self.min_bit_confidence,
+            "max_bit_error_rate": self.max_bit_error_rate,
+            "search_all_components": self.search_all_components,
+            "sample_radius_rel": self.sample_radius_rel,
+            "scoring_mode": self.scoring_mode.to_dict(),
+            "symmetry_mode": self.symmetry_mode.to_dict(),
+            "advanced": {
+                "bit_likelihood_slope": self.bit_likelihood_slope,
+                "per_bit_floor": self.per_bit_floor,
+                "alignment_min_margin": self.alignment_min_margin,
+            },
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzlePoleDecodeConfig:
+        d = cls()
+        advanced = data.get("advanced")
+        if not isinstance(advanced, dict):
+            advanced = data
+        return cls(
+            min_circumference_span=int(
+                data.get("min_circumference_span", d.min_circumference_span)
+            ),
+            min_axial_span=int(data.get("min_axial_span", d.min_axial_span)),
+            min_bit_confidence=float(data.get("min_bit_confidence", d.min_bit_confidence)),
+            max_bit_error_rate=float(data.get("max_bit_error_rate", d.max_bit_error_rate)),
+            search_all_components=bool(
+                data.get("search_all_components", d.search_all_components)
+            ),
+            sample_radius_rel=float(data.get("sample_radius_rel", d.sample_radius_rel)),
+            scoring_mode=PuzzleBoardScoringMode.from_dict(
+                data.get("scoring_mode", {"kind": "soft_log_likelihood"})
+            ),
+            symmetry_mode=PuzzleBoardSymmetryMode.from_dict(
+                data.get("symmetry_mode", {"kind": "rotations"})
+            ),
+            bit_likelihood_slope=float(
+                advanced.get("bit_likelihood_slope", d.bit_likelihood_slope)
+            ),
+            per_bit_floor=float(advanced.get("per_bit_floor", d.per_bit_floor)),
+            alignment_min_margin=float(
+                advanced.get("alignment_min_margin", d.alignment_min_margin)
+            ),
+        )
+
+
+@dataclass(slots=True)
+class PuzzlePoleParams:
+    """PuzzlePole detector parameters. ``pole`` is required."""
+
+    pole: PuzzlePoleSpec
+    chess: ChessConfig = field(default_factory=ChessConfig)
+    chessboard: ChessboardParams = field(default_factory=ChessboardParams)
+    decode: PuzzlePoleDecodeConfig = field(default_factory=PuzzlePoleDecodeConfig)
+
+    @classmethod
+    def for_pole(cls, pole: PuzzlePoleSpec) -> PuzzlePoleParams:
+        """Reasonable defaults for a given pole.
+
+        Mirrors Rust ``PuzzlePoleParams::for_pole``, including its
+        ``min_corner_strength`` floor of 33: a weakly firing corner is
+        grid-consistent in position but pollutes the frontier with false
+        labels, and the decoder tolerates a missing corner far better than a
+        wrong one.
+        """
+        chessboard = ChessboardParams()
+        chessboard.min_corner_strength = 33.0
+        return cls(pole=pole, chessboard=chessboard)
+
+    @classmethod
+    def sweep_for_pole(cls, pole: PuzzlePoleSpec) -> list[PuzzlePoleParams]:
+        """Multi-config sweep preset for the given pole.
+
+        Thin delegator to Rust ``PuzzlePoleParams::sweep_for_pole``, so the two
+        surfaces cannot explore different configuration spaces. Pass the list
+        straight to :func:`calib_targets.detect_puzzlepole_best`.
+        """
+        return [cls.from_dict(cfg) for cfg in _core.puzzlepole_sweep_for_pole(pole.to_dict())]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "chess": self.chess.to_dict(),
+            "chessboard": self.chessboard.to_dict(),
+            "pole": self.pole.to_dict(),
+            "decode": self.decode.to_dict(),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzlePoleParams:
+        if "pole" not in data:
+            raise ValueError("PuzzlePoleParams requires 'pole' field")
+        return cls(
+            pole=PuzzlePoleSpec.from_dict(data["pole"]),
+            chess=(ChessConfig.from_dict(data["chess"]) if "chess" in data else ChessConfig()),
+            chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
+            decode=PuzzlePoleDecodeConfig.from_dict(data.get("decode", {})),
+        )
+
+
 __all__ = [
     # ChESS detector configuration (DetectorConfig tree).
     "CenterOfMassConfig",
@@ -1844,4 +2088,7 @@ __all__ = [
     "PuzzleBoardDecodeConfig",
     "DecodeConfig",  # backward-compatible alias
     "PuzzleBoardParams",
+    "PuzzlePoleSpec",
+    "PuzzlePoleDecodeConfig",
+    "PuzzlePoleParams",
 ]
