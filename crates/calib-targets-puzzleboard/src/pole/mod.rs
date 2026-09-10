@@ -36,9 +36,13 @@
 
 pub(crate) mod code;
 pub mod geometry;
+mod params;
 pub mod periods;
 mod result;
 
+pub use params::{
+    PuzzlePoleDecodeConfig, PuzzlePoleParams, MIN_AXIAL_SPAN, MIN_CIRCUMFERENCE_SPAN,
+};
 pub use result::{PuzzlePoleCorner, PuzzlePoleDetection};
 
 use serde::{Deserialize, Serialize};
