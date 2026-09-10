@@ -1518,9 +1518,13 @@ behaviour and the default-config serialized JSON are unchanged. See the
 The full release history is preserved under
 [`docs/changelog/`](docs/changelog/), grouped by minor-version family:
 
-- [`0.9.x`](docs/changelog/0.9.x.md) — TODO
-- [`0.8.x`](docs/changelog/0.8.x.md) — TODO
-- [`0.7.x`](docs/changelog/0.7.x.md) — TODO
+- [`0.9.x`](docs/changelog/0.9.x.md) — DXF printable output, C ABI 1.0
+  `args`/`buffers` redesign, dead tuning knobs removed
+- [`0.8.x`](docs/changelog/0.8.x.md) — `chess-corners` 0.8 and the
+  `ChessConfig` re-export, mandatory final geometry check, topological
+  grid pipeline
+- [`0.7.x`](docs/changelog/0.7.x.md) — invariant-first chessboard
+  detector rewrite
 - [`0.6.x`](docs/changelog/0.6.x.md) — PuzzleBoard crate launch
 - [`0.5.x`](docs/changelog/0.5.x.md) — single-config detector API,
   multi-component ChArUco, WebAssembly bindings

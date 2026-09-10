@@ -13,19 +13,16 @@ No prior knowledge of the library is assumed.
 
 ## Step 1: Choose your target type
 
-| Target | Best for | Requires |
-|---|---|---|
-| **Chessboard** | Quick start, simple intrinsic calibration | Nothing — no markers |
-| **ChArUco** | Robust calibration, partial visibility OK, absolute corner IDs | ArUco dictionary |
-| **Marker board** | Scenes where a full chessboard is impractical | Custom layout |
-
 **If you are unsure, start with ChArUco.** It combines the subpixel accuracy of chessboard
 corners with the robustness of ArUco markers. Each detected corner carries a unique ID and
 a real-world position in millimeters, so partial views of the board are useful and board
-orientation is unambiguous.
+orientation is unambiguous. The rest of this tutorial uses it.
 
-If you want the absolute simplest path and only need basic intrinsic calibration, use the
-plain chessboard.
+If you only need basic intrinsic calibration and the board will always be fully visible,
+the plain chessboard is simpler still — there is nothing to configure.
+
+For the full comparison across all five families, and how to pick the size,
+see [How to choose a target](howto_choose_target.md).
 
 ---
 

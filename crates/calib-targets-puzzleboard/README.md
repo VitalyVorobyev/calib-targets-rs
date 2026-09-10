@@ -13,7 +13,16 @@ Based on Stelldinger 2024 ([arXiv:2409.20127]). Built on
 [`calib-targets-chessboard`][cb]. Most users call the facade helper
 [`calib_targets::detect::detect_puzzleboard`][facade-detect].
 
+This crate also ships the **PuzzlePole** — the same pattern wrapped round a
+cylinder, from Zach & Stelldinger 2025 ([arXiv:2511.19448]) — as the `pole`
+module. It is here rather than in a crate of its own because it is the same
+decoder with one period changed; what it adds is a target identifiable from a
+full 360°, whose corners carry 3-D object points. See
+[`calib_targets::detect::detect_puzzlepole`][facade-pole].
+
 [arXiv:2409.20127]: https://arxiv.org/abs/2409.20127
+[arXiv:2511.19448]: https://arxiv.org/abs/2511.19448
+[facade-pole]: https://docs.rs/calib-targets/latest/calib_targets/detect/fn.detect_puzzlepole.html
 [cb]: https://docs.rs/calib-targets-chessboard
 [facade-detect]: https://docs.rs/calib-targets/latest/calib_targets/detect/fn.detect_puzzleboard.html
 

@@ -28,6 +28,7 @@ thiserror.workspace = true
 # out of the normal build) so the marker-board round-trip can inspect the
 # scored circle candidates, not just the final detection.
 calib-targets-marker = { workspace = true, features = ["diagnostics"] }
+serde_json.workspace = true
 tempfile.workspace = true
 
 [package.metadata.docs.rs]

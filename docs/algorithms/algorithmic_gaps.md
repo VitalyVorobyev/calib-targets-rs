@@ -124,6 +124,111 @@ coupling `projective-grid` to a target family.
 
 ---
 
+### Gap 21 — Hex and low-orientation square lattices have no real-image evidence
+
+`projective-grid`'s hex `Positions`, `Oriented1` and `Oriented3` modes, and the
+square `Positions` / `Oriented1` modes, have deterministic synthetic coverage
+and nothing else. They are exercised by construction, not by a camera, so they
+remain **experimental**: nothing here should be read as a production-readiness
+claim for them until a representative real-image campaign exists.
+
+**Fix.** A real-image campaign per mode, blessed the way the chessboard
+baselines are. Until then, `book/src/overview.md#gaps-and-early-stage-areas`
+should keep saying so.
+
+### Gap 22 — The `expert` namespace is not yet a compatibility boundary
+
+`projective_grid::expert` is deliberately useful to detector builders, and it is
+the seam a sibling crate reaches through. But it has never been reviewed as a
+*stable* surface, so it is not a 1.0-quality compatibility boundary and the
+crate should not be called 1.0 while that is true.
+
+**Fix.** An API-surface pass over `expert` specifically: what is genuinely a
+building block, what leaked out of a refactor, and what should be `#[doc(hidden)]`.
+
+### Gap 23 — The global projective fit is a diagnostic approximation
+
+Under strong lens distortion no single homography represents the board, so the
+global projective fit is an approximation and its residual is a diagnostic
+signal rather than a gate. The chessboard's final geometry check is deliberately
+local for that reason and does not produce a second global-fit residual — so
+there is no global number to compare across frames, by design.
+
+**Fix.** None needed as a defect; recorded so the absence of a global residual
+is not read as an oversight. See the architectural-direction note below on why
+precision at the frontier stays local.
+
+### Gap 24 — Straight-line validation on a curved target — **measured, not observed**
+
+**The hypothesis.** `shared/validate/lines.rs` fits a total-least-squares
+*straight* line to every grid row and column and flags members beyond
+`line_tol_rel × scale`. On a cylinder the axial grid lines are generatrices and
+project to straight lines, but the circumferential ones lie on circles and
+project to **conics**. A sagitta estimate suggested the check would start
+flagging once the pole's axis tilted more than a few degrees out of the image
+plane, which would drop genuine corners — and `run_geometry_check` is mandatory
+on the chessboard path, so there is no opting out.
+
+**The measurement.** `calib-targets-puzzleboard`'s
+`puzzlepole_synthetic::the_grid_builder_survives_a_cylinder` renders analytic
+cylinders and runs the real grid builder over them, sweeping the two parameters
+that strain a straight-line prior: axis tilt, and circumference (a row's sagitta
+in *cell* units goes as the radius in cells, `p / 2π`, so `p = 48` bows twice as
+hard per visible arc as `p = 24`).
+
+At every geometry where corners are plentiful the grid builds in a **single
+component** and labels essentially all of them — 77/77, 53/55, 30/31 at `p = 48`
+across tilts of 0°, 15° and 30°, and at or above the detected count at
+`p = 24`. The only row that yields nothing is `p = 48` at 45°, where **three**
+corners are visible at all: a visibility limit, not a validator failure.
+
+**So the gap does not fire, and the sagitta estimate was pessimistic.** The
+likely reason is that the tolerance is relative to the *local* cell size, which
+foreshortens along with the residual it is bounding, so the two move together.
+
+**Left open rather than closed**, because the measurement covers what the crate
+ships and not more. Re-check if any of these change: a visible sector wider than
+about ±60° (the fairness line the test uses), a tighter `line_tol_rel`, or a
+circumference beyond 48. The structural fix, if it is ever needed, is stated
+above: a straight line is the degenerate conic, so the general predicate is
+curvature continuity along the grid line, which subsumes the planar case rather
+than special-casing the cylinder.
+
+### Gap 25 — Telling one PuzzlePole from another — **open, unmeasured**
+
+**The claim.** Poles cut from *disjoint* axial column windows of the master
+share no corner at all, so a decoded corner identifies its pole. That is true by
+construction — it is arithmetic on the window offsets, and
+`PuzzlePoleSpec::distinct_poles` enumerates the family — and it is the basis of
+the paper's "71 distinct poles".
+
+**What is not established.** The claim is about *ids not colliding*. It is not a
+statement about the detector, and the detector cannot currently make it: a pole
+decodes through `BoardRect::pole`, whose column axis is `Clamped` to the
+configured pole's own window. Origins outside that window are never enumerated,
+so a fragment of a *different* pole is never given the chance to land where it
+belongs and be seen not to belong here. What happens instead — refusal on bit
+error, refusal on the uniqueness margin, or a wrong id — has not been measured,
+for either axis of difference: a different axial window on the same code stripe,
+or a different start row at the same circumference.
+
+The gates *should* refuse: a foreign axial window reads different `map_a`
+columns, so the bit-error rate should be high and the margin gate should decline
+it. But "should" is not a measurement, and the contract this workspace gives is
+asymmetric — a miss is acceptable, a wrong id is not.
+
+**What would close it.** Sweep ordered pairs over the shipped family: render
+pole B, decode with pole A's params, require refusal at every placement and
+azimuth. Same shape as the window-floor sweep, and it belongs in
+`research/puzzleboard-rings` beside it.
+
+**Why it is open rather than blocking.** One pole in frame is the shipped use,
+and a multi-pole scene is an explicit per-spec loop in the caller's code rather
+than something reached by accident. The tutorial states the limit where a user
+would meet it.
+
+---
+
 ## Architectural-direction summary
 
 The next architectural move is the **distortion-recall** line: recovering

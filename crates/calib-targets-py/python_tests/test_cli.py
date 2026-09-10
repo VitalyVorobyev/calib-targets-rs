@@ -184,3 +184,78 @@ def test_cli_init_charuco_and_marker_board_accept_inner_square_rel(tmp_path: Pat
     ]) == 0
     marker_data = json.loads(marker_spec.read_text())
     assert marker_data["target"]["inner_square_rel"] == 0.4
+
+
+def test_helper_roundtrip_puzzlepole() -> None:
+    doc = ct.puzzlepole_document(18, 8, 13.0)
+    restored = ct.PrintableTargetDocument.from_dict(doc.to_dict())
+    assert restored.to_dict() == doc.to_dict()
+
+
+def test_puzzlepole_periods_come_from_rust() -> None:
+    """The period table has one source of truth, and it is not this file.
+
+    It is derived from the shipped code maps on the Rust side and pinned by a
+    Rust test; a Python copy could drift from the pattern it describes. So this
+    checks the bridge works and that the canonical start row agrees with the
+    table, not that any particular number is right.
+    """
+    periods = ct.supported_puzzlepole_periods()
+    assert periods, "the extension returned no supported periods"
+    for circumference, start_row in periods:
+        assert circumference % 6 == 0
+    doc = ct.puzzlepole_document(12, 6, 10.0)
+    assert (12, doc.target.start_row) in periods
+
+
+def test_puzzlepole_diameter_is_quantised_by_its_period() -> None:
+    doc = ct.puzzlepole_document(12, 6, 30.0)
+    # The paper's own pole: 12 pieces at 3 cm is 11.46 cm across.
+    assert abs(doc.target.diameter_mm - 114.59) < 0.01
+    # Two pieces more are printed than wrap: one is the glue overlap, and the
+    # trim lines fall mid-piece at both ends.
+    assert doc.target.printed_strip_squares == 14
+
+
+def test_cli_gen_puzzlepole_writes_bundle(tmp_path: Path) -> None:
+    stem = tmp_path / "pole"
+    rc = cli_main([
+        "gen", "puzzlepole",
+        "--out-stem", str(stem),
+        "--circumference-squares", "18",
+        "--axial-squares", "8",
+        "--square-size-mm", "13",
+        "--page-size", "a4",
+    ])
+    assert rc == 0
+    for ext in ("json", "svg", "png", "dxf"):
+        assert (tmp_path / f"pole.{ext}").is_file()
+
+
+def test_cli_init_validate_puzzlepole(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    spec = tmp_path / "pole.json"
+    assert cli_main([
+        "init", "puzzlepole",
+        "--out", str(spec),
+        "--circumference-squares", "24",
+        "--axial-squares", "6",
+        "--square-size-mm", "10",
+        "--page-size", "a4",
+    ]) == 0
+    assert cli_main(["validate", "--spec", str(spec)]) == 0
+    # The wire tag and the kind name agree for this target, unlike its
+    # PuzzleBoard sibling, so no translation is needed on the way out.
+    assert "valid puzzlepole" in capsys.readouterr().out
+
+
+def test_cli_puzzlepole_rejects_an_unsupported_circumference(tmp_path: Path) -> None:
+    """A pole's diameter is quantised; rounding to a neighbour would silently
+    produce a target that does not close."""
+    with pytest.raises(SystemExit):
+        cli_main([
+            "gen", "puzzlepole",
+            "--out-stem", str(tmp_path / "pole"),
+            "--circumference-squares", "13",
+            "--axial-squares", "6",
+            "--square-size-mm", "10",
+        ])

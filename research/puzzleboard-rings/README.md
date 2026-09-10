@@ -21,6 +21,8 @@ uv run pbr graph count         # exact size of the search space
 uv run pbr ring check --authors
 uv run pbr eval reference      # the reproduction table
 uv run pbr eval verify --toy   # fast evaluator vs the brute-force reference
+uv run pbr pole periods        # PuzzlePole: the seam table, re-derived
+uv run pbr pole verify         # pole readout vs the brute-force oracle
 uv run pytest -m "not slow"
 ```
 
@@ -155,8 +157,9 @@ src/pbrings/
   window.py     span and readout model — the edge slots a fragment exposes
   transforms.py the D4 action, resolved to edge-slot permutations
   evaluate.py   the fast factorised evaluator
-  brute.py      the slow independent reference
-  refboard.py   the authors' shipped maps
+  pole.py       PuzzlePole: the cylinder, where the factorisation fails
+  brute.py      the slow independent reference, planar and cylindrical
+  refboard.py   the authors' shipped maps and the crate's pole period table
   cli.py        pbr
 ```
 
@@ -164,10 +167,38 @@ Every module takes a `Params`, so the test suite runs the *same* code at
 `Params(n_rows=2)` — a 10×10 master with 100 positions, where brute force is
 instantaneous and every valid ring can be listed.
 
+## PuzzlePole
+
+A [PuzzlePole](report/puzzlepole-floor.md) is the same code wrapped round a
+cylinder: the circumference axis is the master **row**, the axial axis the master
+**column**, and the pattern comes from a map B whose row period has been cut from
+167 to the circumference `p`. `pbr pole` measures how much of one a decoder must
+see.
+
+Two things make it a separate module rather than a parameter of `eval`:
+
+- **The factorisation fails.** `evaluate.py` is fast because `(i,j) ↦ (u,v)` is a
+  bijection of `Z₅₀₁²`, which needs `gcd(3, 167) = 1`. On a pole the
+  circumference coordinate enters one index as `t mod 3` and the other as
+  `t mod p`, and `3 | p` makes the first a function of the second — the positions
+  stop being a product set and the rank-one sum is invalid. It is the same
+  non-coprimality that stops the Rust decoder collapsing a pole's origin scan by
+  CRT. `pole.py` takes the brute path; `brute.py` carries an independent oracle
+  for it.
+- **The axes are asymmetric.** The circumference is cyclic (all `p` origins are
+  placements, wrapping ones included); the axial axis is clamped (`W - span_x + 1`
+  origins). So windows are rectangular and the floor is a 2-D Pareto frontier,
+  not a scalar.
+
+Headline: under C4 a `5 × 8` corner window (circumference × axial) is clean on
+every supported period at any pole length, `7 × 7` if the search is restricted to
+squares; D4 costs `5 × 10` or `9 × 9`. Full tables, denominators and the
+single-view verdict are in [`report/puzzlepole-floor.md`](report/puzzlepole-floor.md).
+
 ## Status
 
 Phases 0–2 of the plan are in place: construction, validation, the exact space
-count, the metric core, and the reproduction gate. Still to come: the practical
-tracks on the shipped board (best print origin, non-square window admissibility,
-the bit-error operating surface), the unbiased distribution over sampled ring
-pairs, the search, and the write-up.
+count, the metric core, and the reproduction gate; the PuzzlePole floor is
+measured and written up. Still to come: the remaining practical tracks on the
+shipped board (best print origin, the bit-error operating surface), the unbiased
+distribution over sampled ring pairs, and the search.

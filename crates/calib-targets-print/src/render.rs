@@ -1,7 +1,8 @@
 use crate::model::{
     validate_charuco_spec, validate_chessboard_spec, validate_marker_board_spec,
-    validate_puzzleboard_spec, CharucoTargetSpec, MarkerBoardTargetSpec, PrintableTargetDocument,
-    PrintableTargetError, PuzzleBoardTargetSpec, RenderOptions, ResolvedTargetLayout, TargetSpec,
+    validate_puzzleboard_spec, validate_puzzlepole_spec, CharucoTargetSpec, MarkerBoardTargetSpec,
+    PrintableTargetDocument, PrintableTargetError, PuzzleBoardTargetSpec, RenderOptions,
+    ResolvedTargetLayout, TargetSpec,
 };
 use calib_targets_charuco::CharucoBoard;
 use calib_targets_marker::CirclePolarity;
@@ -166,6 +167,13 @@ fn build_board_scene(
         TargetSpec::Charuco(spec) => build_charuco(scene, spec, layout),
         TargetSpec::MarkerBoard(spec) => build_marker_board(scene, spec, layout),
         TargetSpec::PuzzleBoard(spec) => build_puzzleboard(scene, spec, layout),
+        // A wrap strip is a sub-rectangle of the master -- the periodicity is
+        // what makes its ends meet, not any change to the pattern -- so it
+        // renders through the PuzzleBoard path rather than a parallel one.
+        TargetSpec::PuzzlePole(spec) => {
+            validate_puzzlepole_spec(spec)?;
+            build_puzzleboard(scene, &spec.as_board(), layout)
+        }
     }
 }
 

@@ -3,7 +3,7 @@
 use calib_targets_aruco::builtins::builtin_dictionary;
 use calib_targets_print::{
     CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PrintableTargetDocument,
-    PuzzleBoardTargetSpec, TargetSpec,
+    PuzzleBoardTargetSpec, PuzzlePoleTargetSpec, TargetSpec,
 };
 use clap::{Args, Subcommand};
 use std::{fs, path::PathBuf};
@@ -21,6 +21,8 @@ pub enum InitCommand {
     Charuco(CharucoInitArgs),
     /// Initialize a PuzzleBoard printable spec.
     Puzzleboard(PuzzleboardInitArgs),
+    /// Write a PuzzlePole wrap-strip spec.
+    Puzzlepole(PuzzlepoleInitArgs),
     /// Initialize a checkerboard marker-board printable spec.
     MarkerBoard(MarkerBoardInitArgs),
 }
@@ -116,6 +118,34 @@ pub struct PuzzleboardInitArgs {
     pub render: RenderArgs,
 }
 
+/// Arguments shared by the PuzzlePole `init` and `gen` subcommands.
+#[derive(Args, Debug)]
+pub struct PuzzlepoleInitArgs {
+    /// Path to the spec JSON file to write.
+    #[arg(long)]
+    pub out: PathBuf,
+    /// Pieces around the circumference. Must be a supported period.
+    #[arg(long)]
+    pub circumference_squares: u32,
+    /// Pieces along the cylinder axis.
+    #[arg(long)]
+    pub axial_squares: u32,
+    /// Piece side length in millimeters.
+    #[arg(long)]
+    pub square_size_mm: f64,
+    /// Column anchor in the 501-column master pattern. Strips cut from
+    /// disjoint column windows are distinguishable poles.
+    #[arg(long, default_value_t = 0)]
+    pub axial_start_col: u32,
+    /// Dot diameter relative to piece size (defaults to 1/3).
+    #[arg(long)]
+    pub dot_diameter_rel: Option<f64>,
+    #[command(flatten)]
+    pub page: PageArgs,
+    #[command(flatten)]
+    pub render: RenderArgs,
+}
+
 #[derive(Args, Debug)]
 pub struct MarkerBoardInitArgs {
     /// Path to the spec JSON file to write.
@@ -152,6 +182,7 @@ pub fn run(cmd: InitCommand) -> Result<(), CliError> {
         InitCommand::Chessboard(args) => run_chessboard(args),
         InitCommand::Charuco(args) => run_charuco(args),
         InitCommand::Puzzleboard(args) => run_puzzleboard(args),
+        InitCommand::Puzzlepole(args) => run_puzzlepole(args),
         InitCommand::MarkerBoard(args) => run_marker_board(args),
     }
 }
@@ -197,6 +228,25 @@ fn run_puzzleboard(args: PuzzleboardInitArgs) -> Result<(), CliError> {
         .with_origin(args.origin_row, args.origin_col)
         .with_dot_diameter_rel(args.dot_diameter_rel.unwrap_or(1.0 / 3.0));
     let doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(target))
+        .with_page(build_page_spec(&args.page)?)
+        .with_render(build_render_options(&args.render));
+    write_document_json(&doc, args.out)
+}
+
+fn run_puzzlepole(args: PuzzlepoleInitArgs) -> Result<(), CliError> {
+    let mut target = PuzzlePoleTargetSpec::new(
+        args.circumference_squares,
+        args.axial_squares,
+        args.square_size_mm,
+    )
+    .ok_or(CliError::UnsupportedPuzzlePolePeriod {
+        circumference_squares: args.circumference_squares,
+    })?
+    .with_axial_start_col(args.axial_start_col);
+    if let Some(dot) = args.dot_diameter_rel {
+        target = target.with_dot_diameter_rel(dot);
+    }
+    let doc = PrintableTargetDocument::new(TargetSpec::PuzzlePole(target))
         .with_page(build_page_spec(&args.page)?)
         .with_render(build_render_options(&args.render));
     write_document_json(&doc, args.out)

@@ -64,6 +64,16 @@ jobs:
           cargo check --workspace --all-targets --features
           calib-targets-aruco/tracing,calib-targets-charuco/diagnostics,calib-targets-charuco/link-check,calib-targets-charuco/dataset,calib-targets-charuco/tracing,calib-targets-chessboard/diagnostics,calib-targets-chessboard/dataset,calib-targets-chessboard/tracing,calib-targets-core/tracing,calib-targets-marker/diagnostics,calib-targets-marker/tracing,calib-targets-puzzleboard/diagnostics,calib-targets-puzzleboard/dataset,calib-targets-puzzleboard/tracing,calib-targets/image,calib-targets/cli,calib-targets/diagnostics,calib-targets/tracing,projective-grid/diagnostics,projective-grid/tracing,calib-targets-ffi/generate-header
 
+      # `cargo doc` is a *hard* gate in this workspace: broken intra-doc links
+      # and ambiguous references (a name that is both a module and a function)
+      # are errors here, not warnings. It ran only in the release checklist, so
+      # a broken link reached `main` green and was found by hand later.
+      - name: doc (zero warnings)
+        if: matrix.toolchain == 'stable'
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: cargo doc --workspace --no-deps
+
       - name: test (all crates, default features)
         # Keep --all-targets: besides lib/integration tests it RUNS the
         # harness=false Criterion benches in test mode (one iteration), which
@@ -72,6 +82,33 @@ jobs:
         # fast despite this thanks to the [profile.test.package.*] opt-levels
         # in the root Cargo.toml.
         run: cargo test --workspace --all-targets
+
+  book:
+    # `docs.yml` builds the book, but only on push to `main` — so a broken
+    # `SUMMARY.md`, a dangling `{{#include}}`, or a missing image reached
+    # `main` with every PR check green, and `docs.yml` failing afterwards
+    # reverts nothing. This is the pre-merge gate that was missing.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: mdbook
+      - name: Build the book
+        run: mdbook build book
+      - name: Every SUMMARY.md entry resolves to a file
+        # mdBook silently creates a draft chapter for a missing path rather
+        # than failing, so the build above does not catch a typo'd link.
+        run: |
+          set -euo pipefail
+          missing=0
+          while read -r page; do
+            if [ ! -f "book/src/$page" ]; then
+              echo "SUMMARY.md points at missing page: $page"
+              missing=1
+            fi
+          done < <(grep -oE '\]\([^)]+\.md\)' book/src/SUMMARY.md | sed -E 's/^\]\(//; s/\)$//')
+          exit "$missing"
 
   msrv:
     # Verify the declared MSRV (`rust-version` in the root Cargo.toml) actually

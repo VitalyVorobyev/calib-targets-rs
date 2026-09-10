@@ -3,7 +3,7 @@
 [![Book](https://img.shields.io/badge/book-getting--started-blue)](https://vitalyvorobyev.github.io/calib-targets-rs/getting-started.html)
 
 Native-feeling Python API for the `calib-targets` Rust workspace.
-Detects chessboards, ChArUco, PuzzleBoard, and marker boards, and
+Detects chessboards, ChArUco, PuzzleBoard, PuzzlePole, and marker boards, and
 generates printable target bundles (JSON + SVG + PNG + DXF). Built with
 [PyO3](https://pyo3.rs) + [maturin](https://www.maturin.rs).
 
@@ -129,6 +129,28 @@ result = ct.detect_puzzleboard(image, params=params)
 
 Runnable: [`examples/puzzleboard_roundtrip.py`](examples/puzzleboard_roundtrip.py).
 
+### PuzzlePole
+
+The PuzzleBoard pattern wrapped round a cylinder (Zach & Stelldinger 2025,
+[arXiv:2511.19448](https://arxiv.org/abs/2511.19448)), so the target is
+identifiable from a full 360°. It is the only family here whose corners carry a
+**3-D** object point.
+
+```python
+# The circumference must be a period that closes seamlessly -- see
+# ct.supported_puzzlepole_periods(). The diameter follows from it.
+pole = ct.PuzzlePoleSpec.canonical(24, 12, 20.0)      # 152.8 mm across
+result = ct.detect_puzzlepole(image, params=ct.PuzzlePoleParams.for_pole(pole))
+
+for image_point, object_point in result.correspondences():
+    ...  # (u, v) px  ->  (x, y, z) mm on the cylinder
+```
+
+Hand those pairs to `cv2.solvePnP` with `SOLVEPNP_SQPNP`, which does not assume
+coplanar points. This library produces the correspondences and stops there.
+
+Runnable: [`examples/detect_puzzlepole.py`](examples/detect_puzzlepole.py).
+
 ## Inputs
 
 - `image: numpy.ndarray[uint8]` with shape `(h, w)`. Grayscale only;
@@ -153,7 +175,8 @@ restored = ct.ChessboardDetectionResult.from_dict(json.loads(payload))
 
 Every config / result type has these methods — `ChessConfig`,
 `ChessboardParams`, `CharucoParams`, `PuzzleBoardParams`,
-`MarkerBoardParams`, `PrintableTargetDocument`, and all result types.
+`PuzzlePoleParams`, `MarkerBoardParams`, `PrintableTargetDocument`, and all
+result types.
 
 ## Printable targets
 

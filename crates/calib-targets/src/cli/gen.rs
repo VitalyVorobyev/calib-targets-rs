@@ -10,7 +10,8 @@ use super::args::{
 };
 use super::error::CliError;
 use crate::generate::{
-    charuco_document, chessboard_document, marker_board_document_with_circles, puzzleboard_document,
+    charuco_document, chessboard_document, marker_board_document_with_circles,
+    puzzleboard_document, puzzlepole_document,
 };
 
 #[derive(Subcommand, Debug)]
@@ -21,6 +22,8 @@ pub enum GenCommand {
     Charuco(CharucoGenArgs),
     /// Generate a PuzzleBoard bundle directly from flags.
     Puzzleboard(PuzzleboardGenArgs),
+    /// Render a PuzzlePole wrap strip straight to a bundle.
+    Puzzlepole(PuzzlepoleGenArgs),
     /// Generate a marker-board bundle directly from flags.
     MarkerBoard(MarkerBoardGenArgs),
 }
@@ -100,6 +103,28 @@ pub struct PuzzleboardGenArgs {
 }
 
 #[derive(Args, Debug)]
+pub struct PuzzlepoleGenArgs {
+    #[arg(long)]
+    pub out_stem: PathBuf,
+    /// Pieces around the circumference. Must be a supported period.
+    #[arg(long)]
+    pub circumference_squares: u32,
+    /// Pieces along the cylinder axis.
+    #[arg(long)]
+    pub axial_squares: u32,
+    #[arg(long)]
+    pub square_size_mm: f64,
+    #[arg(long, default_value_t = 0)]
+    pub axial_start_col: u32,
+    #[arg(long)]
+    pub dot_diameter_rel: Option<f64>,
+    #[command(flatten)]
+    pub page: PageArgs,
+    #[command(flatten)]
+    pub render: RenderArgs,
+}
+
+#[derive(Args, Debug)]
 pub struct MarkerBoardGenArgs {
     #[arg(long)]
     pub out_stem: PathBuf,
@@ -129,6 +154,7 @@ pub fn run(cmd: GenCommand) -> Result<(), CliError> {
         GenCommand::Chessboard(args) => run_chessboard(args),
         GenCommand::Charuco(args) => run_charuco(args),
         GenCommand::Puzzleboard(args) => run_puzzleboard(args),
+        GenCommand::Puzzlepole(args) => run_puzzlepole(args),
         GenCommand::MarkerBoard(args) => run_marker_board(args),
     }
 }
@@ -174,6 +200,26 @@ fn run_puzzleboard(args: PuzzleboardGenArgs) -> Result<(), CliError> {
     if let calib_targets_print::TargetSpec::PuzzleBoard(spec) = &mut doc.target {
         spec.origin_row = args.origin_row;
         spec.origin_col = args.origin_col;
+        if let Some(dot) = args.dot_diameter_rel {
+            spec.dot_diameter_rel = dot;
+        }
+    }
+    doc.page = build_page_spec(&args.page)?;
+    doc.render = build_render_options(&args.render);
+    emit_bundle(&doc, args.out_stem)
+}
+
+fn run_puzzlepole(args: PuzzlepoleGenArgs) -> Result<(), CliError> {
+    let mut doc = puzzlepole_document(
+        args.circumference_squares,
+        args.axial_squares,
+        args.square_size_mm,
+    )
+    .ok_or(CliError::UnsupportedPuzzlePolePeriod {
+        circumference_squares: args.circumference_squares,
+    })?;
+    if let calib_targets_print::TargetSpec::PuzzlePole(spec) = &mut doc.target {
+        spec.axial_start_col = args.axial_start_col;
         if let Some(dot) = args.dot_diameter_rel {
             spec.dot_diameter_rel = dot;
         }

@@ -13,7 +13,7 @@ use calib_targets_core::GridTransform;
 use crate::code_maps::PuzzleBoardObservedEdge;
 
 use super::hard::row_major_min_origin;
-use super::tables::{transform_observations, ClassRange, ClassTables};
+use super::tables::{transform_observations, ClassRange, ClassTables, CodeGeometry};
 use super::{
     apply_soft_uniqueness_gate, crt_master_col, crt_master_row, dequantize_ll,
     update_best_and_runner_up, DecodeOutcome, SoftLlConfig, H_COLS, H_ROWS, V_COLS, V_ROWS,
@@ -105,12 +105,13 @@ pub(crate) fn decode_soft(
     let mut best: Option<DecodeOutcome> = None;
     let mut runner_up: Option<DecodeOutcome> = None;
 
-    let mut tables = ClassTables::new(true);
-    let range = ClassRange::full();
+    let geometry = CodeGeometry::master();
+    let mut tables = ClassTables::new(&geometry, true);
+    let range = ClassRange::full(&geometry);
 
     for transform in transforms.iter().copied() {
         let transformed = transform_observations(observed, &transform);
-        tables.build(&transformed, &range, Some(cfg));
+        tables.build(&geometry, &transformed, &range, Some(cfg));
 
         // Collapse the origin scan by crossed-CRT separation (see the
         // function docs). `level_max` plays the role `lex_max_classes` plays on

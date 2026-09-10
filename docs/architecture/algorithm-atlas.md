@@ -193,7 +193,25 @@ Grid delegated to `chess`; everything below is local. Master pattern is 501×501
 | Master-ID encode + wrap | `puzzle detector/pipeline.rs::master_ij_to_id` / `wrap_master` | (i,j)+transform+origin → flat id | Flat id = `j·501+i`; preserves `target_position` invariant. | ✅ |
 | Component decode ranking | `puzzle detector/pipeline.rs::is_better_component_decode` | two decodes → better | Lexicographic: edges matched, BER, then margin/confidence. | ✅ |
 
-## 12. Circle-marker detection (marker board)
+## 12. PuzzlePole cyclic decode
+
+The PuzzleBoard pattern wrapped on a cylinder. Grid and edge sampling are §11's
+verbatim; what differs is *where the code lives*. A seamless wrap makes the
+master repeat exactly two piece rows, and the decode window spans more than
+three — so a seam-crossing window matches **no** master position, and a pole is
+decoded against its own `p`-periodic code stripe rather than the 501×501 master.
+Deep dive: [`algorithms/puzzlepole_construction.md`](../algorithms/puzzlepole_construction.md).
+
+| Algorithm | Home | In → Out | Computes | Status |
+|---|---|---|---|---|
+| Seamless-period derivation | `puzzle pole/periods.rs::is_seamless` | (period, start row) → bool | Whether a whole piece row — both edge families and the checkerboard parity, over all 501 columns — repeats at `s` and `s+1`. Re-derives the paper's table from the shipped maps. | ✅ |
+| Cyclic code stripe | `puzzle pole/code.rs::PoleCode::new` | period → `p` horizontal-bit patterns | The wrapped strip's own code, keyed by `master_row mod p` so the scorer and `map_a`'s mod-3 index agree on one number. | ✅ |
+| Cyclic origin enumeration | `puzzle detector/decode/fixed.rs::decode_fixed_hard` / `decode_fixed_soft` over `BoardRect::pole` | observed edges + `AxisExtent::Cyclic` → outcome | Direct enumeration over a ring of `p` origins × the clamped axial window. Cannot use §11's CRT collapse: that needs `gcd(3, 167) = 1`, and a pole's row moduli are 3 and `p` with `3 \| p`. | ✅ |
+| Pole coordinate + object point | `puzzle pole/geometry.rs::object_position` | (axial, cyclic) + spec → `Point3` | Seam-relative angle `2πk/p` lifted onto the cylinder; the 3-D half of a 2D↔3D correspondence. | ✅ |
+| Post-decode window floor | `puzzle pole/pipeline.rs` | decoded rect + config → accept/refuse | Rectangular span floor applied *after* the decode fixes which local axis is which — nothing beforehand can tell a 5×8 fragment lying one way from the same fragment lying the other. | ✅ |
+| Injectivity guard | `puzzle pole/pipeline.rs` | labelled corners → accept/refuse | A pole cannot show one corner twice, so a repeated id is refused rather than reported. | ✅ |
+
+## 13. Circle-marker detection (marker board)
 
 Grid delegated to `chess`; circles are the pose anchor, not decoded markers.
 
@@ -207,41 +225,47 @@ Grid delegated to `chess`; circles are the pose anchor, not decoded markers.
 
 ## Algorithm × pipeline matrix
 
-Rows = atomic algorithms (collapsed to families); columns = the four shipping
+Rows = atomic algorithms (collapsed to families); columns = the five shipping
 detectors plus the standalone grid library. `●` = on this pipeline's production
 path; `○` = available to it but not default; blank = unused by it.
 
-| Algorithm family | Chess | ChArUco | Puzzle | Marker | Grid-lib (pg public API) |
-|---|:--:|:--:|:--:|:--:|:--:|
-| Homography / projective fit (§1) | ● | ● | ●¹ | ● | ● |
-| Image warp + curvature predict (§1) | ● | ● | ● | ● | |
-| ChESS prefilter + axis cache (§2) | ● | ●² | ●² | ●² | |
-| Axis clustering (§3) | ● | ●² | ●² | ●² | ● |
-| Topological **square** assembly (§4) | ● | ●² | ●² | ●² | ● |
-| Topological **hex** assembly (§4) | | | | | ● 📚 |
-| Orientation synthesis (§5) | | | | | ● 📚 |
-| Component merge — geometric (§6) | ● | ●² | ●² | ●² | ● |
-| Component merge — shared-index (§6) | ● | ●² | ●² | ●² | |
-| Grow + interior fill (§7) | ● | ●² | ●² | ●² | ● |
-| Local/global-H extension + recovery schedule (§7) | | | | | ● 📚 |
-| Validation + wrong-label drops (§8) | ● | ●² | ●² | ●² | ● |
-| ArUco decode (§9) | | ● | | | |
-| ChArUco board-level matcher (§10) | | ● | | | |
-| ChArUco corner-id + refit + linkage (§10) | | ● | | | |
-| PuzzleBoard edge decode + CRT (§11) | | | ● | | |
-| Circle scoring + matching (§12) | | | | ● | |
+| Algorithm family | Chess | ChArUco | Puzzle | Pole | Marker | Grid-lib (pg public API) |
+|---|:--:|:--:|:--:|:--:|:--:|:--:|
+| Homography / projective fit (§1) | ● | ● | ●¹ | ●¹ | ● | ● |
+| Image warp + curvature predict (§1) | ● | ● | ● | ● | ● | |
+| ChESS prefilter + axis cache (§2) | ● | ●² | ●² | ●² | ●² | |
+| Axis clustering (§3) | ● | ●² | ●² | ●² | ●² | ● |
+| Topological **square** assembly (§4) | ● | ●² | ●² | ●² | ●² | ● |
+| Topological **hex** assembly (§4) | | | | | | ● 📚 |
+| Orientation synthesis (§5) | | | | | | ● 📚 |
+| Component merge — geometric (§6) | ● | ●² | ●² | ●² | ●² | ● |
+| Component merge — shared-index (§6) | ● | ●² | ●² | ●² | ●² | |
+| Grow + interior fill (§7) | ● | ●² | ●² | ●² | ●² | ● |
+| Local/global-H extension + recovery schedule (§7) | | | | | | ● 📚 |
+| Validation + wrong-label drops (§8) | ● | ●² | ●² | ●² | ●² | ● |
+| ArUco decode (§9) | | ● | | | | |
+| ChArUco board-level matcher (§10) | | ● | | | | |
+| ChArUco corner-id + refit + linkage (§10) | | ● | | | | |
+| PuzzleBoard edge decode + CRT (§11) | | | ● | ●³ | | |
+| PuzzlePole cyclic decode (§12) | | | | ● | | |
+| Circle scoring + matching (§13) | | | | | ● | |
 
-¹ Puzzle reaches §1 only transitively through its embedded chess detector.
-² ChArUco / Puzzle / Marker reach §2–§8 **through** their embedded `chess`
+¹ Puzzle and Pole reach §1 only transitively through their embedded chess
+detector.
+² ChArUco / Puzzle / Pole / Marker reach §2–§8 **through** their embedded `chess`
 detector, not by calling `pg` directly — `chess` is the only in-workspace crate
 that depends on `projective-grid` (see [`dependency-and-layering.md`](dependency-and-layering.md)).
+³ The pole shares §11's edge sampling and period-3 consensus, but not its origin
+recovery: the CRT collapse needs coprime row moduli and a pole's are 3 and `p`
+with `3 | p`, so it enumerates a ring instead (§12).
 
 ### The one-paragraph takeaway
 
 Every shipping detector funnels through **one** grid path: ChESS corners →
 axis-cluster → **topological square** assembly → geometric merge → grow/fill →
-validate. The marker family (`charuco`, `puzzle`, `marker`) then bolts a *decode*
-stage on top, and those decode stages (§9–§12) are clean, cohesive, and share
-nothing they shouldn't. The breadth lives entirely in `pg`'s `📚` rows (hex,
+validate. The marker family (`charuco`, `puzzle`, `pole`, `marker`) then bolts a *decode*
+stage on top, and those decode stages (§9–§13) are clean, cohesive, and share
+nothing they shouldn't — the pole being the one that deliberately *does* share,
+reusing §11 wholesale and replacing only where the code lives. The breadth lives entirely in `pg`'s `📚` rows (hex,
 orientation-free, recovery schedule) — intended library surface, exercised by no
 detector here.

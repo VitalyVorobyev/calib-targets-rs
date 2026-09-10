@@ -44,6 +44,10 @@ _marker_sweep: list[ct.MarkerBoardParams] = ct.MarkerBoardParams.sweep_for_board
 _puzzle_sweep: list[ct.PuzzleBoardParams] = ct.PuzzleBoardParams.sweep_for_board(
     ct.PuzzleBoardSpec(rows=13, cols=13, cell_size=1.0)
 )
+_pole = ct.PuzzlePoleSpec.canonical(24, 12, 20.0)
+_pole_sweep: list[ct.PuzzlePoleParams] = ct.PuzzlePoleParams.sweep_for_pole(_pole)
+_detected_pole_diameter: float = _pole.diameter_mm
+_pole_family: list[ct.PuzzlePoleSpec] = ct.PuzzlePoleSpec.distinct(24, 12, 20.0)
 
 print_doc = ct.PrintableTargetDocument(
     target=ct.ChessboardTargetSpec(inner_rows=6, inner_cols=8, square_size_mm=20.0)
@@ -54,3 +58,13 @@ _dxf_text: str = bundle.dxf_text
 written = ct.write_target_bundle(print_doc, "tmpdata/typecheck_printable")
 _png_path: str = written.png_path
 _dxf_path: str = written.dxf_path
+
+# PuzzlePole: the wrap strip is a document like any other, but its period is
+# not free -- the helper returns a document or raises, and the period table
+# comes from Rust rather than a Python copy that could drift.
+_periods: list[tuple[int, int]] = ct.supported_puzzlepole_periods()
+pole_doc: ct.PrintableTargetDocument = ct.puzzlepole_document(18, 8, 13.0)
+_pole_spec = pole_doc.target
+assert isinstance(_pole_spec, ct.PuzzlePoleTargetSpec)
+_pole_diameter: float = _pole_spec.diameter_mm
+_pole_strip: int = _pole_spec.printed_strip_squares

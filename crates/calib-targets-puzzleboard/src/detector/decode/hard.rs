@@ -10,7 +10,7 @@ use calib_targets_core::GridTransform;
 use crate::board::{MASTER_COLS, MASTER_ROWS};
 use crate::code_maps::PuzzleBoardObservedEdge;
 
-use super::tables::{transform_observations, ClassRange, ClassTables};
+use super::tables::{transform_observations, ClassRange, ClassTables, CodeGeometry};
 use super::{
     crt_master_col, crt_master_row, finalize_hard_winner, update_best_candidate, DecodeOutcome,
     HardRunnerUp, H_COLS, H_ROWS, V_COLS, V_ROWS,
@@ -113,12 +113,13 @@ pub(crate) fn decode_with_runner_up(
     let total = observed.len();
 
     let mut scan = HardScan::new(transforms.len());
-    let mut tables = ClassTables::new(false);
-    let range = ClassRange::full();
+    let geometry = CodeGeometry::master();
+    let mut tables = ClassTables::new(&geometry, false);
+    let range = ClassRange::full(&geometry);
 
     for (transform_idx, transform) in transforms.iter().copied().enumerate() {
         let transformed = transform_observations(observed, &transform);
-        tables.build(&transformed, &range, None);
+        tables.build(&geometry, &transformed, &range, None);
 
         // Fold this transform's tables into the shared accumulator (steps 1-4:
         // crossed-CRT separation, BER reject, worst-case fallback, winner
@@ -591,6 +592,12 @@ pub(crate) struct TransformTables<'a> {
 /// Fallback direct scan over all 501² origins for a single transform, using
 /// the precomputed tables. Byte-identical to the original inner loop; only
 /// invoked when the separated optimal set is pathologically large.
+///
+/// Planar-only by construction, hence the literal master extents: enumerating
+/// origins as `mr × mc` at all presumes the two families' periods are coprime
+/// and multiply to the master, which is the same CRT assumption the separated
+/// argmax above rests on. A code without that structure needs its own scan, not
+/// a parametrised version of this one.
 ///
 /// Returns `true` if any of this transform's origins became the reigning best
 /// (so the caller can attribute the global winner to this transform for the

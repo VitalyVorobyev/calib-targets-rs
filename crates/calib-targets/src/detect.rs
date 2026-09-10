@@ -101,6 +101,14 @@ pub enum DetectError {
     #[error(transparent)]
     PuzzleBoardDetect(#[from] puzzleboard::PuzzleBoardDetectError),
 
+    /// Construction of the PuzzlePole specification failed.
+    #[error(transparent)]
+    PuzzlePoleSpec(#[from] puzzleboard::PuzzlePoleSpecError),
+
+    /// PuzzlePole detection failed.
+    #[error(transparent)]
+    PuzzlePoleDetect(#[from] puzzleboard::PuzzlePoleDetectError),
+
     /// Marker-board detection failed.
     #[error(transparent)]
     MarkerBoardDetect(#[from] marker::MarkerBoardDetectError),
@@ -139,6 +147,7 @@ fn target_label(target: &core::TargetKind) -> &'static str {
         core::TargetKind::Charuco => "ChArUco board",
         core::TargetKind::CheckerboardMarker => "marker board",
         core::TargetKind::PuzzleBoard => "PuzzleBoard",
+        core::TargetKind::PuzzlePole => "PuzzlePole",
         _ => "calibration target",
     }
 }
@@ -527,6 +536,72 @@ pub fn detect_puzzleboard_best(
     })
 }
 
+/// Detect a PuzzlePole — the PuzzleBoard pattern wrapped round a cylinder.
+///
+/// Unlike every other target here, the result carries a **3-D** object point
+/// per corner as well as an image point, because the target is not planar. Feed
+/// [`PuzzlePoleDetection::correspondences`] to a PnP solver; this library
+/// stops at the correspondences, which is the hard half.
+///
+/// [`PuzzlePoleDetection::correspondences`]: puzzleboard::PuzzlePoleDetection::correspondences
+pub fn detect_puzzlepole(
+    img: &::image::GrayImage,
+    params: &puzzleboard::PuzzlePoleParams,
+) -> Result<puzzleboard::PuzzlePoleDetection, DetectError> {
+    Ok(puzzleboard::PuzzlePoleDetector::new(params.clone())?.detect(&gray_view(img))?)
+}
+
+/// [`detect_puzzlepole`] over an already-detected corner cloud.
+pub fn detect_puzzlepole_with_corners(
+    img: &::image::GrayImage,
+    corners: &[chessboard::ChessCorner],
+    params: &puzzleboard::PuzzlePoleParams,
+) -> Result<puzzleboard::PuzzlePoleDetection, DetectError> {
+    Ok(puzzleboard::PuzzlePoleDetector::new(params.clone())?
+        .detect_with_corners(&gray_view(img), corners)?)
+}
+
+/// Try several PuzzlePole configs and keep the best result.
+///
+/// The recommended entry point, as for every other target: see
+/// [`PuzzlePoleParams::sweep_for_pole`]. Corner detection is deduplicated
+/// across configs sharing a front-end, and a later config replaces the current
+/// best only when strictly better, so the first best wins ties.
+///
+/// [`PuzzlePoleParams::sweep_for_pole`]: puzzleboard::PuzzlePoleParams::sweep_for_pole
+pub fn detect_puzzlepole_best(
+    img: &::image::GrayImage,
+    configs: &[puzzleboard::PuzzlePoleParams],
+) -> Result<puzzleboard::PuzzlePoleDetection, DetectError> {
+    let mut best: Option<puzzleboard::PuzzlePoleDetection> = None;
+    let mut last_err: Option<DetectError> = None;
+    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
+    for params in configs {
+        let corners = cached_corners(img, &params.chess, &mut corner_cache);
+        match detect_puzzlepole_with_corners(img, corners, params) {
+            Ok(r) => {
+                let better = match &best {
+                    None => true,
+                    Some(b) => {
+                        let key_new = (r.corners.len(), r.decode.mean_confidence);
+                        let key_old = (b.corners.len(), b.decode.mean_confidence);
+                        key_new.0 > key_old.0 || (key_new.0 == key_old.0 && key_new.1 > key_old.1)
+                    }
+                };
+                if better {
+                    best = Some(r);
+                }
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    best.ok_or_else(|| {
+        last_err.unwrap_or(DetectError::PuzzlePoleDetect(
+            puzzleboard::PuzzlePoleDetectError::DecodeFailed,
+        ))
+    })
+}
+
 /// Try multiple marker board parameter configs, return the best result (most corners).
 ///
 /// [`MarkerBoardParams::sweep_for_board`] builds the stock config list.
@@ -808,6 +883,17 @@ pub fn detect_puzzleboard_from_gray_u8(
 ) -> Result<puzzleboard::PuzzleBoardDetection, DetectError> {
     let img = gray_image_from_slice(width, height, pixels)?;
     detect_puzzleboard(&img, params)
+}
+
+/// Run the PuzzlePole detector from a raw grayscale byte buffer.
+pub fn detect_puzzlepole_from_gray_u8(
+    width: u32,
+    height: u32,
+    pixels: &[u8],
+    params: &puzzleboard::PuzzlePoleParams,
+) -> Result<puzzleboard::PuzzlePoleDetection, DetectError> {
+    let img = gray_image_from_slice(width, height, pixels)?;
+    detect_puzzlepole(&img, params)
 }
 
 /// Run the checkerboard+circles marker board detector from a raw grayscale byte buffer.

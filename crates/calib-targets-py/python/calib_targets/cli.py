@@ -2,8 +2,8 @@
 
 Mirrors the subcommand taxonomy of the Rust CLI:
 
-    calib-targets init {chessboard,charuco,puzzleboard,marker-board} ...
-    calib-targets gen  {chessboard,charuco,puzzleboard,marker-board} ...
+    calib-targets init {chessboard,charuco,puzzleboard,puzzlepole,marker-board} ...
+    calib-targets gen  {chessboard,charuco,puzzleboard,puzzlepole,marker-board} ...
     calib-targets generate --spec ... --out-stem ...
     calib-targets validate --spec ...
     calib-targets list-dictionaries
@@ -32,6 +32,7 @@ from .printing import (
     chessboard_document,
     marker_board_document,
     puzzleboard_document,
+    puzzlepole_document,
     write_target_bundle,
 )
 from .config import MarkerCircleSpec
@@ -197,6 +198,12 @@ def _cmd_init_puzzleboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_init_puzzlepole(args: argparse.Namespace) -> int:
+    doc = _puzzlepole_document(args)
+    _write_doc(doc, Path(args.out))
+    return 0
+
+
 def _cmd_init_marker_board(args: argparse.Namespace) -> int:
     circles = _parse_circles(args.circles, args.inner_rows, args.inner_cols)
     doc = marker_board_document(
@@ -262,6 +269,12 @@ def _cmd_gen_puzzleboard(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_gen_puzzlepole(args: argparse.Namespace) -> int:
+    doc = _puzzlepole_document(args)
+    _emit_bundle(doc, Path(args.out_stem))
+    return 0
+
+
 def _cmd_gen_marker_board(args: argparse.Namespace) -> int:
     circles = _parse_circles(args.circles, args.inner_rows, args.inner_cols)
     doc = marker_board_document(
@@ -276,6 +289,28 @@ def _cmd_gen_marker_board(args: argparse.Namespace) -> int:
     )
     _emit_bundle(doc, Path(args.out_stem))
     return 0
+
+
+def _puzzlepole_document(args: argparse.Namespace) -> PrintableTargetDocument:
+    """Shared by `init` and `gen`; the two differ only in where the result goes.
+
+    An unsupported circumference surfaces as a `SystemExit` with the message the
+    Python API raises, so the CLI fails the way the Rust one does rather than
+    with a traceback.
+    """
+    try:
+        return puzzlepole_document(
+            args.circumference_squares,
+            args.axial_squares,
+            args.square_size_mm,
+            start_row=args.start_row,
+            axial_start_col=args.axial_start_col,
+            dot_diameter_rel=args.dot_diameter_rel,
+            page=_build_page(args),
+            render=_build_render(args),
+        )
+    except ValueError as err:
+        raise SystemExit(str(err)) from err
 
 
 def _target_kind_label(doc: PrintableTargetDocument) -> str:
@@ -316,6 +351,17 @@ def _add_puzzleboard_shared(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--square-size-mm", type=float, required=True)
     parser.add_argument("--origin-row", type=int, default=0)
     parser.add_argument("--origin-col", type=int, default=0)
+    parser.add_argument("--dot-diameter-rel", type=float)
+    _add_page_args(parser)
+    _add_render_args(parser)
+
+
+def _add_puzzlepole_shared(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--circumference-squares", type=int, required=True)
+    parser.add_argument("--axial-squares", type=int, required=True)
+    parser.add_argument("--square-size-mm", type=float, required=True)
+    parser.add_argument("--start-row", type=int)
+    parser.add_argument("--axial-start-col", type=int, default=0)
     parser.add_argument("--dot-diameter-rel", type=float)
     _add_page_args(parser)
     _add_render_args(parser)
@@ -383,6 +429,11 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_puzzleboard_shared(init_pb)
     init_pb.set_defaults(func=_cmd_init_puzzleboard)
 
+    init_pp = init_sub.add_parser("puzzlepole")
+    init_pp.add_argument("--out", required=True)
+    _add_puzzlepole_shared(init_pp)
+    init_pp.set_defaults(func=_cmd_init_puzzlepole)
+
     init_mb = init_sub.add_parser("marker-board")
     init_mb.add_argument("--out", required=True)
     _add_marker_board_shared(init_mb)
@@ -407,6 +458,11 @@ def _build_parser() -> argparse.ArgumentParser:
     gen_pb.add_argument("--out-stem", required=True)
     _add_puzzleboard_shared(gen_pb)
     gen_pb.set_defaults(func=_cmd_gen_puzzleboard)
+
+    gen_pp = gen_sub.add_parser("puzzlepole")
+    gen_pp.add_argument("--out-stem", required=True)
+    _add_puzzlepole_shared(gen_pp)
+    gen_pp.set_defaults(func=_cmd_gen_puzzlepole)
 
     gen_mb = gen_sub.add_parser("marker-board")
     gen_mb.add_argument("--out-stem", required=True)

@@ -430,3 +430,106 @@ fn gen_rejects_unknown_dictionary() {
         .failure()
         .stderr(predicate::str::contains("unknown dictionary"));
 }
+
+#[test]
+fn init_validate_then_generate_puzzlepole_bundle() {
+    let dir = tempdir().expect("tempdir");
+    let spec_path = dir.path().join("pole.json");
+    let out_stem = dir.path().join("generated/pole");
+
+    bin()
+        .args([
+            "init",
+            "puzzlepole",
+            "--out",
+            spec_path.to_str().expect("utf8"),
+            "--circumference-squares",
+            "12",
+            "--axial-squares",
+            "6",
+            "--square-size-mm",
+            "12",
+            "--page-size",
+            "custom",
+            "--page-width-mm",
+            "120",
+            "--page-height-mm",
+            "220",
+        ])
+        .assert()
+        .success();
+
+    bin()
+        .args(["validate", "--spec", spec_path.to_str().expect("utf8")])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("valid puzzlepole"));
+
+    bin()
+        .args([
+            "generate",
+            "--spec",
+            spec_path.to_str().expect("utf8"),
+            "--out-stem",
+            out_stem.to_str().expect("utf8"),
+        ])
+        .assert()
+        .success();
+
+    assert_bundle_written(&out_stem);
+}
+
+#[test]
+fn gen_puzzlepole_writes_bundle() {
+    let dir = tempdir().expect("tempdir");
+    let out_stem = dir.path().join("pole");
+
+    bin()
+        .args([
+            "gen",
+            "puzzlepole",
+            "--out-stem",
+            out_stem.to_str().expect("utf8"),
+            "--circumference-squares",
+            "18",
+            "--axial-squares",
+            "6",
+            "--square-size-mm",
+            "8",
+            "--page-size",
+            "custom",
+            "--page-width-mm",
+            "90",
+            "--page-height-mm",
+            "200",
+        ])
+        .assert()
+        .success();
+
+    assert_bundle_written(&out_stem);
+}
+
+/// A pole's diameter is quantised, so an unsupported circumference has to fail
+/// loudly rather than silently rounding to a neighbouring period.
+#[test]
+fn gen_puzzlepole_rejects_an_unsupported_circumference() {
+    let dir = tempdir().expect("tempdir");
+    let out_stem = dir.path().join("pole");
+
+    bin()
+        .args([
+            "gen",
+            "puzzlepole",
+            "--out-stem",
+            out_stem.to_str().expect("utf8"),
+            "--circumference-squares",
+            "13",
+            "--axial-squares",
+            "6",
+            "--square-size-mm",
+            "8",
+        ])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("closes seamlessly"));
+}

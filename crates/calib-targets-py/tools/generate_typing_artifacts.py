@@ -15,7 +15,10 @@ from typing import Sequence
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUST_LIB = ROOT / "src" / "lib.rs"
+#: Every Rust source of the extension, not just `lib.rs`. The pyfunctions were
+#: all in one file once; they are not any more, and a generator that reads one
+#: file silently emits a stub missing whatever moved out of it.
+RUST_SRC = ROOT / "src"
 PY_PACKAGE = ROOT / "python" / "calib_targets"
 ARUCO_DATA = ROOT.parent / "calib-targets-aruco" / "data"
 
@@ -30,7 +33,8 @@ CTOR_SIG_RE = re.compile(
     re.MULTILINE,
 )
 PYFUNCTION_RE = re.compile(
-    r"#\[pyfunction\]\s*#\[pyo3\(signature = (\([^\)]*\))\)\]\s*fn ([a-zA-Z0-9_]+)\(",
+    r"#\[pyfunction\]\s*#\[pyo3\(signature = (\([^\)]*\))\)\]\s*"
+    r"(?:pub(?:\(crate\))?\s+)?fn ([a-zA-Z0-9_]+)\(",
     re.MULTILINE,
 )
 
@@ -66,7 +70,9 @@ def _extract_dictionary_names() -> list[str]:
 
 
 def _extract_rust_core_surface() -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-    src = RUST_LIB.read_text(encoding="utf-8")
+    src = "\n".join(
+        path.read_text(encoding="utf-8") for path in sorted(RUST_SRC.glob("*.rs"))
+    )
 
     class_names: list[str] = []
     for match in PYCLASS_RE.finditer(src):

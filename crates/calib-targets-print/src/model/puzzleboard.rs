@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use super::chessboard::validate_square_size;
 use super::error::PrintableTargetError;
 
-pub(super) fn default_puzzleboard_dot_diameter_rel() -> f64 {
+pub(crate) fn default_puzzleboard_dot_diameter_rel() -> f64 {
     // Paper recommends 1/3 (1.0 / 3.0).
     1.0 / 3.0
 }

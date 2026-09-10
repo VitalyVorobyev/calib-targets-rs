@@ -9,11 +9,13 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{Map, Number, Value};
 
+mod pole;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn value_error(msg: impl Into<String>) -> PyErr {
+pub(crate) fn value_error(msg: impl Into<String>) -> PyErr {
     PyValueError::new_err(msg.into())
 }
 
@@ -76,7 +78,7 @@ fn py_to_json(obj: &Bound<'_, PyAny>, path: &str) -> PyResult<Value> {
     )))
 }
 
-fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
+pub(crate) fn json_to_py(py: Python<'_>, value: &Value) -> PyResult<Py<PyAny>> {
     match value {
         Value::Null => Ok(py.None()),
         Value::Bool(v) => v.into_py_any(py),
@@ -119,7 +121,7 @@ fn is_numpy_scalar(obj: &Bound<'_, PyAny>) -> bool {
         .unwrap_or(false)
 }
 
-fn from_py_json<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<T> {
+pub(crate) fn from_py_json<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, name: &str) -> PyResult<T> {
     let value = py_to_json(obj, name)?;
     serde_json::from_value(value).map_err(|err| value_error(format!("{name}: {err}")))
 }
@@ -128,7 +130,7 @@ fn from_py_json<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, name: &str) -> PyRe
 // Image conversion
 // ---------------------------------------------------------------------------
 
-fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> {
+pub(crate) fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> {
     let array = image
         .cast::<PyArrayDyn<u8>>()
         .map_err(|_| value_error("image must be a numpy.ndarray with dtype=uint8"))?;
@@ -163,7 +165,7 @@ fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> 
 /// per-call override. An absent (or `None`) argument leaves the params' own
 /// value in place, so the two can never silently disagree — whichever is used
 /// is the one the corner pass runs with.
-fn apply_chess_cfg_override(
+pub(crate) fn apply_chess_cfg_override(
     dst: &mut DetectorConfig,
     obj: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<()> {
@@ -248,7 +250,9 @@ fn printable_document_from_py(
 /// A corner cloud obtained from `trace_chessboard_topological`'s `"corners"`
 /// field (which additionally carries an `"index"` key) is accepted as-is: the
 /// extra key is ignored.
-fn chess_corners_from_py(obj: &Bound<'_, PyAny>) -> PyResult<Vec<chessboard::ChessCorner>> {
+pub(crate) fn chess_corners_from_py(
+    obj: &Bound<'_, PyAny>,
+) -> PyResult<Vec<chessboard::ChessCorner>> {
     from_py_json(obj, "corners")
 }
 
@@ -969,7 +973,10 @@ fn detect_puzzleboard_best(
 /// Every preset below is *computed by Rust*: the Python `sweep_*`
 /// classmethods parse these dicts rather than re-deriving the config list, so
 /// the two surfaces cannot explore different configuration spaces.
-fn sweep_preset_to_py<T: Serialize>(py: Python<'_>, configs: &[T]) -> PyResult<Py<PyAny>> {
+pub(crate) fn sweep_preset_to_py<T: Serialize>(
+    py: Python<'_>,
+    configs: &[T],
+) -> PyResult<Py<PyAny>> {
     let json =
         serde_json::to_value(configs).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     json_to_py(py, &json)
@@ -1051,6 +1058,29 @@ fn default_puzzleboard_params(py: Python<'_>, rows: u32, cols: u32) -> PyResult<
     json_to_py(py, &json)
 }
 
+/// Every `(circumference_squares, start_row)` pair that closes seamlessly
+/// around a cylinder.
+///
+/// Exposed rather than duplicated in Python: the table is derived from the
+/// shipped code maps and pinned by a Rust test, so a Python copy could drift
+/// from the pattern it describes.
+#[pyfunction]
+#[pyo3(signature = ())]
+fn puzzlepole_periods() -> Vec<(u32, u32)> {
+    puzzleboard::SUPPORTED_PERIODS
+        .iter()
+        .map(|p| (p.squares, p.start_row))
+        .collect()
+}
+
+/// The canonical start row for a PuzzlePole circumference, or `None` if that
+/// circumference has no seamless strip.
+#[pyfunction]
+#[pyo3(signature = (circumference_squares))]
+fn puzzlepole_canonical_start_row(circumference_squares: u32) -> Option<u32> {
+    puzzleboard::PuzzlePolePeriod::canonical(circumference_squares).map(|p| p.start_row)
+}
+
 // ---------------------------------------------------------------------------
 // Printable target functions
 // ---------------------------------------------------------------------------
@@ -1105,6 +1135,8 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_marker_board_with_corners, m)?)?;
     m.add_function(wrap_pyfunction!(detect_puzzleboard, m)?)?;
     m.add_function(wrap_pyfunction!(detect_puzzleboard_with_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(pole::detect_puzzlepole, m)?)?;
+    m.add_function(wrap_pyfunction!(pole::detect_puzzlepole_with_corners, m)?)?;
     m.add_function(wrap_pyfunction!(diagnose_charuco, m)?)?;
     m.add_function(wrap_pyfunction!(diagnose_charuco_with_corners, m)?)?;
     m.add_function(wrap_pyfunction!(diagnose_marker_board, m)?)?;
@@ -1115,11 +1147,17 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(detect_charuco_best, m)?)?;
     m.add_function(wrap_pyfunction!(detect_marker_board_best, m)?)?;
     m.add_function(wrap_pyfunction!(detect_puzzleboard_best, m)?)?;
+    m.add_function(wrap_pyfunction!(pole::detect_puzzlepole_best, m)?)?;
     m.add_function(wrap_pyfunction!(chessboard_sweep_default, m)?)?;
     m.add_function(wrap_pyfunction!(charuco_sweep_for_board, m)?)?;
     m.add_function(wrap_pyfunction!(marker_board_sweep_for_board, m)?)?;
     m.add_function(wrap_pyfunction!(puzzleboard_sweep_for_board, m)?)?;
     m.add_function(wrap_pyfunction!(default_puzzleboard_params, m)?)?;
+    m.add_function(wrap_pyfunction!(pole::puzzlepole_sweep_for_pole, m)?)?;
+    m.add_function(wrap_pyfunction!(pole::default_puzzlepole_params, m)?)?;
+    m.add_function(wrap_pyfunction!(pole::puzzlepole_distinct_poles, m)?)?;
+    m.add_function(wrap_pyfunction!(puzzlepole_periods, m)?)?;
+    m.add_function(wrap_pyfunction!(puzzlepole_canonical_start_row, m)?)?;
     m.add_function(wrap_pyfunction!(render_target_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(write_target_bundle, m)?)?;
     Ok(())

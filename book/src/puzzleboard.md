@@ -7,7 +7,15 @@ interior edge midpoints carry binary dots. The dots identify the board position
 inside a 501 x 501 master pattern, so a visible fragment can still produce
 absolute corner IDs and object-space coordinates.
 
-PuzzleBoard is based on Stelldinger 2024, arXiv:2409.20127.
+PuzzleBoard is based on Stelldinger 2024,
+[arXiv:2409.20127](https://arxiv.org/abs/2409.20127).
+
+The crate also ships the **PuzzlePole** — the same pattern wrapped round a
+cylinder, from Zach & Stelldinger 2025,
+[arXiv:2511.19448](https://arxiv.org/abs/2511.19448) — in its `pole` module. It
+is here rather than in a crate of its own because it is the same decoder with
+one period changed. Start at
+[Build and detect a PuzzlePole](tutorial_puzzlepole.md).
 
 > For the end-to-end stage map, failure modes, and tuning, see the
 > [PuzzleBoard pipeline](pipeline_puzzleboard.md); for the decoder itself

@@ -78,7 +78,7 @@ def test_18_bit_windows_are_unique_at_fixed_orientation(board):
     assert m.informative_bits == 24  # all edges of a 3×3 piece block
     assert m.n_unique == REAL.positions
 
-    detector = WindowSpec(span=5, readout=INTERIOR)
+    detector = WindowSpec.square(5, readout=INTERIOR)
     m2 = evaluate_window(board.ring_a, board.ring_b, detector, "fixed", REAL)
     assert m2.informative_bits == 18
     assert m2.n_unique == REAL.positions
@@ -125,7 +125,7 @@ def test_reflections_are_what_break_the_guarantee(board):
 def test_detector_readout_reproduces_the_crate_measurement(board, span, expected_unique):
     """Explains ``window_uniqueness_report``: 0/7 at the small windows is not
     sampling luck, it is exactly zero unique positions."""
-    spec = WindowSpec(span=span, readout=INTERIOR)
+    spec = WindowSpec.square(span, readout=INTERIOR)
     m = evaluate_window(board.ring_a, board.ring_b, spec, "d4", REAL)
     assert m.n_unique == expected_unique
 
@@ -142,10 +142,10 @@ def test_interior_readout_lags_the_paper_readout_by_two_corners(board, group):
     """
     for span in (6, 7, 8):
         interior = evaluate_window(
-            board.ring_a, board.ring_b, WindowSpec(span, INTERIOR), group, REAL
+            board.ring_a, board.ring_b, WindowSpec.square(span, readout=INTERIOR), group, REAL
         )
         paper = evaluate_window(
-            board.ring_a, board.ring_b, WindowSpec(span - 2, ALL), group, REAL
+            board.ring_a, board.ring_b, WindowSpec.square(span - 2, readout=ALL), group, REAL
         )
         assert interior.informative_bits == paper.informative_bits, span
         assert interior.n_unique == paper.n_unique, span

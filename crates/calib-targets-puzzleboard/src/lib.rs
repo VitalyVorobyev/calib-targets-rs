@@ -19,14 +19,32 @@
 //! measurement.
 //!
 //! Encoding is the superposition of two cyclic binary sub-perfect maps:
-//! - **A**: shape `(3, 167)` with window `(3, 3)₂` — one bit per horizontal edge
-//! - **B**: shape `(167, 3)` with window `(3, 3)₂` — one bit per vertical edge
+//! - **A**: shape `(3, 167)` with window `(3, 3)₂` — one bit per **vertical** edge
+//! - **B**: shape `(167, 3)` with window `(3, 3)₂` — one bit per **horizontal** edge
 //!
 //! The shipped maps are imported from the reference implementation
 //! (PStelldinger/PuzzleBoard, CC0) so that boards interoperate with it, and are
 //! embedded as bytes (`src/data/map_a.bin` / `map_b.bin`). All runtime lookups
 //! go through [`code_maps`], which also documents the provenance and the
 //! from-scratch generator.
+//!
+//! ## PuzzlePole — the same pattern, round a cylinder
+//!
+//! A [`PuzzlePoleSpec`] is a strip of this master wrapped on a tube, from Zach
+//! & Stelldinger, *PuzzlePoles: Cylindrical Fiducial Markers Based on the
+//! PuzzleBoard Pattern* ([arXiv:2511.19448](https://arxiv.org/abs/2511.19448)).
+//! It is identifiable from a full 360°, and its corners carry 3-D object
+//! points rather than points on a plane.
+//!
+//! It lives in [`pole`] rather than a crate of its own because it is the *same*
+//! decoder: the ChESS front end, the grid assembly, the edge sampler and the
+//! period-3 consensus are shared code, and the only structural change is that
+//! the horizontal family's long period becomes the pole's circumference
+//! instead of 167. A pole is therefore never decoded against the 501 × 501
+//! master — at a seamless period the master repeats exactly two piece rows, so
+//! a window spanning more than three of them matches no master position at all
+//! — but against its own periodic code stripe. See [`pole::periods`] for which
+//! circumferences close and why.
 //!
 //! ## Quickstart
 //!
@@ -61,6 +79,7 @@ pub(crate) mod diagnostics;
 mod board;
 mod detector;
 mod params;
+pub mod pole;
 
 pub use board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 pub use code_maps::{EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS};
@@ -74,6 +93,12 @@ pub use diagnostics::{
     PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics, PuzzleBoardObservedEdge,
 };
 pub use params::PuzzleBoardParams;
+pub use pole::periods::{PuzzlePolePeriod, SUPPORTED_PERIODS};
+pub use pole::{
+    PuzzlePoleCorner, PuzzlePoleDecodeConfig, PuzzlePoleDetectError, PuzzlePoleDetection,
+    PuzzlePoleDetector, PuzzlePoleParams, PuzzlePoleSpec, PuzzlePoleSpecError, MIN_AXIAL_SPAN,
+    MIN_AXIAL_SQUARES, MIN_CIRCUMFERENCE_SPAN,
+};
 
 // Re-export the foreign types this crate's public API requires — the corner
 // input and the image view — so depending on calib-targets-puzzleboard alone is

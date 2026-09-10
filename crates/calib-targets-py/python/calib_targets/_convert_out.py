@@ -31,8 +31,12 @@ from .results import (
     PuzzleBoardCorner,
     PuzzleBoardDecodeInfo,
     PuzzleBoardDetection,
+    Point3,
+    PuzzlePoleCorner,
+    PuzzlePoleDetection,
     TargetDetection,
 )
+from .config import PuzzlePoleSpec
 
 
 def _ensure_mapping(value: Any, ctx: str) -> Mapping[str, Any]:
@@ -98,6 +102,17 @@ def _to_point2(value: Any, ctx: str) -> Point2:
     return (_to_float(seq[0], f"{ctx}[0]"), _to_float(seq[1], f"{ctx}[1]"))
 
 
+def _to_point3(value: Any, ctx: str) -> Point3:
+    seq = _to_sequence(value, ctx)
+    if len(seq) != 3:
+        raise ValueError(f"{ctx} must have exactly 3 items")
+    return (
+        _to_float(seq[0], f"{ctx}[0]"),
+        _to_float(seq[1], f"{ctx}[1]"),
+        _to_float(seq[2], f"{ctx}[2]"),
+    )
+
+
 def _to_corners4(value: Any, ctx: str) -> tuple[Point2, Point2, Point2, Point2]:
     seq = _to_sequence(value, ctx)
     if len(seq) != 4:
@@ -154,6 +169,10 @@ def _to_edge_orientation(value: Any, ctx: str) -> str:
 
 def _point2_to_list(value: Point2) -> list[float]:
     return [float(value[0]), float(value[1])]
+
+
+def _point3_to_list(value: Point3) -> list[float]:
+    return [float(value[0]), float(value[1]), float(value[2])]
 
 
 def _corners4_to_list(value: tuple[Point2, Point2, Point2, Point2]) -> list[list[float]]:
@@ -909,6 +928,60 @@ def puzzleboard_detection_result_from_dict(
     )
 
 
+# -------------------- puzzlepole results --------------------
+
+
+def puzzlepole_corner_to_dict(value: PuzzlePoleCorner) -> dict[str, Any]:
+    return {
+        "position": _point2_to_list(value.position),
+        "grid": coord_to_dict(value.grid),
+        "id": int(value.id),
+        "surface_position": _point2_to_list(value.surface_position),
+        "object_position": _point3_to_list(value.object_position),
+        "score": float(value.score),
+    }
+
+
+def puzzlepole_corner_from_dict(data: Mapping[str, Any]) -> PuzzlePoleCorner:
+    obj = _ensure_mapping(data, "PuzzlePoleCorner")
+    keys = {"position", "grid", "id", "surface_position", "object_position", "score"}
+    _validate_keys(obj, allowed=keys, required=keys, ctx="PuzzlePoleCorner")
+    return PuzzlePoleCorner(
+        position=_to_point2(obj["position"], "PuzzlePoleCorner.position"),
+        grid=coord_from_dict(obj["grid"]),
+        id=_to_int(obj["id"], "PuzzlePoleCorner.id"),
+        surface_position=_to_point2(
+            obj["surface_position"], "PuzzlePoleCorner.surface_position"
+        ),
+        object_position=_to_point3(
+            obj["object_position"], "PuzzlePoleCorner.object_position"
+        ),
+        score=_to_float(obj["score"], "PuzzlePoleCorner.score"),
+    )
+
+
+def puzzlepole_detection_result_to_dict(value: PuzzlePoleDetection) -> dict[str, Any]:
+    return {
+        "corners": [puzzlepole_corner_to_dict(item) for item in value.corners],
+        "alignment": grid_alignment_to_dict(value.alignment),
+        "decode": puzzleboard_decode_info_to_dict(value.decode),
+        "spec": value.spec.to_dict(),
+    }
+
+
+def puzzlepole_detection_result_from_dict(data: Mapping[str, Any]) -> PuzzlePoleDetection:
+    obj = _ensure_mapping(data, "PuzzlePoleDetection")
+    keys = {"corners", "alignment", "decode", "spec"}
+    _validate_keys(obj, allowed=keys, required=keys, ctx="PuzzlePoleDetection")
+    corners = _to_sequence(obj["corners"], "PuzzlePoleDetection.corners")
+    return PuzzlePoleDetection(
+        corners=[puzzlepole_corner_from_dict(item) for item in corners],
+        alignment=grid_alignment_from_dict(obj["alignment"]),
+        decode=puzzleboard_decode_info_from_dict(obj["decode"]),
+        spec=PuzzlePoleSpec.from_dict(dict(_ensure_mapping(obj["spec"], "PuzzlePoleDetection.spec"))),
+    )
+
+
 __all__ = [
     "coord_to_dict",
     "coord_from_dict",
@@ -960,4 +1033,8 @@ __all__ = [
     "puzzleboard_decode_info_from_dict",
     "puzzleboard_detection_result_to_dict",
     "puzzleboard_detection_result_from_dict",
+    "puzzlepole_corner_to_dict",
+    "puzzlepole_corner_from_dict",
+    "puzzlepole_detection_result_to_dict",
+    "puzzlepole_detection_result_from_dict",
 ]

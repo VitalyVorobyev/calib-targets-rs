@@ -42,7 +42,7 @@ from .window import WindowSpec
 
 def interior(span: int) -> WindowSpec:
     """The fragment shape our sampler can actually read, at ``span`` corners."""
-    return WindowSpec(span=span, readout="interior")
+    return WindowSpec.square(span, readout="interior")
 
 
 def half_turn_support(ring: Ring, spec: WindowSpec, p: Params) -> int:

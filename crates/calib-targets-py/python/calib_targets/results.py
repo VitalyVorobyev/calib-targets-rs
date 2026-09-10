@@ -3,9 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .config import PuzzlePoleSpec
 from .enums import CirclePolarity, TargetKind
 
 Point2 = tuple[float, float]
+Point3 = tuple[float, float, float]
 Corners4 = tuple[Point2, Point2, Point2, Point2]
 
 
@@ -577,6 +579,87 @@ class PuzzleBoardDetection:
         return puzzleboard_detection_result_from_dict(data)
 
 
+@dataclass(slots=True)
+class PuzzlePoleCorner:
+    """One decoded corner on a PuzzlePole.
+
+    It carries *two* target positions and they are not redundant.
+    :attr:`surface_position` is where the corner sits on the unrolled strip —
+    the flat sheet, before it was wrapped — and :attr:`object_position` is
+    where it sits in 3-D once wrapped. A cylinder is developable, so the first
+    is exact rather than an approximation; but it is the second a pose solver
+    needs.
+    """
+
+    position: Point2
+    #: ``u`` is the axial index along the cylinder, ``v`` the cyclic index
+    #: around the circumference from the seam.
+    grid: Coord
+    id: int
+    surface_position: Point2
+    object_position: Point3
+    score: float
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import puzzlepole_corner_to_dict
+
+        return puzzlepole_corner_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzlePoleCorner:
+        from ._convert_out import puzzlepole_corner_from_dict
+
+        return puzzlepole_corner_from_dict(data)
+
+
+@dataclass(slots=True)
+class PuzzlePoleDetection:
+    corners: list[PuzzlePoleCorner]
+    alignment: GridAlignment
+    decode: PuzzleBoardDecodeInfo
+    #: The pole that was found. Echoed back so a caller holding only the result
+    #: can still convert a corner id to a position without carrying the params.
+    spec: PuzzlePoleSpec
+
+    @property
+    def detection(self) -> TargetDetection:
+        """The generic carrier, with the *unrolled* coordinate as the target.
+
+        ``target_position`` stays two-dimensional so a pole detection fits
+        every consumer that expects a planar target; the 3-D object point is on
+        :attr:`PuzzlePoleCorner.object_position`, and
+        :attr:`TargetKind.PUZZLE_POLE` is what tells a consumer to look there.
+        """
+        return TargetDetection(
+            TargetKind.PUZZLE_POLE,
+            [
+                LabeledCorner(c.position, c.grid, c.id, c.surface_position, c.score)
+                for c in self.corners
+            ],
+        )
+
+    def correspondences(self) -> list[tuple[Point2, Point3]]:
+        """``(image point, object point)`` pairs, ready for a PnP solver.
+
+        This library does not solve PnP — it produces the correspondences and
+        stops there. Feed these to ``cv2.solvePnP``; ``SOLVEPNP_SQPNP`` suits a
+        cylinder better than the iterative default, which assumes coplanar
+        points.
+        """
+        return [(c.position, c.object_position) for c in self.corners]
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import puzzlepole_detection_result_to_dict
+
+        return puzzlepole_detection_result_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PuzzlePoleDetection:
+        from ._convert_out import puzzlepole_detection_result_from_dict
+
+        return puzzlepole_detection_result_from_dict(data)
+
+
 
 __all__ = [
     "Point2",
@@ -608,4 +691,6 @@ __all__ = [
     "PuzzleBoardCorner",
     "PuzzleBoardDecodeInfo",
     "PuzzleBoardDetection",
+    "PuzzlePoleCorner",
+    "PuzzlePoleDetection",
 ]

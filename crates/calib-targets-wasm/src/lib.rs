@@ -14,9 +14,11 @@ use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams, MarkerBoardSp
 use calib_targets_print::{
     render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, GeneratedTargetBundle,
     MarkerBoardTargetSpec, PageSize, PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec,
-    RenderOptions, TargetSpec,
+    PuzzlePoleTargetSpec, RenderOptions, TargetSpec,
 };
-use calib_targets_puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets_puzzleboard::{
+    PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec, SUPPORTED_PERIODS,
+};
 use wasm_bindgen::prelude::*;
 
 use gray::make_view;
@@ -352,6 +354,24 @@ fn puzzleboard_target_and_extent(
     (target, w, h)
 }
 
+/// Build a PuzzlePole wrap-strip target and its board extent.
+///
+/// Returns `None` when the circumference is not a period that closes
+/// seamlessly. A pole's diameter is quantised, so there is no nearest fit to
+/// fall back to — rounding would produce a target whose ends do not meet.
+fn puzzlepole_target_and_extent(
+    circumference_squares: u32,
+    axial_squares: u32,
+    square_size_mm: f64,
+) -> Option<(TargetSpec, f64, f64)> {
+    let spec = PuzzlePoleTargetSpec::new(circumference_squares, axial_squares, square_size_mm)?;
+    // Page x is the cylinder axis, page y the circumference — and the strip is
+    // two pieces longer than it wraps, for the trim and the glue overlap.
+    let w = f64::from(axial_squares) * square_size_mm;
+    let h = f64::from(spec.printed_strip_squares()) * square_size_mm;
+    Some((TargetSpec::PuzzlePole(spec), w, h))
+}
+
 /// Render a complete `PrintableTargetDocument` into a JSON / SVG / PNG / DXF
 /// bundle.
 ///
@@ -456,6 +476,60 @@ pub fn render_puzzleboard_bundle(
 ) -> Result<JsValue, JsError> {
     let (target, w, h) = puzzleboard_target_and_extent(rows, cols, square_size_mm);
     render_bundle_to_js(target, w, h, dpi)
+}
+
+/// Render a PuzzlePole wrap strip into a JSON / SVG / PNG / DXF bundle.
+///
+/// Throws when `circumference_squares` is not a supported period; call
+/// [`puzzlepole_periods`] for the ones that are.
+#[wasm_bindgen]
+pub fn render_puzzlepole_bundle(
+    circumference_squares: u32,
+    axial_squares: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<JsValue, JsError> {
+    let (target, w, h) =
+        puzzlepole_target_and_extent(circumference_squares, axial_squares, square_size_mm)
+            .ok_or_else(|| unsupported_period(circumference_squares))?;
+    render_bundle_to_js(target, w, h, dpi)
+}
+
+/// Synthesise a PuzzlePole wrap-strip PNG in memory.
+#[wasm_bindgen]
+pub fn render_puzzlepole_png(
+    circumference_squares: u32,
+    axial_squares: u32,
+    square_size_mm: f64,
+    dpi: u32,
+) -> Result<Vec<u8>, JsError> {
+    let (target, w, h) =
+        puzzlepole_target_and_extent(circumference_squares, axial_squares, square_size_mm)
+            .ok_or_else(|| unsupported_period(circumference_squares))?;
+    let bundle = render_target_bundle(&fitted_document(target, w, h, dpi))
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(bundle.png_bytes)
+}
+
+/// Every `[circumference_squares, start_row]` pair that closes seamlessly.
+///
+/// Exposed rather than duplicated in TypeScript: the table is derived from the
+/// shipped code maps and pinned by a Rust test, so a copy could drift from the
+/// pattern it describes.
+#[wasm_bindgen]
+pub fn puzzlepole_periods() -> Result<JsValue, JsError> {
+    let pairs: Vec<[u32; 2]> = SUPPORTED_PERIODS
+        .iter()
+        .map(|p| [p.squares, p.start_row])
+        .collect();
+    to_js(&pairs)
+}
+
+fn unsupported_period(circumference_squares: u32) -> JsError {
+    JsError::new(&format!(
+        "{circumference_squares} pieces around the circumference is not a PuzzlePole period \
+         that closes seamlessly; call puzzlepole_periods() for the supported ones"
+    ))
 }
 
 /// Synthesise a chessboard target PNG in memory.

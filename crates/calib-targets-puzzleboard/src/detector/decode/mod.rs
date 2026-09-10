@@ -75,9 +75,12 @@ mod tables;
 #[cfg(test)]
 mod tests;
 
-pub(crate) use fixed::{decode_fixed_board, decode_fixed_board_soft, BoardRect};
+pub(crate) use fixed::{
+    decode_fixed_board, decode_fixed_board_soft, decode_fixed_hard, decode_fixed_soft, BoardRect,
+};
 pub(crate) use hard::decode;
 pub(crate) use soft::decode_soft;
+pub(crate) use tables::CodeGeometry;
 
 /// Cyclic-period sizes for the precompute tables.
 ///
@@ -516,13 +519,13 @@ fn update_best_and_runner_up(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::detector) struct TransformedEdgeLookup {
+pub(crate) struct TransformedEdgeLookup {
     pub lookup_row: i32,
     pub lookup_col: i32,
     pub orientation: EdgeOrientation,
 }
 
-pub(in crate::detector) fn transform_edge_lookup(
+pub(crate) fn transform_edge_lookup(
     edge: &PuzzleBoardObservedEdge,
     t: &GridTransform,
 ) -> TransformedEdgeLookup {
