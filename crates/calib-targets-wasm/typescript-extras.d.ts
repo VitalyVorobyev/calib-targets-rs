@@ -109,6 +109,29 @@ export type PrintableTargetSpec =
       origin_col?: number;
       /** Edge-dot diameter as a fraction of the square side. Defaults to 1/3. */
       dot_diameter_rel?: number;
+    }
+  | {
+      kind: "puzzlepole";
+      /**
+       * Pieces around the circumference. Only a few values close seamlessly —
+       * call `puzzlepole_periods()` for the supported ones. The cylinder
+       * diameter is `circumference_squares * square_size_mm / PI` and is not
+       * otherwise adjustable.
+       */
+      circumference_squares: number;
+      /** Master row the strip is cut from — the seam. */
+      start_row: number;
+      /** Pieces along the cylinder axis. */
+      axial_squares: number;
+      square_size_mm: number;
+      /**
+       * Master column the strip is cut from. Strips cut from disjoint column
+       * windows share no corner, which is how several poles are told apart.
+       * Defaults to 0.
+       */
+      axial_start_col?: number;
+      /** Edge-dot diameter as a fraction of the piece side. Defaults to 1/3. */
+      dot_diameter_rel?: number;
     };
 
 /**

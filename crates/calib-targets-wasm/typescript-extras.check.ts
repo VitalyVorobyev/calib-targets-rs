@@ -104,6 +104,16 @@ export const puzzleDoc: PrintableTargetDocument = {
   },
 };
 
+export const poleDoc: PrintableTargetDocument = {
+  target: {
+    kind: "puzzlepole",
+    circumference_squares: 18,
+    start_row: 7,
+    axial_squares: 8,
+    square_size_mm: 13.0,
+  },
+};
+
 export const printableCircle: PrintableMarkerCircleSpec = {
   i: 0,
   j: 0,
