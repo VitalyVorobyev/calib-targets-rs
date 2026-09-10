@@ -217,16 +217,31 @@ Two coordinates are carried per corner and they are not redundant:
   keeps working and no serialized shape changes.
 - **object** `(x, y, z)` — the 3-D point a PnP solver needs.
 
-### How much to print
+### How much to print, and how to assemble it
 
-The renderer draws a dot only on an edge with a square on both sides, so a
-strip of `p` squares carries `p - 1` circumferential dots and the seam edge
-would come out blank. `printed_strip_squares()` is therefore `p + 1`: the extra
-piece is a duplicate of the first, it gives the seam edge its dot, and it
-doubles as the glue overlap. The paper's Table 1 asks its generator for two
-extra rows for the same reason. Distinct corner rows around the pole stay `p` —
-`circumference_corner_rows()` — and the two numbers are deliberately separate
-accessors, because conflating them is the classic PuzzleBoard unit error.
+The strip is printed `p + 2` pieces tall. Trim it through the **mid-line of the
+first and last pieces** — the line through those pieces' vertical-edge dots —
+leaving `p + 1` pieces of material for a `p`-piece circumference, i.e. exactly
+one piece of overlap. Wrap it and lay the last piece over the first.
+
+Both details are forced, not stylistic:
+
+- **Trim mid-piece, not at a piece boundary.** A circumferential edge dot sits
+  *on* the joint, so cutting at a boundary would halve it. Cutting mid-piece
+  leaves every dot whole and the two half-pieces recombine into one.
+- **Two repeating rows, not one.** The overlapping band covers master rows
+  `s + p` and `s + p + 1` and has to reproduce master rows `s` and `s + 1`
+  underneath it. That is exactly the seam condition, and one repeating row
+  would leave the joint half a piece short. This is also why the paper's
+  Table 1 asks its generator for `p + 2`.
+
+`printed_strip_squares()` is `p + 2` and `circumference_corner_rows()` is `p`;
+they are deliberately separate accessors, because conflating them is the
+classic PuzzleBoard unit error. `calib-targets-print`'s
+`the_overlapping_band_reproduces_the_band_it_covers` asserts the whole thing
+against rendered pixels, for every supported period — the band that ends up on
+top is the band underneath it, to the pixel — and a companion test confirms the
+repetition does *not* extend past the overlap.
 
 ## 7. Pole identity
 

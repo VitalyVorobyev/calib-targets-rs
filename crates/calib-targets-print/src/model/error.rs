@@ -106,6 +106,29 @@ pub enum PrintableTargetError {
     /// A PuzzleBoard's origin plus size extends past the 501×501 master pattern.
     #[error("puzzleboard origin + size exceeds 501\u{d7}501 master pattern")]
     InvalidPuzzleBoardOrigin,
+    /// The requested `(circumference, start row)` pair is not a PuzzlePole
+    /// period that closes seamlessly.
+    #[error(
+        "no seamless PuzzlePole strip with {circumference_squares} pieces around \
+         the circumference starting at master row {start_row}"
+    )]
+    UnsupportedPuzzlePolePeriod {
+        /// The requested circumference, in pieces.
+        circumference_squares: u32,
+        /// The requested start row.
+        start_row: u32,
+    },
+    /// The PuzzlePole strip is too short axially, or runs off the master.
+    #[error(
+        "a PuzzlePole starting at master column {axial_start_col} and spanning \
+         {axial_squares} pieces is not a valid axial extent"
+    )]
+    InvalidPuzzlePoleAxialExtent {
+        /// The requested axial start column.
+        axial_start_col: u32,
+        /// The requested axial extent, in pieces.
+        axial_squares: u32,
+    },
     /// The PuzzleBoard edge-dot diameter ratio is outside `(0, 1]`.
     #[error("puzzleboard dot_diameter_rel must be in (0, 1]")]
     InvalidPuzzleBoardDotDiameter,

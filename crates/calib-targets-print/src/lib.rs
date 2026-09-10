@@ -8,8 +8,8 @@ mod render_dxf;
 pub use model::{
     stem_paths, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec,
     PageOrientation, PageSize, PageSpec, PrintableTargetDocument, PrintableTargetError,
-    PuzzleBoardTargetSpec, RenderOptions, ResolvedTargetLayout, ResolvedTargetPoint, StemPaths,
-    TargetSpec,
+    PuzzleBoardTargetSpec, PuzzlePoleTargetSpec, RenderOptions, ResolvedTargetLayout,
+    ResolvedTargetPoint, StemPaths, TargetSpec,
 };
 pub use render::{render_target_bundle, GeneratedTargetBundle};
 

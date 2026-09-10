@@ -23,7 +23,7 @@
 use calib_targets_aruco::Dictionary;
 use calib_targets_print::{
     CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec,
-    PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
+    PrintableTargetDocument, PuzzleBoardTargetSpec, PuzzlePoleTargetSpec, TargetSpec,
 };
 
 /// Build a chessboard printable document with default page and render settings.
@@ -74,6 +74,24 @@ pub fn puzzleboard_document(rows: u32, cols: u32, square_size_mm: f64) -> Printa
         rows,
         cols,
         square_size_mm,
+    )))
+}
+
+/// Build a PuzzlePole wrap-strip printable document.
+///
+/// A PuzzlePole is a PuzzleBoard strip wrapped around a cylinder. Only a few
+/// circumferences close seamlessly, so this returns `None` when
+/// `circumference_squares` is not one of them — the diameter of a pole is
+/// quantised and there is no sensible fallback. `PuzzlePolePeriod` lists the
+/// supported circumferences, and the resulting diameter is
+/// `circumference_squares * square_size_mm / pi`.
+pub fn puzzlepole_document(
+    circumference_squares: u32,
+    axial_squares: u32,
+    square_size_mm: f64,
+) -> Option<PrintableTargetDocument> {
+    Some(PrintableTargetDocument::new(TargetSpec::PuzzlePole(
+        PuzzlePoleTargetSpec::new(circumference_squares, axial_squares, square_size_mm)?,
     )))
 }
 
@@ -143,6 +161,20 @@ mod tests {
         let doc = puzzleboard_document(10, 12, 15.0);
         round_trip(&doc);
         assert_eq!(doc.target.kind_name(), "puzzleboard");
+    }
+
+    #[test]
+    fn puzzlepole_helper_produces_valid_document() {
+        let doc = puzzlepole_document(12, 6, 15.0).expect("period 12 is supported");
+        round_trip(&doc);
+        assert_eq!(doc.target.kind_name(), "puzzlepole");
+    }
+
+    /// A pole's diameter is quantised by its period, so an unsupported
+    /// circumference has no document rather than a nearest-fit one.
+    #[test]
+    fn puzzlepole_helper_refuses_an_unsupported_circumference() {
+        assert!(puzzlepole_document(13, 6, 15.0).is_none());
     }
 
     #[test]

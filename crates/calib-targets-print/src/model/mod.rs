@@ -7,6 +7,7 @@
 //! - `charuco`: [`CharucoTargetSpec`]
 //! - `marker`: [`MarkerCircleSpec`], [`MarkerBoardTargetSpec`]
 //! - `puzzleboard`: [`PuzzleBoardTargetSpec`]
+//! - `puzzlepole`: [`PuzzlePoleTargetSpec`]
 
 mod charuco;
 mod chessboard;
@@ -14,6 +15,7 @@ mod error;
 mod marker;
 mod page;
 mod puzzleboard;
+mod puzzlepole;
 
 pub use charuco::CharucoTargetSpec;
 pub use chessboard::ChessboardTargetSpec;
@@ -21,11 +23,13 @@ pub use error::PrintableTargetError;
 pub use marker::{MarkerBoardTargetSpec, MarkerCircleSpec};
 pub use page::{PageOrientation, PageSize, PageSpec, RenderOptions};
 pub use puzzleboard::PuzzleBoardTargetSpec;
+pub use puzzlepole::PuzzlePoleTargetSpec;
 
 pub(crate) use charuco::validate_charuco_spec;
 pub(crate) use chessboard::validate_chessboard_spec;
 pub(crate) use marker::validate_marker_board_spec;
 pub(crate) use puzzleboard::validate_puzzleboard_spec;
+pub(crate) use puzzlepole::validate_puzzlepole_spec;
 
 use error::SCHEMA_VERSION_V1;
 
@@ -63,6 +67,14 @@ pub enum TargetSpec {
     MarkerBoard(MarkerBoardTargetSpec),
     /// A PuzzleBoard self-identifying target.
     PuzzleBoard(PuzzleBoardTargetSpec),
+    /// A PuzzlePole cylindrical target, as a flat wrap strip.
+    ///
+    /// The wire tag is spelled to match [`TargetSpec::kind_name`]. Its
+    /// PuzzleBoard sibling serializes as `puzzle_board` while naming itself
+    /// `puzzleboard`, and the Python CLI carries a special case to bridge the
+    /// two; there is no reason to inherit that.
+    #[serde(rename = "puzzlepole")]
+    PuzzlePole(PuzzlePoleTargetSpec),
 }
 
 impl TargetSpec {
@@ -73,6 +85,7 @@ impl TargetSpec {
             Self::Charuco(_) => "charuco",
             Self::MarkerBoard(_) => "marker_board",
             Self::PuzzleBoard(_) => "puzzleboard",
+            Self::PuzzlePole(_) => "puzzlepole",
         }
     }
 
@@ -105,6 +118,14 @@ impl TargetSpec {
                 Ok((
                     spec.cols as f64 * spec.square_size_mm,
                     spec.rows as f64 * spec.square_size_mm,
+                ))
+            }
+            Self::PuzzlePole(spec) => {
+                validate_puzzlepole_spec(spec)?;
+                // Page x is the cylinder axis, page y the circumference.
+                Ok((
+                    spec.axial_squares as f64 * spec.square_size_mm,
+                    spec.printed_strip_squares() as f64 * spec.square_size_mm,
                 ))
             }
         }
@@ -190,6 +211,35 @@ impl TargetSpec {
                             ],
                             grid: Some(Coord::new(master_i as i32, master_j as i32)),
                             id: Some(id),
+                        });
+                    }
+                }
+                Ok(points)
+            }
+            Self::PuzzlePole(spec) => {
+                validate_puzzlepole_spec(spec)?;
+                let period = spec.circumference_squares;
+                // Inner corners only, as for a planar board: the outer ring
+                // cannot be sampled. A strip of `period + 1` pieces has exactly
+                // `period` inner corner rows, and because the strip repeats,
+                // those are the pole's `period` *distinct* circumference rows —
+                // so no point is emitted twice even though the sheet does show
+                // the seam piece twice.
+                let inner_cols = spec.axial_squares.saturating_sub(1);
+                let mut points = Vec::with_capacity((period * inner_cols) as usize);
+                for j in 0..period {
+                    // Local inner row `j` is master row `start_row + j + 1`,
+                    // so its cyclic index wraps at the period.
+                    let cyclic = (j + 1) % period;
+                    for i in 0..inner_cols {
+                        let axial = i + 1;
+                        points.push(ResolvedTargetPoint {
+                            position_mm: [
+                                (i as f64 + 1.0) * spec.square_size_mm,
+                                (j as f64 + 1.0) * spec.square_size_mm,
+                            ],
+                            grid: Some(Coord::new(axial as i32, cyclic as i32)),
+                            id: Some(cyclic * (spec.axial_squares + 1) + axial),
                         });
                     }
                 }
@@ -766,7 +816,9 @@ mod tests {
                 TargetSpec::Chessboard(spec) => spec.inner_square_rel = Some(0.5),
                 TargetSpec::Charuco(spec) => spec.inner_square_rel = Some(0.5),
                 TargetSpec::MarkerBoard(spec) => spec.inner_square_rel = Some(0.5),
-                TargetSpec::PuzzleBoard(_) => unreachable!("not exercised here"),
+                // The loop above only feeds the three targets that carry an
+                // inner-square inset; PuzzleBoard and PuzzlePole do not.
+                _ => unreachable!("not exercised here"),
             }
             let with_inset = doc.target.resolved_points().expect("points with inset");
 

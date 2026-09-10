@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "target": {
+    "kind": "puzzlepole",
+    "circumference_squares": 12,
+    "start_row": 73,
+    "axial_start_col": 0,
+    "axial_squares": 6,
+    "square_size_mm": 12.7,
+    "dot_diameter_rel": 0.3333333333333333
+  },
+  "page": {
+    "size": {
+      "kind": "custom",
+      "width_mm": 110.0,
+      "height_mm": 210.0
+    },
+    "orientation": "portrait",
+    "margin_mm": 10.0
+  },
+  "render": {
+    "debug_annotations": false,
+    "png_dpi": 300
+  }
+}

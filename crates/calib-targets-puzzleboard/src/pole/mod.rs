@@ -200,16 +200,25 @@ impl PuzzlePoleSpec {
         self.circumference_squares
     }
 
-    /// Pieces on the printable strip: `circumference_squares + 1`.
+    /// Pieces on the printable strip: `circumference_squares + 2`.
     ///
-    /// One more than wraps, because the renderer only draws a dot on an edge
-    /// that has a square on both sides. Printing the extra piece gives the seam
-    /// edge its dot, and that piece is a duplicate of the first — so it doubles
-    /// as the glue overlap. The paper's Table 1 asks its generator for two
-    /// extra rows for the same reason.
+    /// Two more than wraps, and the second one is the interesting one.
+    ///
+    /// Trim the strip through the **mid-line of its first and last pieces** —
+    /// the line through those pieces' vertical-edge dots — and it holds
+    /// `circumference_squares + 1` pieces of material for a
+    /// `circumference_squares`-piece circumference: exactly one piece of
+    /// overlap. Wrap it and lay the last piece over the first.
+    ///
+    /// That overlap is invisible only because the seam repeats **two**
+    /// consecutive rows rather than one. The overlapping band covers master
+    /// rows `s + p` and `s + p + 1`, and it has to reproduce master rows `s`
+    /// and `s + 1` underneath it — which is precisely the seam condition. One
+    /// repeating row would leave the joint half a piece short. This is also why
+    /// the paper's Table 1 asks its generator for `p + 2`.
     #[must_use]
     pub const fn printed_strip_squares(&self) -> u32 {
-        self.circumference_squares + 1
+        self.circumference_squares + 2
     }
 
     /// Corner columns along the cylinder axis: `axial_squares + 1`.
@@ -429,6 +438,16 @@ mod tests {
         let json = serde_json::to_string(&pole).expect("serialize");
         let back: PuzzlePoleSpec = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(pole, back);
+    }
+
+    /// The printed strip is two pieces longer than the circumference: trimming
+    /// mid-piece at both ends leaves exactly one piece of overlap.
+    #[test]
+    fn the_printed_strip_carries_one_piece_of_overlap() {
+        let pole = PuzzlePoleSpec::new(12, 6, 30.0).expect("valid");
+        assert_eq!(pole.printed_strip_squares(), 14);
+        let trimmed = pole.printed_strip_squares() as f32 - 1.0;
+        assert_eq!(trimmed - pole.circumference_squares as f32, 1.0);
     }
 
     #[test]
