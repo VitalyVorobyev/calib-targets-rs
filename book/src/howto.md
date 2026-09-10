@@ -9,6 +9,9 @@ want the shortest correct path to it.
   the per-parameter reference behind it.
 - **[Troubleshoot a failure](troubleshooting.md)** — each error variant mapped
   to a diagnostic checklist.
+- **[Print and wrap a PuzzlePole](howto_print_puzzlepole.md)** — the
+  cylindrical target: picking a diameter, trimming, wrapping, and what its
+  coordinates mean.
 
 For a start-to-finish walkthrough instead, see [Tutorials](tutorials.md); for
 the reasoning underneath, [Algorithms](algorithms.md).

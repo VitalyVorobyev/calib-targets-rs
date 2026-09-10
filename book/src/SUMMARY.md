@@ -8,6 +8,7 @@
   - [Choose a target](howto_choose_target.md)
   - [Tune the detector](tuning.md)
   - [Troubleshoot a failure](troubleshooting.md)
+  - [Print and wrap a PuzzlePole](howto_print_puzzlepole.md)
 - [Reference]()
   - [The Grid Model](projective_grid.md)
   - [Understanding Results](output.md)
