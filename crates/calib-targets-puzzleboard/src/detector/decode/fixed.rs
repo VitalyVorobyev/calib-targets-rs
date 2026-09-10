@@ -50,7 +50,7 @@ use calib_targets_core::GridTransform;
 
 use crate::code_maps::PuzzleBoardObservedEdge;
 
-use super::tables::{transform_observations, ClassRange, ClassTables, LookupExtent};
+use super::tables::{transform_observations, ClassRange, ClassTables, CodeGeometry, LookupExtent};
 use super::{
     apply_soft_uniqueness_gate, dequantize_ll, finalize_hard_winner, update_best_and_runner_up,
     DecodeOutcome, HardRunnerUp, SoftLlConfig, H_COLS, V_COLS,
@@ -120,8 +120,14 @@ struct ShiftScore {
 
 /// Read the class-table entries for master origin `(master_row, master_col)`.
 #[inline]
-fn score_at(tables: &ClassTables, master_row: i32, master_col: i32, soft: bool) -> ShiftScore {
-    let h = (master_row.rem_euclid(super::H_ROWS as i32) as usize) * H_COLS
+fn score_at(
+    geometry: &CodeGeometry<'_>,
+    tables: &ClassTables,
+    master_row: i32,
+    master_col: i32,
+    soft: bool,
+) -> ShiftScore {
+    let h = (master_row.rem_euclid(geometry.h_long as i32) as usize) * H_COLS
         + master_col.rem_euclid(H_COLS as i32) as usize;
     let v = (master_row.rem_euclid(super::V_ROWS as i32) as usize) * V_COLS
         + master_col.rem_euclid(V_COLS as i32) as usize;
@@ -352,9 +358,10 @@ fn scan(
         soft: soft_cfg.is_some(),
     };
 
+    let geometry = CodeGeometry::master();
     let mut scan = FixedScan::new();
-    let mut logical_tables = ClassTables::new(false);
-    let mut physical_tables = ClassTables::new(true);
+    let mut logical_tables = ClassTables::new(&geometry, false);
+    let mut physical_tables = ClassTables::new(&geometry, true);
     let mut any_shift = false;
 
     for transform in transforms.iter().copied() {
@@ -374,15 +381,16 @@ fn scan(
         let first_row = board.origin_row + r_lo;
         let first_col = board.origin_col + c_lo;
         let range = ClassRange::of_origin_rect(
+            &geometry,
             first_row,
             (r_hi - r_lo + 1) as usize,
             first_col,
             (c_hi - c_lo + 1) as usize,
         );
-        logical_tables.build(&transformed, &range, None);
+        logical_tables.build(&geometry, &transformed, &range, None);
         if let (Some(edges), Some(cfg)) = (physical_edges, soft_cfg) {
             let transformed_physical = transform_observations(edges, &transform);
-            physical_tables.build(&transformed_physical, &range, Some(cfg));
+            physical_tables.build(&geometry, &transformed_physical, &range, Some(cfg));
         }
 
         #[cfg(feature = "tracing")]
@@ -391,10 +399,11 @@ fn scan(
             let master_row = board.origin_row + p_r;
             for p_c in c_lo..=c_hi {
                 let master_col = board.origin_col + p_c;
-                let logical_score = score_at(&logical_tables, master_row, master_col, false);
+                let logical_score =
+                    score_at(&geometry, &logical_tables, master_row, master_col, false);
                 let physical_score = ctx
                     .soft
-                    .then(|| score_at(&physical_tables, master_row, master_col, true));
+                    .then(|| score_at(&geometry, &physical_tables, master_row, master_col, true));
                 scan.offer(
                     transform,
                     master_row,

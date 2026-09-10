@@ -42,6 +42,65 @@ use super::{
 };
 use calib_targets_core::GridTransform;
 
+/// The cyclic geometry of one code: each family's long-axis period and the
+/// packed short-axis pattern byte it reads at each long index.
+///
+/// The two families need not share a long period. On the planar master they do
+/// — `h_long = v_long = 167` — but that is a property of the master, not of the
+/// algorithm: a PuzzlePole of circumference `p` cut at master row `s` wraps the
+/// horizontal family at `p` instead, giving `h_long = p` with `h_patterns` the
+/// `s`-rotated `p`-row slice, while `v_long` and `v_patterns` stay as they are.
+/// Carrying the two periods here rather than in one shared constant is what
+/// lets the same builder serve both.
+///
+/// The *short* axis is 3 in all four positions and stays compile-time: it is
+/// the period-3 replication the family fold is built on, and no cut moves it.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CodeGeometry<'a> {
+    /// Wrap period of the horizontal family's long axis, the master row.
+    pub h_long: usize,
+    /// Wrap period of the vertical family's long axis, the master column.
+    pub v_long: usize,
+    /// Packed `map_b` row patterns, one byte per long index; `len == h_long`.
+    pub h_patterns: &'a [u8],
+    /// Packed `map_a` column patterns, one byte per long index; `len == v_long`.
+    pub v_patterns: &'a [u8],
+}
+
+impl CodeGeometry<'static> {
+    /// The planar 501 × 501 master.
+    pub(crate) fn master() -> Self {
+        let geometry = Self {
+            h_long: H_ROWS,
+            v_long: V_COLS,
+            h_patterns: h_row_patterns(),
+            v_patterns: v_col_patterns(),
+        };
+        geometry.assert_lengths();
+        geometry
+    }
+}
+
+impl CodeGeometry<'_> {
+    /// A pattern table shorter than its period would silently alias two long
+    /// indices onto one byte; longer would leave rows unreachable. Neither
+    /// shows up as a crash, only as a wrong decode, so the pairing is checked
+    /// wherever a geometry is built and wherever one enters the builder.
+    #[inline]
+    fn assert_lengths(&self) {
+        debug_assert_eq!(
+            self.h_patterns.len(),
+            self.h_long,
+            "H pattern table must hold exactly one byte per H long class"
+        );
+        debug_assert_eq!(
+            self.v_patterns.len(),
+            self.v_long,
+            "V pattern table must hold exactly one byte per V long class"
+        );
+    }
+}
+
 /// One observation with its lookup cell resolved into a given D4 frame.
 ///
 /// Built once per transform by [`transform_observations`] so the table builder
@@ -164,49 +223,51 @@ impl ClassInterval {
 /// The residue classes an origin rectangle can reach, per table.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ClassRange {
-    /// Rows of the H table (`mr mod 167`).
+    /// Rows of the H table (`mr mod h_long`).
     pub h_rows: ClassInterval,
     /// Columns of the H table (`mc mod 3`).
     pub h_cols: ClassInterval,
     /// Rows of the V table (`mr mod 3`).
     pub v_rows: ClassInterval,
-    /// Columns of the V table (`mc mod 167`).
+    /// Columns of the V table (`mc mod v_long`).
     pub v_cols: ClassInterval,
 }
 
 impl ClassRange {
     /// Every class — what the full-master scan needs.
-    pub(crate) fn full() -> Self {
+    pub(crate) fn full(geometry: &CodeGeometry<'_>) -> Self {
         Self {
-            h_rows: ClassInterval::full(H_ROWS),
+            h_rows: ClassInterval::full(geometry.h_long),
             h_cols: ClassInterval::full(H_COLS),
             v_rows: ClassInterval::full(V_ROWS),
-            v_cols: ClassInterval::full(V_COLS),
+            v_cols: ClassInterval::full(geometry.v_long),
         }
     }
 
     /// The classes reached by master origins in
     /// `[first_row, first_row + n_rows) × [first_col, first_col + n_cols)`.
     pub(crate) fn of_origin_rect(
+        geometry: &CodeGeometry<'_>,
         first_row: i32,
         n_rows: usize,
         first_col: i32,
         n_cols: usize,
     ) -> Self {
         Self {
-            h_rows: ClassInterval::of_consecutive(first_row, n_rows, H_ROWS),
+            h_rows: ClassInterval::of_consecutive(first_row, n_rows, geometry.h_long),
             h_cols: ClassInterval::of_consecutive(first_col, n_cols, H_COLS),
             v_rows: ClassInterval::of_consecutive(first_row, n_rows, V_ROWS),
-            v_cols: ClassInterval::of_consecutive(first_col, n_cols, V_COLS),
+            v_cols: ClassInterval::of_consecutive(first_col, n_cols, geometry.v_long),
         }
     }
 }
 
 /// Per-class accumulators over one D4 transform's observation set.
 ///
-/// All six tables are full-size (`501` entries each) regardless of the class
-/// restriction; a restricted build simply leaves the unreachable entries at
-/// zero, which keeps indexing uniform for the scans.
+/// All six tables are full-size for the geometry (`501` entries each on the
+/// planar master) regardless of the class restriction; a restricted build
+/// simply leaves the unreachable entries at zero, which keeps indexing uniform
+/// for the scans.
 pub(crate) struct ClassTables {
     /// Matched-bit count per H class.
     pub h_count: Vec<u32>,
@@ -227,17 +288,20 @@ pub(crate) struct ClassTables {
 }
 
 impl ClassTables {
-    /// Allocate zeroed tables. `soft` also allocates the log-likelihood halves.
-    pub(crate) fn new(soft: bool) -> Self {
+    /// Allocate zeroed tables for `geometry`, which fixes both table extents.
+    /// `soft` also allocates the log-likelihood halves.
+    pub(crate) fn new(geometry: &CodeGeometry<'_>, soft: bool) -> Self {
+        let h_cells = geometry.h_long * H_COLS;
+        let v_cells = V_ROWS * geometry.v_long;
         let ll = |n| if soft { vec![0i64; n] } else { Vec::new() };
         Self {
-            h_count: vec![0u32; H_ROWS * H_COLS],
-            h_weight: vec![0.0f32; H_ROWS * H_COLS],
-            h_ll: ll(H_ROWS * H_COLS),
-            v_count: vec![0u32; V_ROWS * V_COLS],
-            v_weight: vec![0.0f32; V_ROWS * V_COLS],
-            v_ll: ll(V_ROWS * V_COLS),
-            groups: Groups::new(),
+            h_count: vec![0u32; h_cells],
+            h_weight: vec![0.0f32; h_cells],
+            h_ll: ll(h_cells),
+            v_count: vec![0u32; v_cells],
+            v_weight: vec![0.0f32; v_cells],
+            v_ll: ll(v_cells),
+            groups: Groups::new(geometry.h_long, geometry.v_long),
         }
     }
 
@@ -278,22 +342,32 @@ impl ClassTables {
     #[cfg_attr(feature = "tracing", tracing::instrument(level = "info", skip_all))]
     pub(crate) fn build(
         &mut self,
+        geometry: &CodeGeometry<'_>,
         transformed: &[TransformedEdge],
         range: &ClassRange,
         soft: Option<&SoftLlConfig>,
     ) {
+        geometry.assert_lengths();
+        // Every index below is derived from the geometry's periods, so tables
+        // allocated for a different one would be silently mis-shaped.
+        debug_assert_eq!(
+            (self.h_count.len(), self.v_count.len()),
+            (geometry.h_long * H_COLS, V_ROWS * geometry.v_long),
+            "tables were allocated for a different code geometry"
+        );
         self.clear();
         // Dispatched once, not per observation: the scoring mode is a
         // compile-time parameter of the inner loop so the hard path carries no
         // log-likelihood branch at all.
         match soft {
-            Some(cfg) => self.accumulate_all::<true>(transformed, range, cfg),
-            None => self.accumulate_all::<false>(transformed, range, &NO_SOFT),
+            Some(cfg) => self.accumulate_all::<true>(geometry, transformed, range, cfg),
+            None => self.accumulate_all::<false>(geometry, transformed, range, &NO_SOFT),
         }
     }
 
     fn accumulate_all<const SOFT: bool>(
         &mut self,
+        geometry: &CodeGeometry<'_>,
         transformed: &[TransformedEdge],
         range: &ClassRange,
         cfg: &SoftLlConfig,
@@ -318,7 +392,8 @@ impl ClassTables {
                 family as usize,
                 &range.h_rows,
                 &range.h_cols,
-                h_row_patterns(),
+                geometry.h_patterns,
+                geometry.h_long,
             );
         }
         // The V table is the transpose of the H one — its long axis is the
@@ -336,7 +411,8 @@ impl ClassTables {
                 family as usize,
                 &range.v_cols,
                 &range.v_rows,
-                v_col_patterns(),
+                geometry.v_patterns,
+                geometry.v_long,
             );
         }
     }
@@ -355,12 +431,9 @@ struct GroupAcc {
     ll_mismatch: i64,
 }
 
-/// Long axis shared by both tables: the 167-long period of the map that
-/// indexes it (`mr mod 167` for H, `mc mod 167` for V).
-const LONG: usize = H_ROWS;
-/// Short axis shared by both tables: the 3-long period.
+/// Short axis shared by both tables: the 3-long period. The long axes are
+/// per-family and travel at runtime in a [`CodeGeometry`].
 const SHORT: usize = H_COLS;
-const _: () = assert!(H_ROWS == LONG && V_COLS == LONG);
 const _: () = assert!(H_COLS == SHORT && V_ROWS == SHORT);
 
 /// Residue slots in one *family*: three short-axis residues × the two bits a
@@ -428,25 +501,30 @@ fn fold_family<const SOFT: bool>(members: &[GroupAcc]) -> FamilyTerms {
 /// Per-orientation residue buckets, laid out so a family occupies one
 /// contiguous run of [`FAMILY_SLOTS`] slots: `long · 6 + short · 2 + bit`.
 ///
-/// Both index spaces hold `167 · 6` slots, so the scratch is 8 KB and clearing
-/// it between transforms is cheaper than the work it saves. Only the families
-/// actually touched are visited afterwards, tracked in `touched`.
+/// Each index space holds `long · 6` slots — `167 · 6` per orientation on the
+/// planar master, so the scratch is 8 KB and clearing it between transforms is
+/// cheaper than the work it saves. Only the families actually touched are
+/// visited afterwards, tracked in `touched`.
 struct Groups {
     horizontal: Vec<GroupAcc>,
     vertical: Vec<GroupAcc>,
     touched_h: Vec<u32>,
     touched_v: Vec<u32>,
+    /// The periods the two buckets were sized for. A fill has to reduce with
+    /// these exact values or it would index past the bucket it belongs to.
+    h_long: usize,
+    v_long: usize,
 }
 
-const GROUPS_PER_ORIENTATION: usize = LONG * FAMILY_SLOTS;
-
 impl Groups {
-    fn new() -> Self {
+    fn new(h_long: usize, v_long: usize) -> Self {
         Self {
-            horizontal: vec![GroupAcc::default(); GROUPS_PER_ORIENTATION],
-            vertical: vec![GroupAcc::default(); GROUPS_PER_ORIENTATION],
+            horizontal: vec![GroupAcc::default(); h_long * FAMILY_SLOTS],
+            vertical: vec![GroupAcc::default(); v_long * FAMILY_SLOTS],
             touched_h: Vec::new(),
             touched_v: Vec::new(),
+            h_long,
+            v_long,
         }
     }
 
@@ -464,18 +542,21 @@ impl Groups {
         self.touched_h.clear();
         self.touched_v.clear();
 
+        let (h_long, v_long) = (self.h_long as i32, self.v_long as i32);
         for e in transformed {
             // The V table transposes the two axes relative to H, so the long
-            // residue comes from the column there and from the row here.
+            // residue comes from the column there and from the row here — and
+            // it wraps at that family's own period, which the two need not
+            // share.
             let (long, short, bucket, touched) = match e.orientation {
                 EdgeOrientation::Horizontal => (
-                    e.lookup_row.rem_euclid(LONG as i32) as usize,
+                    e.lookup_row.rem_euclid(h_long) as usize,
                     e.lookup_col.rem_euclid(SHORT as i32) as usize,
                     &mut self.horizontal,
                     &mut self.touched_h,
                 ),
                 EdgeOrientation::Vertical => (
-                    e.lookup_col.rem_euclid(LONG as i32) as usize,
+                    e.lookup_col.rem_euclid(v_long) as usize,
                     e.lookup_row.rem_euclid(SHORT as i32) as usize,
                     &mut self.vertical,
                     &mut self.touched_v,
@@ -529,7 +610,10 @@ struct Accumulate<'a> {
 ///
 /// `LONG_STRIDE` / `SHORT_STRIDE` place the two axes in the table's row-major
 /// layout: the H table is `[long][short]` (`3`, `1`), the V table `[short][long]`
-/// (`1`, `167`).
+/// (`1`, `167`). Both stay compile-time even though `long_period` does not: a
+/// stride is a *short*-axis row length, and the only long extent among them —
+/// the V table's `167` — is the vertical family's period, which no cut of the
+/// master moves.
 ///
 /// Both the class index and the pattern index advance by one per step and wrap
 /// at most once, so each is reduced at entry rather than once per cell.
@@ -540,14 +624,20 @@ fn credit_family<const LONG_STRIDE: usize, const SHORT_STRIDE: usize, const SOFT
     long_residue: usize,
     long_range: &ClassInterval,
     short_range: &ClassInterval,
-    patterns: &[u8; LONG],
+    patterns: &[u8],
+    long_period: usize,
 ) {
+    debug_assert_eq!(
+        patterns.len(),
+        long_period,
+        "the pattern table indexes the long axis, so it is exactly one period long"
+    );
     let Accumulate {
         count,
         weight,
         ll_sum,
     } = acc;
-    let mut pattern_idx = (long_range.start + long_residue) % LONG;
+    let mut pattern_idx = (long_range.start + long_residue) % long_period;
     let mut lc = long_range.start;
     for _ in 0..long_range.len() {
         let row = &terms[(patterns[pattern_idx] & (PATTERNS as u8 - 1)) as usize];
@@ -563,8 +653,8 @@ fn credit_family<const LONG_STRIDE: usize, const SHORT_STRIDE: usize, const SOFT
             }
             sc = if sc + 1 == SHORT { 0 } else { sc + 1 };
         }
-        lc = if lc + 1 == LONG { 0 } else { lc + 1 };
-        pattern_idx = if pattern_idx + 1 == LONG {
+        lc = if lc + 1 == long_period { 0 } else { lc + 1 };
+        pattern_idx = if pattern_idx + 1 == long_period {
             0
         } else {
             pattern_idx + 1
@@ -577,8 +667,8 @@ fn credit_family<const LONG_STRIDE: usize, const SHORT_STRIDE: usize, const SOFT
 /// The packed map costs a shift and a mask on every read and the sweep reads it
 /// `O(167)` times per family, so the three bits a family needs together are
 /// unpacked once into a single byte.
-fn h_row_patterns() -> &'static [u8; LONG] {
-    static PATS: std::sync::LazyLock<[u8; LONG]> = std::sync::LazyLock::new(|| {
+fn h_row_patterns() -> &'static [u8; H_ROWS] {
+    static PATS: std::sync::LazyLock<[u8; H_ROWS]> = std::sync::LazyLock::new(|| {
         std::array::from_fn(|r| {
             (0..SHORT).fold(0u8, |acc, j| {
                 acc | horizontal_edge_bit(r as i32, j as i32) << j
@@ -589,8 +679,8 @@ fn h_row_patterns() -> &'static [u8; LONG] {
 }
 
 /// The three vertical-edge bits of master column `c`, packed `bit j = map_a[j][c]`.
-fn v_col_patterns() -> &'static [u8; LONG] {
-    static PATS: std::sync::LazyLock<[u8; LONG]> = std::sync::LazyLock::new(|| {
+fn v_col_patterns() -> &'static [u8; V_COLS] {
+    static PATS: std::sync::LazyLock<[u8; V_COLS]> = std::sync::LazyLock::new(|| {
         std::array::from_fn(|c| {
             (0..SHORT).fold(0u8, |acc, j| {
                 acc | vertical_edge_bit(j as i32, c as i32) << j
@@ -618,32 +708,47 @@ mod tests {
     }
 
     /// The tables, spelled out from their definition: for every class, walk
-    /// every observation and test it against the master bit that class implies.
+    /// every observation and test it against the code bit that class implies.
     ///
     /// `O(501 · N)` and obviously correct — which is the point. The shipped
     /// builder reaches the same numbers by folding residue families and
     /// sweeping each family once, and this is what pins that rearrangement to
     /// the thing it is supposed to compute rather than to its own predecessor.
-    fn reference_tables(transformed: &[TransformedEdge], cfg: Option<&SoftLlConfig>) -> Reference {
-        let mut h_count = vec![0u32; H_ROWS * H_COLS];
-        let mut h_weight = vec![0.0f64; H_ROWS * H_COLS];
-        let mut h_ll = vec![0i64; H_ROWS * H_COLS];
-        let mut v_count = vec![0u32; V_ROWS * V_COLS];
-        let mut v_weight = vec![0.0f64; V_ROWS * V_COLS];
-        let mut v_ll = vec![0i64; V_ROWS * V_COLS];
+    ///
+    /// Written against a [`CodeGeometry`] rather than against the master maps,
+    /// so it keeps pinning the planar path to its definition while remaining
+    /// usable as the oracle for any other cut of the code.
+    fn reference_tables(
+        geometry: &CodeGeometry<'_>,
+        transformed: &[TransformedEdge],
+        cfg: Option<&SoftLlConfig>,
+    ) -> Reference {
+        let h_cells = geometry.h_long * H_COLS;
+        let v_cells = V_ROWS * geometry.v_long;
+        let mut h_count = vec![0u32; h_cells];
+        let mut h_weight = vec![0.0f64; h_cells];
+        let mut h_ll = vec![0i64; h_cells];
+        let mut v_count = vec![0u32; v_cells];
+        let mut v_weight = vec![0.0f64; v_cells];
+        let mut v_ll = vec![0i64; v_cells];
 
         for e in transformed {
             let (rows, cols) = match e.orientation {
-                EdgeOrientation::Horizontal => (H_ROWS, H_COLS),
-                EdgeOrientation::Vertical => (V_ROWS, V_COLS),
+                EdgeOrientation::Horizontal => (geometry.h_long, H_COLS),
+                EdgeOrientation::Vertical => (V_ROWS, geometry.v_long),
             };
             for a in 0..rows {
                 for b in 0..cols {
                     let mr = (a as i32 + e.lookup_row).rem_euclid(rows as i32);
                     let mc = (b as i32 + e.lookup_col).rem_euclid(cols as i32);
+                    // Unpack the bit from the geometry's own pattern table: H
+                    // packs `map_b[mr][·]` at long index `mr`, V packs
+                    // `map_a[·][mc]` at long index `mc`. On the master that is
+                    // `horizontal_edge_bit` / `vertical_edge_bit` by
+                    // construction, and off it the oracle still follows.
                     let expected = match e.orientation {
-                        EdgeOrientation::Horizontal => horizontal_edge_bit(mr, mc),
-                        EdgeOrientation::Vertical => vertical_edge_bit(mr, mc),
+                        EdgeOrientation::Horizontal => (geometry.h_patterns[mr as usize] >> mc) & 1,
+                        EdgeOrientation::Vertical => (geometry.v_patterns[mc as usize] >> mr) & 1,
                     };
                     let idx = a * cols + b;
                     let (count, weight, ll) = match e.orientation {
@@ -703,11 +808,12 @@ mod tests {
     }
 
     fn assert_matches_reference(observed: &[PuzzleBoardObservedEdge], soft: Option<&SoftLlConfig>) {
-        let mut tables = ClassTables::new(soft.is_some());
+        let geometry = CodeGeometry::master();
+        let mut tables = ClassTables::new(&geometry, soft.is_some());
         for transform in GRID_TRANSFORMS_D4 {
             let transformed = transform_observations(observed, &transform);
-            tables.build(&transformed, &ClassRange::full(), soft);
-            let want = reference_tables(&transformed, soft);
+            tables.build(&geometry, &transformed, &ClassRange::full(&geometry), soft);
+            let want = reference_tables(&geometry, &transformed, soft);
 
             assert_eq!(tables.h_count, want.h_count, "H count under {transform:?}");
             assert_eq!(tables.v_count, want.v_count, "V count under {transform:?}");
@@ -764,9 +870,10 @@ mod tests {
     fn a_restricted_range_leaves_unreachable_classes_at_zero() {
         let observed = fragment(9, (37, 211), 0);
         let transformed = transform_observations(&observed, &GRID_TRANSFORMS_D4[0]);
-        let mut tables = ClassTables::new(false);
-        let range = ClassRange::of_origin_rect(37, 12, 211, 12);
-        tables.build(&transformed, &range, None);
+        let geometry = CodeGeometry::master();
+        let mut tables = ClassTables::new(&geometry, false);
+        let range = ClassRange::of_origin_rect(&geometry, 37, 12, 211, 12);
+        tables.build(&geometry, &transformed, &range, None);
 
         // A 12-wide origin rectangle reaches 12 of the 167 H rows; the other
         // 155 must be untouched, or the scan could return an origin outside the
@@ -791,9 +898,10 @@ mod tests {
         shuffled.reverse();
 
         let build = |obs: &[PuzzleBoardObservedEdge]| {
+            let geometry = CodeGeometry::master();
             let transformed = transform_observations(obs, &GRID_TRANSFORMS_D4[0]);
-            let mut tables = ClassTables::new(false);
-            tables.build(&transformed, &ClassRange::full(), None);
+            let mut tables = ClassTables::new(&geometry, false);
+            tables.build(&geometry, &transformed, &ClassRange::full(&geometry), None);
             (tables.h_count.clone(), tables.v_count.clone())
         };
         assert_eq!(
