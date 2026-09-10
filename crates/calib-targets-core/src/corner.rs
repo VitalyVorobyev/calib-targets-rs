@@ -88,6 +88,21 @@ pub enum TargetKind {
     /// A PuzzleBoard: a self-identifying chessboard whose edge dots give
     /// every corner an absolute `(I, J)` label.
     PuzzleBoard,
+    /// A PuzzlePole: the PuzzleBoard pattern wrapped round a cylinder, so the
+    /// target is identifiable from any direction.
+    ///
+    /// A pole corner's `target_position` is its place on the *unrolled* strip,
+    /// not a point in space — the cylinder is developable, so that coordinate
+    /// is exact and is the honest planar analogue, but a consumer wanting a 3-D
+    /// object point must take it from the typed
+    /// `PuzzlePoleCorner::object_position` instead. This variant is what tells
+    /// it to.
+    ///
+    /// The wire tag is spelled to match the printable spec's, which chose
+    /// `puzzlepole` over the `puzzle_board` / `puzzleboard` split its sibling
+    /// carries. One spelling per target across the workspace.
+    #[serde(rename = "puzzlepole")]
+    PuzzlePole,
 }
 
 /// A corner that is part of a detected target, with optional ID info.

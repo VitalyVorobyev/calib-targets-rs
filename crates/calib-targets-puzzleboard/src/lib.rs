@@ -76,7 +76,9 @@ pub use diagnostics::{
 };
 pub use params::PuzzleBoardParams;
 pub use pole::periods::{PuzzlePolePeriod, SUPPORTED_PERIODS};
-pub use pole::{PuzzlePoleSpec, PuzzlePoleSpecError, MIN_AXIAL_SQUARES};
+pub use pole::{
+    PuzzlePoleCorner, PuzzlePoleDetection, PuzzlePoleSpec, PuzzlePoleSpecError, MIN_AXIAL_SQUARES,
+};
 
 // Re-export the foreign types this crate's public API requires — the corner
 // input and the image view — so depending on calib-targets-puzzleboard alone is
