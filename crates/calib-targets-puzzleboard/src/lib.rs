@@ -19,8 +19,8 @@
 //! measurement.
 //!
 //! Encoding is the superposition of two cyclic binary sub-perfect maps:
-//! - **A**: shape `(3, 167)` with window `(3, 3)₂` — one bit per horizontal edge
-//! - **B**: shape `(167, 3)` with window `(3, 3)₂` — one bit per vertical edge
+//! - **A**: shape `(3, 167)` with window `(3, 3)₂` — one bit per **vertical** edge
+//! - **B**: shape `(167, 3)` with window `(3, 3)₂` — one bit per **horizontal** edge
 //!
 //! The shipped maps are imported from the reference implementation
 //! (PStelldinger/PuzzleBoard, CC0) so that boards interoperate with it, and are
@@ -61,6 +61,7 @@ pub(crate) mod diagnostics;
 mod board;
 mod detector;
 mod params;
+pub mod pole;
 
 pub use board::{PuzzleBoardSpec, PuzzleBoardSpecError, MASTER_COLS, MASTER_ROWS};
 pub use code_maps::{EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS};
@@ -74,6 +75,8 @@ pub use diagnostics::{
     PuzzleBoardDecodeDiagnostics, PuzzleBoardDiagnostics, PuzzleBoardObservedEdge,
 };
 pub use params::PuzzleBoardParams;
+pub use pole::periods::{PuzzlePolePeriod, SUPPORTED_PERIODS};
+pub use pole::{PuzzlePoleSpec, PuzzlePoleSpecError, MIN_AXIAL_SQUARES};
 
 // Re-export the foreign types this crate's public API requires — the corner
 // input and the image view — so depending on calib-targets-puzzleboard alone is
