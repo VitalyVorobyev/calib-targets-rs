@@ -7,6 +7,111 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## 0.15.1
+
+A patch, and the test it passes is the one 0.15.0 failed: nothing is removed and
+nothing is renamed. Two `#[non_exhaustive]` enums gain a variant — `TargetKind`
+and the printable `TargetSpec` — which a downstream crate already had to match
+with a wildcard, and every other change is a new name beside the existing ones.
+A consumer pinning `0.15` picks this up with `cargo update`. The C ABI is
+unchanged at 5.0.0; `projective-grid` is unchanged at 0.14.
+
+It adds a target that no release before it could express: the **PuzzlePole**, the
+PuzzleBoard pattern wrapped round a cylinder (Zach & Stelldinger,
+[arXiv:2511.19448]). It is the first target here that stays identifiable through
+a full 360° of viewing directions, and the first whose detected corners carry a
+**3-D** object point rather than a point on a plane. The library's job ends at
+the correspondences; PnP stays with the caller.
+
+The pole is a module inside `calib-targets-puzzleboard`, not a crate, because it
+is the *same decoder*. One fact forces everything else about it: at a seamless
+period the 501×501 master repeats exactly **two** piece rows, and the decode
+window spans more than three — so a seam-crossing window matches no master
+position at all, and a pole is decoded against its own `p`-periodic code stripe
+instead. Change where the code lives and the rest of the pipeline — ChESS front
+end, grid assembly, edge sampling, period-3 consensus — is shared code rather
+than a fork.
+
+Three findings are worth naming because they are the kind that ship silently:
+
+- The paper's period-36 entry does **not** close on the shipped author maps.
+  `start y = 325` fails the seam predicate; `327` satisfies it. The other six
+  rows of Table 1 reproduce byte-exactly. The table here is re-derived from
+  `map_b.bin` on every test run rather than transcribed.
+- Storing a start row reduced `mod 167` names a *different physical board* for
+  four of the seven periods: `map_a` is indexed `mod 3` and the checkerboard
+  colour `mod 2`, and 167 is neither even nor a multiple of 3. Start rows are
+  stored absolute.
+- A pole cannot show one corner twice, so a duplicate index is refused. This
+  surfaced as 275 corners carrying 264 ids — eleven duplicates, exactly the
+  interior axial column count, which is one whole circumference row: the
+  printable strip's overlap piece.
+
+[arXiv:2511.19448]: https://arxiv.org/abs/2511.19448
+
+### Added
+
+- **PuzzlePole targets.** `PuzzlePoleSpec`, `PuzzlePoleParams`,
+  `PuzzlePoleDetector` and `PuzzlePoleDetection` in
+  `calib-targets-puzzleboard`'s new `pole` module, with
+  `detect_puzzlepole`, `_with_corners`, `_best` and `_from_gray_u8` on the
+  facade. A `PuzzlePoleCorner` carries three positions and they are not
+  interchangeable: `position` in the image, `surface_position` on the unrolled
+  strip, and `object_position` in the pole's 3-D frame.
+  `PuzzlePoleDetection::correspondences()` pairs the first and last for a PnP
+  solver.
+- **`TargetKind::PuzzlePole`.** `LabeledCorner::target_position` is unchanged and
+  still two-dimensional — it carries the unrolled surface coordinate, so a pole
+  detection flows through every existing carrier, serde shape and binding. The
+  new variant is what tells a consumer the 3-D point is available on the typed
+  corner.
+- **The seven seamless circumferences, derived rather than transcribed.**
+  `SUPPORTED_PERIODS` holds all 35 `(period, start row)` pairs that close on the
+  shipped maps; `PuzzlePolePeriod::piece_size_for_diameter` inverts the relation
+  when the tube is what you already have. `PuzzlePoleSpec::distinct_poles`
+  enumerates the poles that share no corner with each other, reproducing the
+  paper's counts (71 at six pieces tall, 23 at twenty).
+- **A printable wrap strip.** `TargetSpec::PuzzlePole` in `calib-targets-print`,
+  with `calib-targets init puzzlepole` / `gen puzzlepole` on both CLIs, and
+  helpers in the Python and WebAssembly bindings. The strip prints two pieces
+  longer than it wraps: the overlap is trimmed through the *middle* of the end
+  pieces, because a code dot sits on the joint.
+- **The full Python detection surface.** `detect_puzzlepole`,
+  `detect_puzzlepole_with_corners`, `detect_puzzlepole_best`,
+  `default_puzzlepole_params`, and the `PuzzlePoleSpec` / `PuzzlePoleParams` /
+  `PuzzlePoleDecodeConfig` dataclasses. `PuzzlePoleParams.sweep_for_pole`
+  delegates to Rust, so the two surfaces cannot search different configuration
+  spaces.
+- **A renderer you can run.** `cargo run -p calib-targets-puzzleboard --example
+  render_puzzlepole` casts a ray at an analytic cylinder per pixel and evaluates
+  the pattern at the surface point, then decodes what it drew. It is the same
+  renderer the end-to-end tests assert against, so the book's figure is the image
+  under test.
+- **A Diátaxis split of the book**, with a PuzzlePole tutorial, a how-to for
+  printing and wrapping one, and a "choose a target" page. `Data and Tools` was
+  rewritten from prose into runnable commands.
+- **`scripts/regen-book-figures.sh`.** Every generated figure is drawn from the
+  shipped code maps through the real renderer, so a figure cannot drift from what
+  it illustrates; `--check` fails on a stale one.
+
+### Fixed
+
+- **`calib-targets-puzzleboard`'s crate docs stated the two code maps backwards**
+  — map A described as the horizontal-edge family and B as the vertical, while
+  the code and `code_maps` say the opposite. Precisely the document anyone
+  implementing against this crate would read first.
+- **The Python typing generator read `src/lib.rs` and nothing else.** A
+  `#[pyfunction]` in any other module produced a `_core.pyi` silently missing it
+  — and `--check` passed. It now globs `src/*.rs` and accepts `pub(crate) fn`.
+  The bug was invisible while there was only one file.
+- **The book and `cargo doc` now gate on the pull request.** They ran only after
+  merge, in a workflow that reverts nothing, so a broken `SUMMARY.md`,
+  `{{#include}}` or intra-doc link reached `main` with every PR check green.
+- **The light-theme favicon referenced by `README.md` did not exist**, so the
+  logo was broken for default-theme viewers.
+- Three "— TODO" entries in the changelog archive index (0.7.x, 0.8.x, 0.9.x)
+  now say what those releases did.
+
 ## 0.15.0
 
 A minor, not a patch, and the reason is narrow: three fields were **removed**

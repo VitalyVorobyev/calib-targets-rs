@@ -11,6 +11,14 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
+## ABI 5.0.0 — unchanged in workspace 0.15.1
+
+Workspace 0.15.1 adds the PuzzlePole target but does not reach the C API: no
+symbol, struct or enum here changes, and the ABI stays at 5.0.0. A consumer
+already linked against 5.0.0 needs to do nothing. The notes below are the 5.0.0
+release notes, retained because the archive filename is the ABI version and this
+is still the ABI being shipped.
+
 ## ABI 5.0.0 — breaking
 
 Paired with workspace 0.15.0. **Relink; recompiling is not enough** — three
