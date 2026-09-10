@@ -28,6 +28,24 @@
 //! go through [`code_maps`], which also documents the provenance and the
 //! from-scratch generator.
 //!
+//! ## PuzzlePole — the same pattern, round a cylinder
+//!
+//! A [`PuzzlePoleSpec`] is a strip of this master wrapped on a tube, from Zach
+//! & Stelldinger, *PuzzlePoles: Cylindrical Fiducial Markers Based on the
+//! PuzzleBoard Pattern* ([arXiv:2511.19448](https://arxiv.org/abs/2511.19448)).
+//! It is identifiable from a full 360°, and its corners carry 3-D object
+//! points rather than points on a plane.
+//!
+//! It lives in [`pole`] rather than a crate of its own because it is the *same*
+//! decoder: the ChESS front end, the grid assembly, the edge sampler and the
+//! period-3 consensus are shared code, and the only structural change is that
+//! the horizontal family's long period becomes the pole's circumference
+//! instead of 167. A pole is therefore never decoded against the 501 × 501
+//! master — at a seamless period the master repeats exactly two piece rows, so
+//! a window spanning more than three of them matches no master position at all
+//! — but against its own periodic code stripe. See [`pole::periods`] for which
+//! circumferences close and why.
+//!
 //! ## Quickstart
 //!
 //! ```no_run

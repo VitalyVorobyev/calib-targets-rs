@@ -14,7 +14,7 @@
 [![MSRV](https://img.shields.io/badge/MSRV-1.91-blue.svg)](https://blog.rust-lang.org/2025/10/30/Rust-1.91.0/)
 
 **Calibration-target detection in Rust.** Detects chessboards, ChArUco,
-PuzzleBoard, and checkerboard marker boards from grayscale images.
+PuzzleBoard, PuzzlePole, and checkerboard marker boards from grayscale images.
 Ships as Rust crates, Python bindings, WebAssembly bindings, and a
 stable C ABI. One grid-first algorithmic core; typed result objects
 per target, with a shared corner vocabulary.
@@ -29,6 +29,7 @@ per target, with a shared corner vocabulary.
 | **Chessboard** | Plain checkerboard. Detector returns labelled corner positions with `(0, 0)` rebased to the visual top-left. No markers; corners are not individually identified. |
 | **ChArUco** | Chessboard with ArUco markers in white squares. Each labelled corner gets a globally-unique ID derived from the surrounding markers; partial views decode. |
 | **PuzzleBoard** | Self-identifying chessboard with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood evidence is available through diagnostics for downstream consistency checks. |
+| **PuzzlePole** | The PuzzleBoard pattern wrapped round a cylinder ([Zach & Stelldinger 2025](https://arxiv.org/abs/2511.19448)), so the target is identifiable from a full 360°. The only family here that is not flat, and the only one whose corners carry **3-D** object points — ready for PnP, which stays with the caller. |
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
@@ -125,15 +126,16 @@ let detection = detect::detect_chessboard_best(
 );
 ```
 
-The other three targets follow the same shape — `detect_charuco`,
-`detect_puzzleboard`, `detect_marker_board`. Each also has a
+The other targets follow the same shape — `detect_charuco`,
+`detect_puzzleboard`, `detect_puzzlepole`, `detect_marker_board`. Each also has a
 `*_with_corners` variant for reusing one ChESS corner pass across several
 target detectors, `diagnose_*` / `diagnose_*_with_corners` counterparts
 (`diagnostics` feature) for per-stage rejection detail, and a `*_best`
 sweep variant. Runnable examples:
 [`detect_charuco`](crates/calib-targets/examples/detect_charuco.rs),
 [`detect_markerboard`](crates/calib-targets/examples/detect_markerboard.rs),
-[`detect_puzzleboard`](crates/calib-targets/examples/detect_puzzleboard.rs).
+[`detect_puzzleboard`](crates/calib-targets/examples/detect_puzzleboard.rs),
+[`detect_puzzlepole`](crates/calib-targets/examples/detect_puzzlepole.rs).
 
 ### Python
 
@@ -245,7 +247,7 @@ is populated; the [API reference][api] lists every result type and field.
 | [`calib-targets-chessboard`](crates/calib-targets-chessboard) | [published](https://crates.io/crates/calib-targets-chessboard) | Invariant-first chessboard detector. |
 | [`calib-targets-aruco`](crates/calib-targets-aruco) | [published](https://crates.io/crates/calib-targets-aruco) | ArUco / AprilTag dictionaries and decoding. |
 | [`calib-targets-charuco`](crates/calib-targets-charuco) | [published](https://crates.io/crates/calib-targets-charuco) | ChArUco alignment and IDs. |
-| [`calib-targets-puzzleboard`](crates/calib-targets-puzzleboard) | [published](https://crates.io/crates/calib-targets-puzzleboard) | Self-identifying PuzzleBoard. |
+| [`calib-targets-puzzleboard`](crates/calib-targets-puzzleboard) | [published](https://crates.io/crates/calib-targets-puzzleboard) | Self-identifying PuzzleBoard, and the cylindrical PuzzlePole built on it. |
 | [`calib-targets-marker`](crates/calib-targets-marker) | [published](https://crates.io/crates/calib-targets-marker) | Checkerboard + 3-circle marker boards. |
 | [`calib-targets-print`](crates/calib-targets-print) | [published](https://crates.io/crates/calib-targets-print) | Printable target generation (JSON / SVG / PNG). |
 | [`calib-targets-py`](crates/calib-targets-py) | PyPI | Python bindings (PyO3 / maturin). |

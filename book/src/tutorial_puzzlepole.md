@@ -1,7 +1,9 @@
 # Build and detect a PuzzlePole
 
 A **PuzzlePole** is the [PuzzleBoard](puzzleboard.md) pattern wrapped round a
-cylinder. It is the only target here that stays identifiable from a full 360° —
+cylinder, from Zach & Stelldinger, [*PuzzlePoles: Cylindrical Fiducial Markers
+Based on the PuzzleBoard Pattern*](https://arxiv.org/abs/2511.19448)
+(arXiv:2511.19448). It is the only target here that stays identifiable from a full 360° —
 walk round it and it keeps telling you where you are — and the only one whose
 detected corners carry a **3-D** object point rather than a point on a plane.
 
@@ -166,6 +168,16 @@ Each corner carries three positions, and the distinction matters:
 `LabeledCorner::target_position` carries, so a pole detection still fits every
 carrier and every binding that expects a planar target.
 
+The same thing in Python:
+
+```python
+import calib_targets as ct
+
+pole = ct.PuzzlePoleSpec.canonical(24, 12, 20.0)
+found = ct.detect_puzzlepole_best(image, ct.PuzzlePoleParams.sweep_for_pole(pole))
+print(len(found.corners), "corners identified")
+```
+
 ## 6. Hand it to a PnP solver
 
 This library does not solve PnP — it gives you the correspondences and stops
@@ -188,10 +200,25 @@ for (image_point, object_point) in found.correspondences() {
 # }
 ```
 
-Feed those to `cv2.solvePnP` with `flags=cv2.SOLVEPNP_ITERATIVE` — or to
-`SOLVEPNP_SQPNP`, which does not need the points to be coplanar and is a
-better fit for a cylinder — and you have a pose from a single view, at any
-azimuth.
+In Python the pairs come off the detection directly:
+
+```python
+import cv2
+import numpy as np
+
+pairs = found.correspondences()
+image_points = np.array([p for p, _ in pairs], dtype=np.float64)
+object_points = np.array([q for _, q in pairs], dtype=np.float64)
+
+ok, rvec, tvec = cv2.solvePnP(
+    object_points, image_points, camera_matrix, dist_coeffs,
+    flags=cv2.SOLVEPNP_SQPNP,
+)
+```
+
+`SOLVEPNP_SQPNP` rather than the iterative default: the latter assumes the
+object points are coplanar, and on a cylinder they emphatically are not. That
+gives you a pose from a single view, at any azimuth.
 
 ## 7. What there is to configure
 
