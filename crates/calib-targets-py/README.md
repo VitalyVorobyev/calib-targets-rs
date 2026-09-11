@@ -149,7 +149,25 @@ for image_point, object_point in result.correspondences():
 Hand those pairs to `cv2.solvePnP` with `SOLVEPNP_SQPNP`, which does not assume
 coplanar points. This library produces the correspondences and stops there.
 
-Runnable: [`examples/detect_puzzlepole.py`](examples/detect_puzzlepole.py).
+Two runnable tools cover the whole loop:
+
+```bash
+# the strip to print and wrap -- the page is sized to it, since a useful
+# pole does not fit A4 and the renderer refuses rather than rescaling
+python examples/generate_printable_puzzlepole.py --list --square-size-mm 20
+python examples/generate_printable_puzzlepole.py --out-stem out/pole24 \
+    --circumference-squares 24 --axial-squares 12 --square-size-mm 20
+
+# detect it: overlay to look at, CSV to calibrate from, pose if you have
+# intrinsics. --doc reads the pole back out of the generated document, which
+# beats retyping it -- a spec off by one column still decodes, wrongly.
+python examples/detect_puzzlepole.py view.png --doc out/pole24.json \
+    --overlay seen.png --csv pairs.csv --pnp --fx 1050 --cx 260 --cy 350
+```
+
+Runnable: [`examples/generate_printable_puzzlepole.py`](examples/generate_printable_puzzlepole.py),
+[`examples/detect_puzzlepole.py`](examples/detect_puzzlepole.py) (`--pnp` needs
+OpenCV; nothing else does).
 
 ## Inputs
 
@@ -190,10 +208,18 @@ print(written.json_path, written.svg_path, written.png_path, written.dxf_path)
 ```
 
 Other helpers: `chessboard_document`, `puzzleboard_document`,
-`marker_board_document`. Each accepts optional `page=` / `render=`
-overrides. For full control, construct `PrintableTargetDocument`
-directly with one of the target specs (`ChessboardTargetSpec`,
-`CharucoTargetSpec`, `MarkerBoardTargetSpec`, `PuzzleBoardTargetSpec`).
+`puzzlepole_document`, `marker_board_document`. Each accepts optional
+`page=` / `render=` overrides. For full control, construct
+`PrintableTargetDocument` directly with one of the target specs
+(`ChessboardTargetSpec`, `CharucoTargetSpec`, `MarkerBoardTargetSpec`,
+`PuzzleBoardTargetSpec`, `PuzzlePoleTargetSpec`).
+
+A PuzzlePole is the one family whose page cannot be left at the A4 default: its
+strip is `circumference + 2` pieces tall, which overflows the sheet at any
+useful piece size, and the renderer raises rather than rescaling. Size the page
+to the strip, or let
+[`examples/generate_printable_puzzlepole.py`](examples/generate_printable_puzzlepole.py)
+do it.
 
 ### CLI
 

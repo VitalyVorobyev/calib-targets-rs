@@ -29,6 +29,14 @@ After `maturin develop`, run them with an image path, for example:
 ```bash
 python crates/calib-targets-py/examples/detect_charuco.py testdata/small2.png
 python crates/calib-targets-py/examples/detect_puzzleboard.py testdata/puzzleboard_small.png
+python crates/calib-targets-py/examples/detect_puzzlepole.py testdata/puzzlepole_view.png \
+    --overlay seen.png --csv pairs.csv
 ```
+
+The PuzzlePole pair is the most tool-like of them:
+`generate_printable_puzzlepole.py` writes the wrap strip on a page sized to fit
+it, and `detect_puzzlepole.py` reads that document back with `--doc` so the
+printed pole and the detector cannot disagree about which pole it is. See
+[Build and detect a PuzzlePole](tutorial_puzzlepole.md).
 
 See the sub-chapters for what each example produces and how to interpret the outputs.
