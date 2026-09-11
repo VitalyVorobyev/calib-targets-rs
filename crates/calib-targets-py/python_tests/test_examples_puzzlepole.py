@@ -178,3 +178,38 @@ def test_detect_example_pnp_recovers_the_camera_the_frame_was_rendered_from(
     # Azimuth 0 is the seam, and that is where this frame was rendered from.
     assert math.degrees(math.atan2(y, x)) == pytest.approx(0.0, abs=1.0)
     assert pose["reprojection_rms_px"] < 1.0
+
+
+def test_generate_warns_when_the_pole_is_too_short_to_decode(tmp_path: Path) -> None:
+    """A pole under the decode floor generates, and says so.
+
+    ``PuzzlePoleSpec`` accepts an axial extent of 4 pieces, but the decoder's
+    default floor is 8 corner columns and a 6-piece pole has 7 — so no view of
+    it can ever decode. Finding that out after printing and wrapping one is an
+    expensive way to learn it, and the floor is a knob rather than a law, so
+    the tool warns instead of refusing.
+    """
+    floor = ct.PuzzlePoleDecodeConfig().min_axial_span
+    short = floor - 2  # pieces, i.e. floor - 1 corner columns: one short
+    stdout = _run(
+        "generate_printable_puzzlepole.py",
+        "--out-stem", tmp_path / "short",
+        "--circumference-squares", CIRCUMFERENCE,
+        "--axial-squares", short,
+        "--square-size-mm", SQUARE_MM,
+        "--dpi", 60,
+    )
+    assert "WARNING" in stdout
+    assert f"decode floor of {floor}" in stdout
+
+    # And the pole that is exactly at the floor does not warn, or the warning
+    # would be noise on every legitimate short pole.
+    stdout = _run(
+        "generate_printable_puzzlepole.py",
+        "--out-stem", tmp_path / "just_enough",
+        "--circumference-squares", CIRCUMFERENCE,
+        "--axial-squares", floor - 1,
+        "--square-size-mm", SQUARE_MM,
+        "--dpi", 60,
+    )
+    assert "WARNING" not in stdout

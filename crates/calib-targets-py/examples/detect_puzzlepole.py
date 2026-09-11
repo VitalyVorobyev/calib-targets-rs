@@ -61,8 +61,8 @@ def pole_from_doc(path: Path) -> ct.PuzzlePoleSpec:
 
     The printed strip and the detector must agree on *four* numbers, not the
     two that describe the cylinder: ``start_row`` and ``axial_start_col`` say
-    which window of the 501-column master was printed, and they are what make
-    one pole's corner ids different from another's.
+    which window of the 501-column master was printed, and a detector aimed at
+    the wrong window reads a pattern that is not the one in front of it.
     """
     doc = ct.PrintableTargetDocument.from_dict(json.loads(path.read_text()))
     strip = doc.target
@@ -120,6 +120,12 @@ def write_csv(result: ct.PuzzlePoleDetection, path: Path) -> None:
     unrolled strip and ``object_*`` the point on the cylinder; a planar
     calibrator wants the first, a PnP solver the second, and silently feeding
     one where the other belongs is the mistake this column naming is for.
+
+    ``id`` is local to the pole: it is
+    ``ring x axial_corner_cols + axial_column``, with no term for where the
+    pole was cut from. Two poles of the same shape therefore number their
+    corners identically, so a dataset mixing poles has to carry which pole each
+    file came from -- this column will not tell it apart.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("w", newline="") as handle:

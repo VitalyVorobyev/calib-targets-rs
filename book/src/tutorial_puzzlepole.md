@@ -59,7 +59,10 @@ More than you will use. Three independent choices multiply:
 - **Disjoint axial windows.** A pole is cut from a column window of the
   501-column master, and windows that do not overlap share no corner at all.
   A pole *n* pieces tall occupies `n + 1` columns, so one strip yields
-  `⌊501 / (n + 1)⌋` poles whose corner ids cannot collide by construction.
+  `⌊501 / (n + 1)⌋` poles no two of which are cut from the same pattern. Their
+  emitted `id`s do still coincide — a corner id is `ring × columns + column`
+  within its own pole, with no term for the window — so record which pole a
+  frame shows if you mix them.
 
 That last count reproduces the paper's: 6 pieces tall gives 71 poles, 20 gives
 23. Enumerate them rather than computing offsets by hand:
@@ -185,7 +188,7 @@ python crates/calib-targets-py/examples/generate_printable_puzzlepole.py \
     --out-stem out/pole24 --circumference-squares 24 --axial-squares 12 \
     --square-size-mm 20
 
-python crates/calib-targets-py/examples/detect_puzzlepole.py out/view.png \
+python crates/calib-targets-py/examples/detect_puzzlepole.py out/puzzlepole_view.png \
     --doc out/pole24.json --overlay out/seen.png --csv out/pairs.csv
 ```
 

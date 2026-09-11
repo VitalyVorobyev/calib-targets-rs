@@ -11,11 +11,14 @@ reason a first attempt usually fails:
 - **The page is sized to the strip by default.** A pole tall enough to be
   useful does not fit A4, and the underlying renderer refuses rather than
   scaling — correctly, since a scaled target is the wrong size on paper.
-- **``--pole-index`` picks a pole that shares no corner with the others.**
-  Poles are cut from column windows of the same 501-column master; windows that
-  overlap share corner ids, so two such poles in one workcell are
-  indistinguishable. The stride is the corner-column count, not the piece
-  count, which is easy to get wrong by hand.
+- **``--pole-index`` picks a pole whose pattern shares no piece with the
+  others.** Poles are cut from column windows of the same 501-column master,
+  and overlapping windows repeat pattern, so a detector aimed at one of them
+  can decode a fragment of the other. The stride is the corner-column count,
+  not the piece count, which is easy to get wrong by hand. Note that the
+  emitted ``corner.id`` is still local to the pole -- every pole of a shape
+  numbers its corners from 0 -- so a dataset mixing poles must record which
+  pole each frame shows.
 
 Usage:
 
@@ -159,6 +162,19 @@ def main() -> int:
         f"(the wrap is {pole.circumference_squares}; 2 pieces are the trim and glue overlap)"
     )
     print(f"corner ids    : {pole.circumference_squares * pole.axial_corner_cols} on this pole")
+
+    # A pole with fewer corner columns than the decode floor cannot be detected
+    # at all, whatever the image is like -- and finding that out after printing
+    # and wrapping one is an expensive way to learn it. Read the floor from the
+    # library so the two cannot drift apart.
+    axial_floor = ct.PuzzlePoleDecodeConfig().min_axial_span
+    if pole.axial_corner_cols < axial_floor:
+        print(
+            f"WARNING       : {pole.axial_squares} pieces is only "
+            f"{pole.axial_corner_cols} corner columns, under the decode floor of "
+            f"{axial_floor}. No view of this pole can decode unless you lower "
+            "decode.min_axial_span, which has a structural minimum of 5."
+        )
     if args.page == "auto" and (
         strip_w > A4_PRINTABLE_MM[0] or strip_h > A4_PRINTABLE_MM[1]
     ):
