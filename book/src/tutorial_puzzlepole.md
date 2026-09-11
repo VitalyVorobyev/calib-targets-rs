@@ -59,7 +59,10 @@ More than you will use. Three independent choices multiply:
 - **Disjoint axial windows.** A pole is cut from a column window of the
   501-column master, and windows that do not overlap share no corner at all.
   A pole *n* pieces tall occupies `n + 1` columns, so one strip yields
-  `⌊501 / (n + 1)⌋` poles whose corner ids cannot collide by construction.
+  `⌊501 / (n + 1)⌋` poles no two of which are cut from the same pattern. Their
+  emitted `id`s do still coincide — a corner id is `ring × columns + column`
+  within its own pole, with no term for the window — so record which pole a
+  frame shows if you mix them.
 
 That last count reproduces the paper's: 6 pieces tall gives 71 poles, 20 gives
 23. Enumerate them rather than computing offsets by hand:
@@ -178,6 +181,22 @@ found = ct.detect_puzzlepole_best(image, ct.PuzzlePoleParams.sweep_for_pole(pole
 print(len(found.corners), "corners identified")
 ```
 
+Steps 3 and 5 are both runnable as they stand, without writing any of this:
+
+```bash
+python crates/calib-targets-py/examples/generate_printable_puzzlepole.py \
+    --out-stem out/pole24 --circumference-squares 24 --axial-squares 12 \
+    --square-size-mm 20
+
+python crates/calib-targets-py/examples/detect_puzzlepole.py out/puzzlepole_view.png \
+    --doc out/pole24.json --overlay out/seen.png --csv out/pairs.csv
+```
+
+`--doc` reads the pole back out of the document that produced the print, which
+is worth preferring to retyping four numbers: a spec that disagrees with the
+printed strip by one column still decodes, and hands you corner ids that are
+confidently wrong.
+
 ## 6. Hand it to a PnP solver
 
 This library does not solve PnP — it gives you the correspondences and stops
@@ -219,6 +238,13 @@ ok, rvec, tvec = cv2.solvePnP(
 `SOLVEPNP_SQPNP` rather than the iterative default: the latter assumes the
 object points are coplanar, and on a cylinder they emphatically are not. That
 gives you a pose from a single view, at any azimuth.
+
+`detect_puzzlepole.py --pnp --fx … --cx … --cy …` does exactly this and reports
+the camera's place in the pole's own frame — distance from the axis, azimuth,
+height — which is checkable against a tape measure in a way an `rvec` is not.
+On the rendered frame above, whose camera is known, it recovers the standoff to
+within a millimetre of it — which is the end-to-end check that the object
+points really are in millimetres on a cylinder, and a test asserts it.
 
 ## 7. What there is to configure
 
