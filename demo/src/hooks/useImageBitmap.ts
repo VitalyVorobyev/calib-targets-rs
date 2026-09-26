@@ -50,6 +50,6 @@ export function useImageBitmapFromUrl(url: string | null): ImageBitmapState {
 
 /** Decode a PNG byte array (from WASM render_*_png) into an ImageBitmap. */
 export async function bitmapFromBytes(bytes: Uint8Array): Promise<ImageBitmap> {
-  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], { type: "image/png" });
+  const blob = new Blob([bytes.slice().buffer], { type: "image/png" });
   return createImageBitmap(blob);
 }

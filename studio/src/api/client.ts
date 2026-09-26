@@ -42,6 +42,11 @@ async function errorMessage(res: Response): Promise<string> {
 }
 
 /** Percent-encode a snap label for use in a URL path (keeps `/`, hides `#`). */
+/** What an error panel prints: an `Error` as `String(error)` would, anything else as JSON. */
+export function errorText(error: unknown): string {
+  return error instanceof Error ? error.toString() : JSON.stringify(error);
+}
+
 export function encodeLabel(label: string): string {
   return label.split("/").map(encodeURIComponent).join("/");
 }

@@ -6,8 +6,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useNavigate, useParams } from "react-router-dom";
-import { api, encodeLabel } from "../api/client";
+import { Link, useNavigate, useParams } from "react-router";
+import { api, encodeLabel, errorText } from "../api/client";
 import {
   type BaselineCorner,
   type BoardReq,
@@ -78,12 +78,12 @@ export function ImageWorkspace() {
     return out;
   }, [dataset.data, label]);
   const pos = flatLabels.indexOf(label);
-  const prevLabel = pos > 0 ? flatLabels[pos - 1] : null;
+  const prevLabel = pos > 0 ? (flatLabels[pos - 1] ?? null) : null;
   const nextLabel =
-    pos >= 0 && pos < flatLabels.length - 1 ? flatLabels[pos + 1] : null;
+    pos >= 0 && pos < flatLabels.length - 1 ? (flatLabels[pos + 1] ?? null) : null;
   const go = useCallback(
     (l: string | null) => {
-      if (l) navigate(`/image/${encodeLabel(l)}`);
+      if (l) void navigate(`/image/${encodeLabel(l)}`);
     },
     [navigate],
   );
@@ -342,7 +342,7 @@ export function ImageWorkspace() {
                 fontWeight: tab === t ? 600 : 400,
               }}
             >
-              {t[0].toUpperCase() + t.slice(1)}
+              {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
@@ -721,7 +721,7 @@ function BoardForm({
 function StatsBlock({
   detect,
 }: {
-  detect: { isLoading: boolean; error: unknown; data?: DetectResponse };
+  detect: { isLoading: boolean; error: unknown; data?: DetectResponse | undefined };
 }) {
   if (detect.isLoading) {
     return <div style={{ color: "var(--text-muted)" }}>detecting…</div>;
@@ -729,7 +729,7 @@ function StatsBlock({
   if (detect.error) {
     return (
       <div style={{ color: "var(--err)", fontSize: 12 }}>
-        {String(detect.error)}
+        {errorText(detect.error)}
       </div>
     );
   }

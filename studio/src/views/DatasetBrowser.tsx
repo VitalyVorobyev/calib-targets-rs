@@ -2,7 +2,7 @@
 // and per-snap navigation into the image workspace.
 
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router";
 import { api, encodeLabel, imageUrl } from "../api/client";
 import type { DatasetReq, ImageInfo } from "../api/types";
 

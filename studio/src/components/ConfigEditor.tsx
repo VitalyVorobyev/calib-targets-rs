@@ -148,7 +148,7 @@ function ConfigLibrary({
     },
     onSuccess: () => {
       setSavedJson(JSON.stringify(draft));
-      invalidate();
+      void invalidate();
     },
   });
 
@@ -212,7 +212,7 @@ function ConfigLibrary({
             <button
               className="btn"
               style={{ padding: "2px 8px", fontSize: 11, flex: 1 }}
-              onClick={() => load(c.name)}
+              onClick={() => void load(c.name)}
               title={`load ${c.name}`}
             >
               {c.name}

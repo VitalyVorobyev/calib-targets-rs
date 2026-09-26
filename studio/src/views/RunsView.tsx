@@ -5,7 +5,7 @@
 
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
+import { Link } from "react-router";
 import { api, encodeLabel } from "../api/client";
 import type {
   DatasetReq,
@@ -67,7 +67,7 @@ export function RunsView() {
     },
     onSuccess: (d) => {
       setSelected(d.run_id);
-      queryClient.invalidateQueries({ queryKey: ["runs"] });
+      void queryClient.invalidateQueries({ queryKey: ["runs"] });
     },
   });
 
@@ -434,8 +434,8 @@ function Num({
  *  backend's `derive_group`). `"privatedata/130x130_puzzle/target_3.png#0"`
  *  → `"130x130_puzzle"`. */
 function groupOf(label: string): string {
-  const parts = label.split("#")[0].split("/");
-  return parts.length >= 2 ? parts[parts.length - 2] : "";
+  const parts = (label.split("#")[0] ?? "").split("/");
+  return parts.length >= 2 ? (parts[parts.length - 2] ?? "") : "";
 }
 
 /** Baseline-free problem flag: `none` for zero labelled corners, `low` below
@@ -456,7 +456,7 @@ function flagRank(f: "none" | "low" | null): number {
 function pctl(xs: number[], q: number): number {
   if (!xs.length) return 0;
   const s = [...xs].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.floor(q * s.length))];
+  return s[Math.min(s.length - 1, Math.floor(q * s.length))] ?? 0;
 }
 
 function Sel({

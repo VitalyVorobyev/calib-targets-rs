@@ -57,11 +57,18 @@ import {
   type ImageData as ImgData,
 } from "../lib/image-utils";
 import type {
+  CharucoDetection,
   CharucoParams,
   ChessConfig,
+  ChessboardDetection,
   ChessboardParams,
+  Coord,
+  Corner,
   DetectionMode,
+  MarkerBoardDetection,
   MarkerBoardParams,
+  Point2,
+  PuzzleBoardDetection,
   PuzzleBoardParams,
 } from "../types/calib-targets";
 
@@ -96,49 +103,55 @@ const SAMPLES: SampleEntry[] = [
 // Tooltip data
 // ---------------------------------------------------------------------------
 
+/** What a detector returns, by mode. */
+type DetectionResult =
+  | Corner[]
+  | ChessboardDetection
+  | CharucoDetection
+  | MarkerBoardDetection
+  | PuzzleBoardDetection;
+
+/** The fields the overlay reads from a labelled corner, common to every detector's corner. */
+interface CornerFields {
+  position: Point2;
+  grid?: Coord | null;
+  id?: number | null;
+  score?: number;
+}
+
 interface TooltipData {
   x: number;
   y: number;
   i: number;
   j: number;
-  id?: number | null;
-  score?: number;
+  id?: number | null | undefined;
+  score?: number | undefined;
 }
 
 // ---------------------------------------------------------------------------
-// Helper: extract OverlayCorner[] from any detection result
+// Helper: extract OverlayCorner[] from a detection result
 // ---------------------------------------------------------------------------
 
 function extractOverlayCorners(
   mode: DetectionMode,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  result: any,
+  result: DetectionResult | null,
 ): OverlayCorner[] {
   if (!result) return [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function fromCorner(c: any): OverlayCorner | null {
-    if (!c) return null;
-    const x = Array.isArray(c.position) ? c.position[0] : c.x;
-    const y = Array.isArray(c.position) ? c.position[1] : c.y;
-    const i = c.grid?.u ?? 0;
-    const j = c.grid?.v ?? 0;
-    return { x, y, i, j, id: c.id ?? null, score: c.score };
-  }
-  if (mode === "corners") {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (result as any[]).flatMap((c) => {
-      const [x, y] = c.position as [number, number];
-      return [{ x, y, i: 0, j: 0, id: null }];
+  if (mode === "corners" || Array.isArray(result)) {
+    return (result as Corner[]).map((c) => {
+      const [x, y] = c.position;
+      return { x, y, i: 0, j: 0, id: null };
     });
   }
-  const corners: OverlayCorner[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const src: any[] = result?.corners ?? [];
-  for (const c of src) {
-    const oc = fromCorner(c);
-    if (oc) corners.push(oc);
-  }
-  return corners;
+  const src: CornerFields[] = result.corners;
+  return src.map((c) => ({
+    x: c.position[0],
+    y: c.position[1],
+    i: c.grid?.u ?? 0,
+    j: c.grid?.v ?? 0,
+    id: c.id ?? null,
+    score: c.score,
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -206,8 +219,7 @@ export function Workspace({ ready }: WorkspaceProps) {
 
   // --- detection output ---
   const [detecting, setDetecting] = useState(false);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [detectionResult, setDetectionResult] = useState<any>(null);
+  const [detectionResult, setDetectionResult] = useState<DetectionResult | null>(null);
   const [detectionError, setDetectionError] = useState<string | null>(null);
   const [detectionMode, setDetectionMode] = useState<DetectionMode | null>(null);
   const [timeMs, setTimeMs] = useState<number | null>(null);
@@ -236,7 +248,7 @@ export function Workspace({ ready }: WorkspaceProps) {
   // --- helpers ---
 
   const loadBitmapFromImgData = useCallback(async (data: ImgData) => {
-    const blob = new Blob([data.rgba.slice().buffer as ArrayBuffer]);
+    const blob = new Blob([data.rgba.slice().buffer]);
     // Create ImageBitmap from rgba via OffscreenCanvas
     const canvas = new OffscreenCanvas(data.width, data.height);
     const ctx = canvas.getContext("2d");
@@ -352,8 +364,7 @@ export function Workspace({ ready }: WorkspaceProps) {
       try {
         const t0 = performance.now();
         const { gray, width, height } = imgData;
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        let res: any;
+        let res: DetectionResult | null = null;
         switch (mode) {
           case "corners":
             res = detectCorners(gray, width, height, chessCfg);
@@ -405,10 +416,9 @@ export function Workspace({ ready }: WorkspaceProps) {
     if (!detectionResult || !detectionMode) return [];
     if (detectionMode === "corners") {
       // raw corners: no grid labels, use position[0/1]
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return (detectionResult as any[]).map((c: any) => ({
-        x: c.position[0] as number,
-        y: c.position[1] as number,
+      return (detectionResult as Corner[]).map((c) => ({
+        x: c.position[0],
+        y: c.position[1],
         i: 0, j: 0,
       }));
     }
@@ -444,8 +454,7 @@ export function Workspace({ ready }: WorkspaceProps) {
   const cornerCount = overlayCorners.length;
   const markerCount = useMemo(() => {
     if (detectionMode !== "charuco" || !detectionResult) return null;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return (detectionResult as any)?.markers?.length ?? null;
+    return (detectionResult as CharucoDetection).markers?.length ?? null;
   }, [detectionMode, detectionResult]);
 
   // --- drop zone state ---
@@ -615,7 +624,7 @@ export function Workspace({ ready }: WorkspaceProps) {
               setSynthMarkerRel={setSynthMarkerRel}
               synthesising={synthesising}
               synthError={synthError}
-              onGenerate={handleGenerate}
+              onGenerate={() => void handleGenerate()}
               dicts={dicts}
             />
           )}
@@ -681,7 +690,7 @@ function DetectPanel({
   detecting: boolean;
   onDetect: () => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  detectionResult: any;
+  detectionResult: DetectionResult | null;
   detectionMode: DetectionMode | null;
   detectionError: string | null;
   cornerCount: number;

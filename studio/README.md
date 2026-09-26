@@ -9,6 +9,8 @@ bun install
 bun run dev      # against `cargo studio -- --dev` (proxies /api to :8930)
 bun run build    # emit dist/ for production serving by the Rust server
 bun run check    # tsc type-check only
+bun run lint     # eslint (@vitavision/config-eslint)
+bun run test:screens  # screenshots vs. a local baseline (see docs/development/commands.md)
 ```
 
 Conventions:

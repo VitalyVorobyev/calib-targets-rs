@@ -7,22 +7,30 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:screens": "playwright test"
+    "test:screens": "playwright test",
+    "lint": "eslint .",
+    "check": "tsc -b"
   },
   "dependencies": {
     "@vitavision/calib-targets": "file:./pkg",
-    "react": "^19.2.6",
-    "react-dom": "^19.2.6"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
-    "@types/react": "^19.2.15",
-    "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.2",
+    "@types/node": "^26.6.3",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitavision/config-eslint": "^0.1.0",
+    "@vitavision/config-ts": "^0.1.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "esbuild": "^0.28.0",
-    "typescript": "~5.8.3",
-    "vite": "^8.0.14",
+    "eslint": "^10.11.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.3.1",
     "vite-plugin-top-level-await": "^1.6.0",
     "vite-plugin-wasm": "^3.6.0"
-  }
+  },
+  "packageManager": "bun@1.4.2"
 }
