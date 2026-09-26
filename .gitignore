@@ -59,3 +59,9 @@ studio/node_modules/
 studio/dist/
 studio_configs/
 studio/tsconfig.tsbuildinfo
+
+# Screenshot suites: local baselines and Playwright output
+/demo/e2e/.state/
+/studio/e2e/.state/
+test-results/
+playwright-report/

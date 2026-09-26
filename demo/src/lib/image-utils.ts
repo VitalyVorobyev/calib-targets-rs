@@ -27,7 +27,7 @@ export async function loadImageFromBytes(
   mimeType: string,
   rgbaToGray: (rgba: Uint8Array, w: number, h: number) => Uint8Array,
 ): Promise<ImageData> {
-  const blob = new Blob([bytes.slice().buffer as ArrayBuffer], {
+  const blob = new Blob([bytes.slice().buffer], {
     type: mimeType,
   });
   const bitmap = await createImageBitmap(blob);

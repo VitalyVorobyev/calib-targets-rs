@@ -7,6 +7,7 @@ import type {
   TopologicalDiagnosisWire,
 } from "../api/types";
 import { TOPO_COLORS } from "./diagnoseOverlays";
+import { errorText } from "../api/client";
 
 export function DiagnosePanel({
   data,
@@ -49,7 +50,7 @@ export function DiagnosePanel({
 
       {isLoading && <div style={{ color: "var(--text-muted)" }}>running…</div>}
       {error != null && (
-        <div style={{ color: "var(--err)", fontSize: 12 }}>{String(error)}</div>
+        <div style={{ color: "var(--err)", fontSize: 12 }}>{errorText(error)}</div>
       )}
 
       {data?.kind === "topological" && <TopoPanel d={data.diagnosis} />}

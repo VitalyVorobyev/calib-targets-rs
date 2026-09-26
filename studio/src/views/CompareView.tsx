@@ -4,7 +4,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link, useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router";
 import { api } from "../api/client";
 import type {
   BaselineCorner,
@@ -309,8 +309,8 @@ function DeltaStrip({
   db,
   overlap,
 }: {
-  da?: DetectResponse;
-  db?: DetectResponse;
+  da?: DetectResponse | undefined;
+  db?: DetectResponse | undefined;
   overlap: number;
 }) {
   if (!da || !db) return <span className="chip">running…</span>;
@@ -350,7 +350,7 @@ function Pane({
   color: string;
   slot: Slot;
   onSlot: (s: Slot) => void;
-  detect?: DetectResponse;
+  detect?: DetectResponse | undefined;
   children: React.ReactNode;
 }) {
   return (

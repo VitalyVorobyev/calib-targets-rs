@@ -90,9 +90,9 @@ export type OrientationMethodReq = "ring_fit" | "disk_fit";
  * fully-materialised `/api/configs/_defaults` response.
  */
 export interface DetectorParamsOverride {
-  min_labeled_corners?: number;
-  max_components?: number;
-  min_corner_strength?: number;
+  min_labeled_corners?: number | undefined;
+  max_components?: number | undefined;
+  min_corner_strength?: number | undefined;
   advanced?: Record<string, unknown>;
 }
 
@@ -154,7 +154,7 @@ export interface BoardReq {
 export interface DetectRequest {
   label: string;
   detector?: DetectorReq;
-  board?: BoardReq;
+  board?: BoardReq | undefined;
   engine?: EngineReq;
   params?: DetectorParamsOverride;
   orientation_method?: OrientationMethodReq;

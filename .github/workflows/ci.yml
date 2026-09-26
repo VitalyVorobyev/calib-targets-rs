@@ -180,13 +180,14 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: demo/package.json
 
       - name: Build demo app
         working-directory: demo
         run: |
           bun install --frozen-lockfile
-          bunx tsc --noEmit
+          bunx tsc -b
+          bun run lint
           bunx vite build
 
       # Two checks, and the second is the one that bites. Type-checking the
@@ -197,17 +198,38 @@ jobs:
       # leaving a merged interface requiring the fields of both, so neither
       # marker-board type could be constructed. `typescript-extras.check.ts`
       # builds a value of each exported shape, which is what catches that.
+      # `--ignoreConfig`: TypeScript 6 refuses a file list while demo/tsconfig.json is
+      # present (TS5112). These two checks want the bare file, not the app's config.
       - name: Type-check hand-written WASM TypeScript declarations
         working-directory: demo
         run: >
-          bunx tsc --noEmit --strict --skipLibCheck
+          bunx tsc --noEmit --ignoreConfig --strict --skipLibCheck
           ../crates/calib-targets-wasm/typescript-extras.d.ts
 
       - name: Check the declarations can actually be constructed
         working-directory: demo
         run: >
-          bunx tsc --noEmit --strict --skipLibCheck
+          bunx tsc --noEmit --ignoreConfig --strict --skipLibCheck
           ../crates/calib-targets-wasm/typescript-extras.check.ts
+
+  studio-frontend:
+    name: Studio frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: studio/package.json
+
+      - name: Types, lint, build
+        working-directory: studio
+        run: |
+          bun install --frozen-lockfile
+          bunx tsc -b
+          bun run lint
+          bunx vite build
 
   python-bindings:
     runs-on: ubuntu-latest

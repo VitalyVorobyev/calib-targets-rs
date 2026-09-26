@@ -92,6 +92,23 @@ scripts/build-wasm.sh
 cd demo && bun install && bun run dev
 ```
 
+## Frontends (`demo/`, `studio/`)
+
+Both follow the vitavision toolchain baseline: compiler options from
+`@vitavision/config-ts`, lint from `@vitavision/config-eslint`, bun pinned in
+`packageManager`.
+
+```bash
+bun run check          # tsc -b
+bun run lint           # eslint, 0 errors (React Compiler rules are warnings for now)
+bun run test:screens   # Playwright screenshots against a local, uncommitted baseline
+```
+
+`test:screens` in `studio/` needs `cargo build --release -p calib-targets-studio`
+first and starts the server itself. Capture the baseline with
+`--update-snapshots` before a change and compare after it; the baselines stay
+on the machine (the studio's dataset browser lists private entries).
+
 ## Printable-target CLI
 
 The `calib-targets` binary lives in the facade crate behind the default `cli`

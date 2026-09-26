@@ -1,10 +1,12 @@
-import { defineConfig } from "vite";
+import { defineConfig, type PluginOption } from "vite";
 import react from "@vitejs/plugin-react";
 import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 
 export default defineConfig({
-  plugins: [react(), wasm(), topLevelAwait()],
+  // vite-plugin-wasm's declarations name a `vite` its own install cannot resolve, so its
+  // plugin reads as `any` here; it is a Vite plugin all the same.
+  plugins: [react(), wasm() as PluginOption, topLevelAwait()],
   base: "./",
   // The wasm-bindgen glue relies on top-level await, so the bundle targets a
   // modern baseline. This also keeps esbuild (used by vite-plugin-top-level-await)

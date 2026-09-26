@@ -33,7 +33,7 @@ function getAt(obj: Obj, path: string): unknown {
 }
 
 function setAt(obj: Obj, path: string, value: unknown): Obj {
-  const [head, ...rest] = path.split("/");
+  const [head = "", ...rest] = path.split("/");
   if (rest.length === 0) return { ...obj, [head]: value };
   const child = (obj[head] ?? {}) as Obj;
   return { ...obj, [head]: setAt(child, rest.join("/"), value) };

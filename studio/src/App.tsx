@@ -1,4 +1,4 @@
-import { NavLink, Route, Routes } from "react-router-dom";
+import { NavLink, Route, Routes } from "react-router";
 import { CompareView } from "./views/CompareView";
 import { DatasetBrowser } from "./views/DatasetBrowser";
 import { ImageWorkspace } from "./views/ImageWorkspace";

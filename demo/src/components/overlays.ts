@@ -21,7 +21,7 @@ export interface OverlayCorner {
   i: number;
   j: number;
   id?: number | null;
-  score?: number;
+  score?: number | undefined;
 }
 
 function gridKey(i: number, j: number): string {
