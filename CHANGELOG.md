@@ -7,6 +7,22 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## 0.15.2
+
+A patch: one function and the two types it returns are added, nothing else
+changes. The C ABI is unchanged at 5.0.0; `projective-grid` is unchanged at 0.14.
+
+### Added
+
+- **`calib_targets_print::board_primitives`** returns a target's printed
+  pattern as filled shapes in board space (millimetres from the board's
+  top-left corner, x right, y down — the frame of
+  `ResolvedTargetPoint::position_mm`). It is the list the SVG, PNG and DXF
+  renderers already draw, without the page and debug annotations, so a
+  consumer can build the pattern as geometry (a mesh board for synthetic
+  rendering) instead of sampling a raster. `Primitive` and `Fill` become
+  public (`#[non_exhaustive]`) to carry it. Additive: nothing is renamed.
+
 ## 0.15.1
 
 A patch, and the test it passes is the one 0.15.0 failed: nothing is removed and

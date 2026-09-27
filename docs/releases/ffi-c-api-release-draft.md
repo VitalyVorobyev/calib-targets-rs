@@ -11,6 +11,12 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
+## ABI 5.0.0 — unchanged in workspace 0.15.2
+
+Workspace 0.15.2 makes the printable pattern public as board-space primitives
+(`calib_targets_print::board_primitives`). It does not reach the C API; the ABI
+stays at 5.0.0.
+
 ## ABI 5.0.0 — unchanged in workspace 0.15.1
 
 Workspace 0.15.1 adds the PuzzlePole target but does not reach the C API: no

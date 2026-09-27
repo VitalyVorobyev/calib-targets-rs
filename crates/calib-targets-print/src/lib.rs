@@ -11,7 +11,7 @@ pub use model::{
     PuzzleBoardTargetSpec, PuzzlePoleTargetSpec, RenderOptions, ResolvedTargetLayout,
     ResolvedTargetPoint, StemPaths, TargetSpec,
 };
-pub use render::{render_target_bundle, GeneratedTargetBundle};
+pub use render::{board_primitives, render_target_bundle, Fill, GeneratedTargetBundle, Primitive};
 
 use std::{
     fs,
