@@ -7,7 +7,10 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.15.2
+
+A patch: one function and the two types it returns are added, nothing else
+changes. The C ABI is unchanged at 5.0.0; `projective-grid` is unchanged at 0.14.
 
 ### Added
 
