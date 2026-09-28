@@ -7,6 +7,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-28
+
+### Changed
+
+- **nalgebra `>=0.34, <0.36`** instead of `0.35`, so the crate shares one nalgebra
+  with dependents that still need 0.34. The API is unchanged; CI tests both ends.
+
 ## [0.14.0] - 2026-08-15
 
 [#77]: https://github.com/VitalyVorobyev/calib-targets-rs/issues/77

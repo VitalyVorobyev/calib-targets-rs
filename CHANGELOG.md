@@ -7,6 +7,16 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## 0.15.3
+
+A patch: nalgebra is now `>=0.34, <0.36` instead of `0.35`, in every crate
+including `projective-grid` (0.14.1). A project whose other dependencies still
+pin nalgebra 0.34 (calibration-rs, through tiny-solver) can now depend on
+calib-targets and keep a single nalgebra, so `Point2`/`Isometry3` values cross
+between the two without conversion. Nothing else changes. This workspace's own
+lockfile stays on 0.35; CI job `nalgebra-0-34` builds and tests it on 0.34. The
+C ABI is unchanged at 5.0.0.
+
 ## 0.15.2
 
 A patch: one function and the two types it returns are added, nothing else

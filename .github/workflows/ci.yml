@@ -138,6 +138,26 @@ jobs:
       - name: check (MSRV)
         run: cargo check --workspace
 
+  nalgebra-0-34:
+    # The workspace declares nalgebra `>=0.34, <0.36` so consumers pinned to 0.34 get one
+    # nalgebra. The lockfile resolves 0.35; this job holds the range honest at its low end.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo build
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Resolve nalgebra 0.34
+        run: cargo update -p nalgebra --precise 0.34.1
+
+      - name: test (nalgebra 0.34)
+        run: cargo test --workspace
+
   wasm:
     runs-on: ubuntu-latest
     steps:
