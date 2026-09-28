@@ -32,7 +32,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.15.2"
+version = "0.15.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/VitalyVorobyev/calib-targets-rs"
@@ -58,7 +58,7 @@ calib-targets-chessboard = { version = "0.15", path = "crates/calib-targets-ches
 calib-targets-core = { version = "0.15", path = "crates/calib-targets-core" }
 calib-targets-marker = { version = "0.15", path = "crates/calib-targets-marker" }
 calib-targets-puzzleboard = { version = "0.15", path = "crates/calib-targets-puzzleboard" }
-projective-grid = { version = "0.14", path = "crates/projective-grid" }
+projective-grid = { version = "0.14.1", path = "crates/projective-grid" }
 calib-targets-print = { version = "0.15", path = "crates/calib-targets-print" }
 approx = "0.5"
 assert_cmd = "2"
@@ -95,7 +95,9 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 kiddo = { version = "5", default-features = false, features = ["tracing"] }
 log = "0.4"
-nalgebra = "0.35"
+# A range, so a consumer whose other dependencies still need 0.34 resolves one nalgebra.
+# CI job `nalgebra-0-34` builds and tests the low end.
+nalgebra = ">=0.34, <0.36"
 numpy = "0.29"
 open = "5"
 png = "0.18"
