@@ -5,8 +5,6 @@
    are found without one here. */
 @import "@vitavision/ui/fonts.css";
 @import "@vitavision/ui/styles.css";
-/* The detection-overlay palette: data colour, locked to the bench CLI, not ui tokens. */
-@import "./theme/data-colors.css";
 
 @layer base {
   html,

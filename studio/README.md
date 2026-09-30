@@ -19,9 +19,8 @@ Conventions:
   route's request/response shape changes.
 - Overlay colors are locked to the bench CLI's PNG conventions
   (`crates/calib-targets-bench/src/overlay.rs`); the palette lives in
-  `src/components/{overlays,diagnoseOverlays}.ts` (what the canvas draws) and
-  `src/theme/data-colors.css` (the same values as CSS). They are data colour,
-  the same in both themes, and never change with the design system.
+  `src/components/{overlays,diagnoseOverlays}.ts`. They are data colour, the
+  same in both themes, and never change with the design system.
 - `dist/` and `node_modules/` are gitignored; the Rust quality gates do
   not build the frontend.
 
