@@ -3,11 +3,40 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='7' height='7' fill='%234d9fff'/%3E%3Crect x='8' y='8' width='7' height='7' fill='%234d9fff'/%3E%3Crect x='8' y='1' width='7' height='7' fill='%23161b22'/%3E%3Crect x='1' y='8' width='7' height='7' fill='%23161b22'/%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect x='1' y='1' width='7' height='7' fill='%232db2d4'/%3E%3Crect x='8' y='8' width='7' height='7' fill='%232db2d4'/%3E%3Crect x='8' y='1' width='7' height='7' fill='%2314171a'/%3E%3Crect x='1' y='8' width='7' height='7' fill='%2314171a'/%3E%3C/svg%3E"
     />
     <title>Calib Targets Studio</title>
+    <script>
+      // Duplicated from @vitavision/ui's theme.ts on purpose, and it must stay in agreement
+      // with it (see the package README). The class has to be on <html> before the first
+      // paint, which is before any module has been fetched. main.tsx then calls
+      // initTheme(THEME_STORAGE_KEY) so a "system" choice keeps following the OS.
+      //
+      // One addition: the studio is dark-first (it inspects grayscale imagery), so with
+      // nothing stored the script stores "dark" — an ordinary choice, which initTheme and
+      // ThemeToggle then read like any other. The key is THEME_STORAGE_KEY in src/theme/storage.ts.
+      (function () {
+        var system = function () {
+          return window.matchMedia("(prefers-color-scheme: dark)").matches;
+        };
+        var dark;
+        try {
+          var stored = localStorage.getItem("ct-studio-theme");
+          if (stored === null) {
+            stored = "dark";
+            localStorage.setItem("ct-studio-theme", stored);
+          }
+          dark = stored === "dark" || (stored !== "light" && system());
+        } catch (_) {
+          // Storage unavailable: initTheme reads that as "system", so follow the OS too.
+          dark = system();
+        }
+        if (dark) document.documentElement.classList.add("dark");
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -5,8 +5,10 @@
 
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Badge, Button, ErrorBox, Input, NumberInput, Switch, cn } from "@vitavision/ui";
 import { api } from "../api/client";
 import type { DetectorParamsOverride } from "../api/types";
+import { eyebrow } from "../theme/classes";
 import { ParamForm } from "./ParamForm";
 
 async function getJson<T>(url: string): Promise<T> {
@@ -42,10 +44,8 @@ export function ConfigEditor({
   const advancedOn = draft.advanced != null;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s4)" }}>
-      <div
-        style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
-      >
+    <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-2">
         <NumberRow
           label="Min labeled corners"
           value={draft.min_labeled_corners}
@@ -69,38 +69,24 @@ export function ConfigEditor({
       </div>
 
       <div>
-        <label
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            cursor: "pointer",
-            fontSize: 12,
+        <Switch
+          checked={advancedOn}
+          disabled={!d}
+          label="Override advanced tuning"
+          description="The complete block — CLI merge semantics."
+          onCheckedChange={(checked) => {
+            if (checked && d) {
+              set(
+                "advanced",
+                structuredClone(d["advanced"]) as Record<string, unknown>,
+              );
+            } else {
+              set("advanced", undefined);
+            }
           }}
-        >
-          <input
-            type="checkbox"
-            checked={advancedOn}
-            disabled={!d}
-            style={{ accentColor: "var(--accent)" }}
-            onChange={(e) => {
-              if (e.target.checked && d) {
-                set(
-                  "advanced",
-                  structuredClone(d["advanced"]) as Record<string, unknown>,
-                );
-              } else {
-                set("advanced", undefined);
-              }
-            }}
-          />
-          Override advanced tuning
-          <span style={{ color: "var(--text-faint)", fontSize: 11 }}>
-            (complete block — CLI merge semantics)
-          </span>
-        </label>
+        />
         {advancedOn && draft.advanced && (
-          <div style={{ marginTop: "var(--s3)" }}>
+          <div className="mt-3">
             <ParamForm
               node={draft.advanced}
               defaults={(d?.["advanced"] ?? {}) as Record<string, unknown>}
@@ -170,68 +156,56 @@ function ConfigLibrary({
 
   return (
     <div>
-      <div className="label" style={{ marginBottom: "var(--s2)" }}>
+      <div className={cn(eyebrow, "mb-2")}>
         Saved configs{" "}
-        <span style={{ textTransform: "none", color: "var(--text-faint)" }}>
-          · studio_configs/ · CLI-compatible
-        </span>
+        <span className="normal-case tracking-normal">· studio_configs/ · CLI-compatible</span>
       </div>
-      <div style={{ display: "flex", gap: "var(--s2)", marginBottom: "var(--s2)" }}>
-        <input
-          className="input"
+      <div className="mb-2 flex gap-2">
+        <Input
+          aria-label="Config name"
           placeholder="config-name"
           value={name}
           onChange={(e) => setName(e.target.value)}
-          style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 11 }}
+          className="flex-1 font-mono text-xs"
         />
-        <button
-          className="btn primary"
+        <Button
+          variant="primary"
           disabled={!name || save.isPending}
           onClick={() => save.mutate(name)}
         >
           Save{dirty ? " *" : ""}
-        </button>
+        </Button>
       </div>
-      {save.error && (
-        <div style={{ color: "var(--err)", fontSize: 11, marginBottom: 6 }}>
-          {String(save.error)}
-        </div>
-      )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      {save.error && <ErrorBox className="mb-1.5">{String(save.error)}</ErrorBox>}
+      <div className="flex flex-col gap-1">
         {(list.data ?? []).map((c) => (
-          <div
-            key={c.name}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              fontSize: 11,
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            <button
-              className="btn"
-              style={{ padding: "2px 8px", fontSize: 11, flex: 1 }}
+          <div key={c.name} className="flex items-center gap-2">
+            <Button
+              size="sm"
+              className="flex-1 justify-start font-mono"
               onClick={() => void load(c.name)}
               title={`load ${c.name}`}
             >
               {c.name}
-            </button>
-            {c.has_advanced && <span className="chip warn">adv</span>}
-            <button
-              className="btn"
-              style={{ padding: "2px 6px", fontSize: 11 }}
+            </Button>
+            {c.has_advanced && (
+              <Badge tone="warning" className="font-mono">
+                adv
+              </Badge>
+            )}
+            <Button
+              size="sm"
+              variant="ghost"
               onClick={() => remove.mutate(c.name)}
               title="delete"
+              aria-label={`Delete ${c.name}`}
             >
               ✕
-            </button>
+            </Button>
           </div>
         ))}
         {list.data?.length === 0 && (
-          <span style={{ color: "var(--text-faint)", fontSize: 11 }}>
-            none yet
-          </span>
+          <span className="text-[11px] text-fg-subtle">none yet</span>
         )}
       </div>
     </div>
@@ -246,16 +220,7 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
-    <label
-      style={{
-        display: "grid",
-        gridTemplateColumns: "130px 1fr",
-        alignItems: "center",
-        gap: "var(--s2)",
-        fontSize: 12,
-        color: "var(--text-muted)",
-      }}
-    >
+    <label className="grid grid-cols-[130px_1fr] items-center gap-2 text-xs text-fg-muted">
       {label}
       {children}
     </label>
@@ -277,9 +242,7 @@ function NumberRow({
 }) {
   return (
     <Row label={label}>
-      <input
-        className="input"
-        type="number"
+      <NumberInput
         step={integer ? 1 : "any"}
         value={value ?? ""}
         placeholder={placeholder}

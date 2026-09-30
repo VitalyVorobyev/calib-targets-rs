@@ -7,11 +7,10 @@
 // to load) falls through to an "Unmapped" section rendered from the raw JSON
 // key — so no knob is ever hidden, and the form degrades gracefully.
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { Checkbox, Disclosure, InfoHint, NumberInput, cn } from "@vitavision/ui";
 import { api } from "../api/client";
 import type { ParamKind } from "../api/types";
-import { InfoTip } from "./InfoTip";
 
 type Obj = Record<string, unknown>;
 
@@ -75,11 +74,7 @@ export function ParamForm({
   });
 
   if (schema.isLoading) {
-    return (
-      <div style={{ color: "var(--text-faint)", fontSize: 11 }}>
-        loading param schema…
-      </div>
-    );
+    return <div className="text-[11px] text-fg-subtle">loading param schema…</div>;
   }
 
   // On error, fall through with an empty schema → every leaf renders Unmapped.
@@ -104,9 +99,9 @@ export function ParamForm({
   const unmapped = scalarRelPaths(node).filter((p) => !covered.has(p));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}>
+    <div className="flex flex-col gap-2">
       {schema.isError && (
-        <div style={{ color: "var(--warn)", fontSize: 11 }}>
+        <div className="text-[11px] text-warn">
           param schema unavailable — showing raw keys
         </div>
       )}
@@ -118,7 +113,7 @@ export function ParamForm({
             const disabled =
               gatePath != null && getAt(node, gatePath) === false;
             return (
-              <Field
+              <ParamRow
                 key={f.pointer}
                 label={f.label}
                 help={f.help}
@@ -135,7 +130,7 @@ export function ParamForm({
       {unmapped.length > 0 && (
         <Section title="unmapped" defaultOpen>
           {unmapped.map((path) => (
-            <Field
+            <ParamRow
               key={path}
               label={path}
               help=""
@@ -158,7 +153,8 @@ function inferKind(value: unknown): ParamKind {
   return "float";
 }
 
-function Field({
+/** One schema leaf: its label (tinted when it differs from the default) and a ui control. */
+function ParamRow({
   label,
   help,
   kind,
@@ -178,61 +174,52 @@ function Field({
   const modified =
     defaultValue !== undefined &&
     JSON.stringify(value) !== JSON.stringify(defaultValue);
-  const rowStyle: React.CSSProperties = {
-    display: "grid",
-    gridTemplateColumns: "1fr 92px",
-    alignItems: "center",
-    gap: 8,
-    fontSize: 11,
-    opacity: disabled ? 0.45 : 1,
-  };
-  const labelCell = (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        color: modified ? "var(--accent)" : "var(--text-muted)",
-      }}
-    >
-      {label}
-      {help && <InfoTip text={help} />}
-    </span>
+  const row = cn(
+    "grid grid-cols-[1fr_92px] items-center gap-2 text-[11px]",
+    disabled && "opacity-45",
   );
+  const labelText = (
+    <span className={modified ? "text-signal" : "text-fg-muted"}>{label}</span>
+  );
+  const hint = help ? <InfoHint label={`About ${label}`}>{help}</InfoHint> : null;
 
   if (kind === "bool") {
     return (
-      <label style={rowStyle}>
-        {labelCell}
-        <input
-          type="checkbox"
+      <div className={row}>
+        <span className="inline-flex items-center gap-1">
+          {labelText}
+          {hint}
+        </span>
+        <Checkbox
+          aria-label={label}
           checked={value === true}
           disabled={disabled}
-          style={{ accentColor: "var(--accent)", justifySelf: "start" }}
-          onChange={(e) => onChange(e.target.checked)}
+          onCheckedChange={(checked) => onChange(checked)}
         />
-      </label>
+      </div>
     );
   }
 
   const isInt = kind === "int";
   return (
-    <label style={rowStyle}>
-      {labelCell}
-      <input
-        className="input"
-        type="number"
+    <div className={row}>
+      <span className="inline-flex items-center gap-1">
+        {labelText}
+        {hint}
+      </span>
+      <NumberInput
+        aria-label={label}
         step={isInt ? 1 : "any"}
         value={typeof value === "number" ? value : ""}
         disabled={disabled}
-        style={{ padding: "2px 6px", fontSize: 11 }}
+        className="px-1.5 text-xs"
         onChange={(e) => {
           const v = e.target.valueAsNumber;
           if (Number.isNaN(v)) return;
           onChange(isInt ? Math.round(v) : v);
         }}
       />
-    </label>
+    </div>
   );
 }
 
@@ -245,44 +232,13 @@ function Section({
   defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
   return (
-    <div
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
-        overflow: "hidden",
-      }}
+    <Disclosure
+      summary={title}
+      defaultOpen={defaultOpen}
+      className="rounded-control border border-line bg-raised/40 px-2.5 py-1 [&>div]:flex [&>div]:flex-col [&>div]:gap-1.5 [&>div]:pt-2 [&>div]:pb-1.5"
     >
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          width: "100%",
-          textAlign: "left",
-          padding: "6px 10px",
-          background: "var(--bg2)",
-          border: "none",
-          cursor: "pointer",
-          fontSize: 11,
-          fontWeight: 600,
-          letterSpacing: "0.03em",
-          color: "var(--text-muted)",
-        }}
-      >
-        {open ? "▾" : "▸"} {title}
-      </button>
-      {open && (
-        <div
-          style={{
-            padding: "var(--s2) var(--s3)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 6,
-          }}
-        >
-          {children}
-        </div>
-      )}
-    </div>
+      {children}
+    </Disclosure>
   );
 }

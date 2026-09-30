@@ -1,11 +1,24 @@
 // Structured renderer for a BaselineDiff: the GUI twin of the bench CLI's
-// per-image miss/extra/pos/id/dup counters.
+// per-image miss/extra/pos/id/dup counters. The verdict and counters are ui
+// Badges; the wrong-position pairs are a ui Table.
 
-import type { BaselineDiff } from "../api/types";
+import { Badge, Table, cn, type Column } from "@vitavision/ui";
+import type { BaselineDiff, WrongPosition } from "../api/types";
+import { eyebrow } from "../theme/classes";
 
 const LIST_CAP = 40;
 
-export function DiffTable({ diff }: { diff: BaselineDiff }) {
+const WRONG_POSITION_COLUMNS: Column<WrongPosition>[] = [
+  { key: "label", header: "(i, j)", cell: (wp) => <span className="font-mono">({wp.i}, {wp.j})</span> },
+  {
+    key: "drift",
+    header: "drift",
+    numeric: true,
+    cell: (wp) => <span className="text-warn">{wp.drift_px.toFixed(3)} px</span>,
+  },
+];
+
+export function BaselineDiffSummary({ diff }: { diff: BaselineDiff }) {
   const passed =
     diff.missing_labels.length === 0 &&
     diff.wrong_position.length === 0 &&
@@ -14,69 +27,61 @@ export function DiffTable({ diff }: { diff: BaselineDiff }) {
     diff.duplicate_run_positions.length === 0;
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
-      <div style={{ display: "flex", gap: "var(--s1)", flexWrap: "wrap" }}>
-        <span className={`chip ${passed ? "ok" : "err"}`}>
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-wrap gap-1">
+        <Badge tone={passed ? "normal" : "defect"} className="font-mono">
           {passed
             ? diff.extra_labels.length > 0
               ? `PASS +${diff.extra_labels.length}`
               : "PASS"
             : "FAIL"}
-        </span>
+        </Badge>
         {diff.shift && (diff.shift[0] !== 0 || diff.shift[1] !== 0) && (
-          <span className="chip warn">
+          <Badge tone="warning" className="font-mono">
             shift ({diff.shift[0]}, {diff.shift[1]})
-          </span>
+          </Badge>
         )}
         {diff.inconsistent_shift && (
-          <span className="chip err">inconsistent shift</span>
+          <Badge tone="defect" className="font-mono">
+            inconsistent shift
+          </Badge>
         )}
       </div>
 
       <DiffSection
         title={`Missing labels (${diff.missing_labels.length})`}
-        tone="err"
+        tone="defect"
         items={diff.missing_labels.map(([i, j]) => `(${i}, ${j})`)}
       />
       <DiffSection
         title={`Extra labels (${diff.extra_labels.length})`}
-        tone="ok"
+        tone="normal"
         items={diff.extra_labels.map(([i, j]) => `(${i}, ${j})`)}
       />
       {diff.wrong_position.length > 0 && (
         <div>
-          <div className="label" style={{ marginBottom: "var(--s1)" }}>
+          <div className={cn(eyebrow, "mb-1")}>
             Wrong position ({diff.wrong_position.length})
           </div>
-          <table className="mono" style={{ fontSize: 11, borderSpacing: 0 }}>
-            <tbody>
-              {diff.wrong_position.slice(0, LIST_CAP).map((wp, k) => (
-                <tr key={k}>
-                  <td style={{ padding: "1px 8px 1px 0" }}>
-                    ({wp.i}, {wp.j})
-                  </td>
-                  <td
-                    style={{ padding: "1px 8px 1px 0", color: "var(--warn)" }}
-                  >
-                    {wp.drift_px.toFixed(3)} px
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <Table
+            columns={WRONG_POSITION_COLUMNS}
+            rows={diff.wrong_position.slice(0, LIST_CAP)}
+            rowKey={(wp) => `${wp.i},${wp.j}`}
+            caption="Corners whose position drifted from the baseline"
+          />
         </div>
       )}
       {diff.wrong_id.length > 0 && (
         <DiffSection
           title={`Wrong id (${diff.wrong_id.length})`}
-          tone="err"
+          tone="defect"
           items={diff.wrong_id.map(([i, j]) => `(${i}, ${j})`)}
         />
       )}
       {diff.duplicate_run_positions.length > 0 && (
         <DiffSection
           title={`Duplicate positions (${diff.duplicate_run_positions.length})`}
-          tone="err"
+          tone="defect"
           items={diff.duplicate_run_positions.map(
             (d) =>
               `(${d.position[0].toFixed(1)}, ${d.position[1].toFixed(1)}) ← ${d.labels
@@ -96,32 +101,25 @@ function DiffSection({
 }: {
   title: string;
   items: string[];
-  tone: "ok" | "err";
+  tone: "normal" | "defect";
 }) {
   if (!items.length) return null;
   const shown = items.slice(0, LIST_CAP);
   return (
     <div>
-      <div className="label" style={{ marginBottom: "var(--s1)" }}>
-        {title}
-      </div>
+      <div className={cn(eyebrow, "mb-1")}>{title}</div>
       <div
-        className="mono"
-        style={{
-          fontSize: 11,
-          color: tone === "ok" ? "var(--ok)" : "var(--err)",
-          display: "flex",
-          flexWrap: "wrap",
-          gap: "2px 8px",
-        }}
+        className={cn(
+          "flex flex-wrap gap-x-2 gap-y-0.5 font-mono text-[11px]",
+          tone === "normal" ? "text-normal" : "text-defect",
+        )}
       >
-        {shown.map((s, k) => (
-          <span key={k}>{s}</span>
+        {/* Each entry is a distinct grid label (or position), so it is its own key. */}
+        {shown.map((s) => (
+          <span key={s}>{s}</span>
         ))}
         {items.length > LIST_CAP && (
-          <span style={{ color: "var(--text-faint)" }}>
-            … {items.length - LIST_CAP} more
-          </span>
+          <span className="text-fg-subtle">… {items.length - LIST_CAP} more</span>
         )}
       </div>
     </div>

@@ -5,6 +5,7 @@
 import { useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
+import { Badge, Empty, SegmentedControl, Select, cn } from "@vitavision/ui";
 import { api } from "../api/client";
 import type {
   BaselineCorner,
@@ -21,7 +22,9 @@ import {
 import { cornersLayer, edgesLayer } from "../components/overlays";
 import { useDebounced } from "../hooks/useDebounced";
 import { useImageBitmap } from "../hooks/useImageBitmap";
+import { eyebrow, quietLink, textLink } from "../theme/classes";
 
+// Data colours: what the A/B diff overlay draws each run in (canvas and legend alike).
 const A_COLOR = "rgb(255, 120, 60)";
 const B_COLOR = "rgb(80, 200, 255)";
 const COMMON_COLOR = "rgba(170, 180, 190, 0.8)";
@@ -37,6 +40,11 @@ const DEFAULT_A: Slot = {
 };
 
 const DEFAULT_B: Slot = { ...DEFAULT_A };
+
+const MODES = [
+  { value: "side", label: "side by side" },
+  { value: "overlay", label: "diff overlay" },
+];
 
 function useSlotDetect(label: string, slot: Slot) {
   const debounced = useDebounced(slot, 300);
@@ -86,56 +94,36 @@ export function CompareView() {
 
   if (!label) {
     return (
-      <div style={{ padding: "var(--s5)", color: "var(--text-muted)" }}>
-        Pick an image from the <Link to="/">dataset</Link> first, then hit
-        “compare ⇄”.
-      </div>
+      <Empty className="m-6">
+        Pick an image from the{" "}
+        <Link to="/" className={textLink}>
+          dataset
+        </Link>{" "}
+        first, then hit “compare ⇄”.
+      </Empty>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s4)",
-          padding: "var(--s3) var(--s4)",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--bg1)",
-          flexWrap: "wrap",
-        }}
-      >
+    <div className="flex h-full flex-col">
+      <header className="flex flex-wrap items-center gap-4 border-b border-line bg-surface px-4 py-3">
         <Link
           to={`/image/${label.split("/").map(encodeURIComponent).join("/")}`}
-          style={{ fontSize: 12 }}
+          className={quietLink}
         >
           ← workspace
         </Link>
-        <span className="mono" style={{ fontWeight: 600, fontSize: 12 }}>
-          {label}
-        </span>
-        <div style={{ display: "flex", gap: 2 }}>
-          {(["side", "overlay"] as const).map((m) => (
-            <button
-              key={m}
-              className="btn"
-              style={{
-                padding: "3px 10px",
-                fontSize: 11,
-                background: mode === m ? "var(--bg3)" : "var(--bg2)",
-                borderColor: mode === m ? "var(--accent)" : "var(--border)",
-              }}
-              onClick={() => setMode(m)}
-            >
-              {m === "side" ? "side by side" : "diff overlay"}
-            </button>
-          ))}
-        </div>
+        <span className="font-mono text-xs font-semibold">{label}</span>
+        <SegmentedControl
+          aria-label="Compare mode"
+          value={mode}
+          options={MODES}
+          onValueChange={(m) => setMode(m as "side" | "overlay")}
+        />
         <DeltaStrip da={da.data} db={db.data} overlap={overlay.commonCount} />
       </header>
 
-      <div style={{ display: "flex", gap: 1, flex: 1, minHeight: 0 }}>
+      <div className="flex min-h-0 flex-1 gap-px">
         {mode === "side" ? (
           <>
             <Pane
@@ -170,8 +158,8 @@ export function CompareView() {
             </Pane>
           </>
         ) : (
-          <div style={{ flex: 1, display: "flex", minHeight: 0 }}>
-            <div style={{ flex: 1, minWidth: 0 }}>
+          <div className="flex min-h-0 flex-1">
+            <div className="min-w-0 flex-1">
               <CanvasViewport
                 image={bitmap.data ?? null}
                 layers={[overlay.layer]}
@@ -179,7 +167,7 @@ export function CompareView() {
                 renderTooltip={(d) => (
                   <>
                     <div style={{ color: d.color }}>● {d.where}</div>
-                    <div style={{ color: "var(--text-muted)" }}>
+                    <div className="text-fg-muted">
                       (i, j) = ({d.c.i}, {d.c.j}) · x {d.c.x.toFixed(1)} · y{" "}
                       {d.c.y.toFixed(1)}
                     </div>
@@ -187,21 +175,10 @@ export function CompareView() {
                 )}
               />
             </div>
-            <aside
-              style={{
-                width: 240,
-                flexShrink: 0,
-                borderLeft: "1px solid var(--border)",
-                background: "var(--bg1)",
-                padding: "var(--s4)",
-                display: "flex",
-                flexDirection: "column",
-                gap: "var(--s3)",
-              }}
-            >
+            <aside className="flex w-60 shrink-0 flex-col gap-3 border-l border-line bg-surface p-4">
               <SlotControls title="A" color={A_COLOR} slot={a} onSlot={setA} />
               <SlotControls title="B" color={B_COLOR} slot={b} onSlot={setB} />
-              <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+              <div className="text-[11px] text-fg-muted">
                 <Legend color={A_COLOR} text={`A only (${overlay.aOnly})`} />
                 <Legend color={B_COLOR} text={`B only (${overlay.bOnly})`} />
                 <Legend
@@ -229,7 +206,7 @@ function tooltip(c: BaselineCorner) {
       <div>
         (i, j) = ({c.i}, {c.j})
       </div>
-      <div style={{ color: "var(--text-muted)" }}>
+      <div className="text-fg-muted">
         x {c.x.toFixed(2)} · y {c.y.toFixed(2)} · score {c.score.toFixed(1)}
       </div>
     </>
@@ -313,27 +290,34 @@ function DeltaStrip({
   db?: DetectResponse | undefined;
   overlap: number;
 }) {
-  if (!da || !db) return <span className="chip">running…</span>;
+  if (!da || !db) return <Badge className="font-mono">running…</Badge>;
   const ca = da.detection?.labelled_count ?? 0;
   const cb = db.detection?.labelled_count ?? 0;
   const dt = db.elapsed_ms - da.elapsed_ms;
   return (
-    <div style={{ display: "flex", gap: "var(--s1)", flexWrap: "wrap" }}>
-      <span className="chip" style={{ color: A_COLOR }}>
-        A {ca} corners · {da.elapsed_ms.toFixed(1)} ms
-      </span>
-      <span className="chip" style={{ color: B_COLOR }}>
-        B {cb} corners · {db.elapsed_ms.toFixed(1)} ms
-      </span>
-      <span className={`chip ${cb - ca > 0 ? "ok" : cb - ca < 0 ? "err" : ""}`}>
+    <div className="flex flex-wrap gap-1">
+      <Badge className="font-mono">
+        <span style={{ color: A_COLOR }}>
+          A {ca} corners · {da.elapsed_ms.toFixed(1)} ms
+        </span>
+      </Badge>
+      <Badge className="font-mono">
+        <span style={{ color: B_COLOR }}>
+          B {cb} corners · {db.elapsed_ms.toFixed(1)} ms
+        </span>
+      </Badge>
+      <Badge
+        tone={cb - ca > 0 ? "normal" : cb - ca < 0 ? "defect" : "neutral"}
+        className="font-mono"
+      >
         Δ corners {cb - ca >= 0 ? "+" : ""}
         {cb - ca}
-      </span>
-      <span className="chip">
+      </Badge>
+      <Badge className="font-mono">
         Δ time {dt >= 0 ? "+" : ""}
         {dt.toFixed(1)} ms
-      </span>
-      <span className="chip">common {overlap}</span>
+      </Badge>
+      <Badge className="font-mono">common {overlap}</Badge>
     </div>
   );
 }
@@ -354,36 +338,19 @@ function Pane({
   children: React.ReactNode;
 }) {
   return (
-    <div
-      style={{
-        flex: 1,
-        minWidth: 0,
-        display: "flex",
-        flexDirection: "column",
-        borderRight: "1px solid var(--border)",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s2)",
-          padding: "var(--s2) var(--s3)",
-          background: "var(--bg1)",
-          borderBottom: "1px solid var(--border)",
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ color, fontWeight: 700 }}>{title}</span>
+    <div className="flex min-w-0 flex-1 flex-col border-r border-line">
+      <div className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-3 py-2">
+        <span className="font-bold" style={{ color }}>
+          {title}
+        </span>
         <SlotControls inline slot={slot} onSlot={onSlot} />
         {detect && (
-          <span className="chip">
-            {detect.detection?.labelled_count ?? 0} ·{" "}
-            {detect.elapsed_ms.toFixed(1)} ms
-          </span>
+          <Badge className="font-mono">
+            {detect.detection?.labelled_count ?? 0} · {detect.elapsed_ms.toFixed(1)} ms
+          </Badge>
         )}
       </div>
-      <div style={{ flex: 1, minHeight: 0 }}>{children}</div>
+      <div className="min-h-0 flex-1">{children}</div>
     </div>
   );
 }
@@ -402,60 +369,50 @@ function SlotControls({
   inline?: boolean;
 }) {
   const sel = (
+    name: string,
     value: string,
     options: string[],
     onChange: (v: string) => void,
-    disabled: string[] = [],
   ) => (
-    <select
-      className="select"
+    <Select
+      aria-label={`${title ?? "Run"} ${name}`}
       value={value}
-      style={{ fontSize: 11, padding: "2px 4px" }}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((o) => (
-        <option key={o} value={o} disabled={disabled.includes(o)}>
-          {o}
-        </option>
-      ))}
-    </select>
+      options={options.map((o) => ({ value: o, label: o }))}
+      onValueChange={onChange}
+      className={cn("text-xs", inline && "w-auto min-w-28")}
+    />
   );
   const body = (
     <>
-      {sel(slot.engine, ["pipeline", "grid"], (v) =>
+      {sel("engine", slot.engine, ["pipeline", "grid"], (v) =>
         onSlot({ ...slot, engine: v as EngineReq }),
       )}
-      {sel(slot.orientationMethod, ["ring_fit", "disk_fit"], (v) =>
+      {sel("axis fit", slot.orientationMethod, ["ring_fit", "disk_fit"], (v) =>
         onSlot({ ...slot, orientationMethod: v as OrientationMethodReq }),
       )}
     </>
   );
   if (inline) {
-    return <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{body}</div>;
+    return <div className="flex flex-wrap gap-1">{body}</div>;
   }
   return (
     <div>
-      <div className="label" style={{ color, marginBottom: "var(--s1)" }}>
+      <div className={cn(eyebrow, "mb-1")} style={{ color }}>
         {title}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {body}
-      </div>
+      <div className="flex flex-col gap-1">{body}</div>
     </div>
   );
 }
 
+/** A legend entry: a ring in the colour the overlay draws that class in. */
 function Legend({ color, text }: { color: string; text: string }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+    <div className="flex items-center gap-1.5">
       <span
-        style={{
-          width: 9,
-          height: 9,
-          borderRadius: "50%",
-          border: `2px solid ${color}`,
-          display: "inline-block",
-        }}
+        aria-hidden
+        className="inline-block size-2.5 rounded-full border-2"
+        style={{ borderColor: color }}
       />
       {text}
     </div>

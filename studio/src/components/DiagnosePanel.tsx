@@ -1,6 +1,7 @@
 // Diagnose tab content: prefilter funnel + labelled/unlabelled split for
 // the topological diagnosis.
 
+import { Badge, ErrorBox, Field, Select, cn } from "@vitavision/ui";
 import type {
   DiagnoseAlgorithm,
   DiagnoseResponse,
@@ -8,6 +9,9 @@ import type {
 } from "../api/types";
 import { TOPO_COLORS } from "./diagnoseOverlays";
 import { errorText } from "../api/client";
+import { eyebrow } from "../theme/classes";
+
+const ALGORITHMS = [{ value: "topological", label: "topological" }];
 
 export function DiagnosePanel({
   data,
@@ -23,35 +27,20 @@ export function DiagnosePanel({
   onAlgorithm: (a: DiagnoseAlgorithm) => void;
 }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--s3)" }}>
-      <label
-        style={{
-          display: "grid",
-          gridTemplateColumns: "90px 1fr",
-          alignItems: "center",
-          gap: "var(--s2)",
-          fontSize: 12,
-          color: "var(--text-muted)",
-        }}
+    <div className="flex flex-col gap-3">
+      <Field
+        label="Diagnose"
+        description="Topological path exposes the prefilter funnel + labelled/unlabelled split (no per-stage trace by construction)."
       >
-        Diagnose
-        <select
-          className="select"
+        <Select
           value={algorithm}
-          onChange={(e) => onAlgorithm(e.target.value as DiagnoseAlgorithm)}
-        >
-          <option value="topological">topological</option>
-        </select>
-      </label>
-      <div style={{ fontSize: 11, color: "var(--text-faint)" }}>
-        Topological path exposes the prefilter funnel + labelled/unlabelled
-        split (no per-stage trace by construction).
-      </div>
+          options={ALGORITHMS}
+          onValueChange={(v) => onAlgorithm(v as DiagnoseAlgorithm)}
+        />
+      </Field>
 
-      {isLoading && <div style={{ color: "var(--text-muted)" }}>running…</div>}
-      {error != null && (
-        <div style={{ color: "var(--err)", fontSize: 12 }}>{errorText(error)}</div>
-      )}
+      {isLoading && <div className="text-fg-muted">running…</div>}
+      {error != null && <ErrorBox>{errorText(error)}</ErrorBox>}
 
       {data?.kind === "topological" && <TopoPanel d={data.diagnosis} />}
     </div>
@@ -71,60 +60,36 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
   return (
     <>
       <div>
-        <div className="label" style={{ marginBottom: "var(--s2)" }}>
-          Pre-filter funnel
-        </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+        <div className={cn(eyebrow, "mb-2")}>Pre-filter funnel</div>
+        <div className="flex flex-col gap-0.5">
           {funnel.map(([name, count], k) => (
-            <div
-              key={name}
-              style={{ display: "flex", alignItems: "center", gap: 8 }}
-            >
-              <span
-                className="mono"
-                style={{
-                  width: 64,
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                }}
-              >
-                {name}
-              </span>
-              <div
-                style={{
-                  height: 10,
-                  borderRadius: 3,
-                  width: `${(count / Math.max(d.input_count, 1)) * 100}%`,
-                  minWidth: 2,
-                  background:
-                    k === 0 ? "var(--bg3)" : "var(--accent-dim)",
-                }}
-              />
-              <span className="mono" style={{ fontSize: 11 }}>
-                {count}
-              </span>
+            <div key={name} className="flex items-center gap-2">
+              <span className="w-16 shrink-0 font-mono text-[11px] text-fg-muted">{name}</span>
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    "h-2.5 min-w-0.5 rounded-sm",
+                    k === 0 ? "bg-line-strong" : "bg-signal",
+                  )}
+                  style={{ width: `${(count / Math.max(d.input_count, 1)) * 100}%` }}
+                />
+              </div>
+              <span className="w-8 shrink-0 text-right font-mono text-[11px]">{count}</span>
             </div>
           ))}
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
-        <span
-          className="chip"
-          style={{ borderColor: TOPO_COLORS.labelled, color: "var(--text)" }}
-        >
+      <div className="flex flex-wrap gap-1">
+        <Badge className="font-mono text-fg">
           <Dot color={TOPO_COLORS.labelled} /> labelled {labelled}
-        </span>
-        <span
-          className="chip"
-          style={{ borderColor: TOPO_COLORS.dropped, color: "var(--text)" }}
-        >
-          <Dot color={TOPO_COLORS.dropped} /> dropped{" "}
-          {d.input_count - labelled}
-        </span>
+        </Badge>
+        <Badge className="font-mono text-fg">
+          <Dot color={TOPO_COLORS.dropped} /> dropped {d.input_count - labelled}
+        </Badge>
       </div>
 
-      <div className="mono" style={{ fontSize: 11, color: "var(--text-muted)", lineHeight: 1.7 }}>
+      <div className="font-mono text-[11px] leading-relaxed text-fg-muted">
         axis_align {deg(d.effective_tols.axis_align_tol_rad)}° · max σ{" "}
         {deg(d.effective_tols.max_axis_sigma_rad)}° · cluster{" "}
         {deg(d.effective_tols.cluster_axis_tol_rad)}° · edge_max ×
@@ -132,15 +97,11 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
       </div>
 
       <div>
-        <div className="label" style={{ marginBottom: "var(--s2)" }}>
-          Components ({d.components.length})
-        </div>
+        <div className={cn(eyebrow, "mb-2")}>Components ({d.components.length})</div>
         {d.components.map((c, k) => (
-          <div
-            key={k}
-            className="mono"
-            style={{ fontSize: 11, color: "var(--text-muted)" }}
-          >
+          // Components are positional (#k is their index in the diagnosis).
+          // eslint-disable-next-line @eslint-react/no-array-index-key -- positional list, see above
+          <div key={k} className="font-mono text-[11px] text-fg-muted">
             #{k}: {c.labelled} corners · i[{c.bbox[0]}, {c.bbox[1]}] j[
             {c.bbox[2]}, {c.bbox[3]}] ({c.bbox[1] - c.bbox[0] + 1}×
             {c.bbox[3] - c.bbox[2] + 1})
@@ -151,17 +112,13 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
   );
 }
 
+/** A dot in a data colour: the colour the overlay draws that class in. */
 function Dot({ color }: { color: string }) {
   return (
     <span
-      style={{
-        width: 8,
-        height: 8,
-        borderRadius: "50%",
-        background: color,
-        display: "inline-block",
-        marginRight: 5,
-      }}
+      aria-hidden
+      className="inline-block size-2 rounded-full"
+      style={{ backgroundColor: color }}
     />
   );
 }

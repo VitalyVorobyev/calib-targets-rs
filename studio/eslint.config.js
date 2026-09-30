@@ -1,5 +1,5 @@
 // @ts-check
-import { recommended } from "@vitavision/config-eslint";
+import { recommended, tokensOnly } from "@vitavision/config-eslint";
 
 export default [
   { ignores: ["e2e/.state/**", "test-results/**", "playwright-report/**"] },
@@ -15,6 +15,9 @@ export default [
       "react-hooks/set-state-in-effect": "warn",
     },
   },
-  // Gate G5.1 (`tokensOnly` from @vitavision/config-eslint) is enabled per directory as the
-  // screens migrate to the shared visual language, from L3 on.
+  // Gate G5.1 (lab-ui PLAN §5): in src/, colour comes from the @vitavision/ui design tokens
+  // — no raw Tailwind palette classes, no hex literals. The detection-overlay palette
+  // (src/components/overlays.ts, diagnoseOverlays.ts) is data colour locked to the bench CLI
+  // and written as rgb(), which the rule does not flag, so no file is exempt.
+  tokensOnly(["src/**"]),
 ];
