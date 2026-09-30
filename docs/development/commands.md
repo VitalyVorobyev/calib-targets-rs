@@ -96,7 +96,8 @@ cd demo && bun install && bun run dev
 
 Both follow the vitavision toolchain baseline: compiler options from
 `@vitavision/config-ts`, lint from `@vitavision/config-eslint`, bun pinned in
-`packageManager`.
+`packageManager`. The studio's UI is built on `@vitavision/ui` with Tailwind 4
+(see `studio/README.md`, "Design system").
 
 ```bash
 bun run check          # tsc -b
