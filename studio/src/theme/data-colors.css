@@ -1,0 +1,28 @@
+/* Calib Targets Studio — data colours.
+ *
+ * Not chrome: these are the colours detections are drawn in, locked to the bench CLI's PNG
+ * conventions (crates/calib-targets-bench/src/overlay.rs) so a studio canvas and a CLI
+ * overlay read identically. They are the same in both themes. Everything else on screen is
+ * @vitavision/ui tokens. The canvas draws from src/components/overlays.ts and
+ * diagnoseOverlays.ts, which hold the same values; this block is their CSS form.
+ */
+
+:root {
+  /* Detection overlay semantics (locked to overlay.rs) */
+  --ov-corner: rgb(230, 30, 30);
+  --ov-edge: rgb(100, 180, 255);
+  --ov-origin: rgb(255, 220, 30);
+  --ov-far: rgb(30, 200, 60);
+  /* Diagnose stage palette (render_diagnose_overlay) */
+  --st-raw: #646464;
+  --st-nocluster: #2850c8;
+  --st-strong: #64b4ff;
+  --st-clustered: #00dcdc;
+  --st-ambiguous: #ff00dc;
+  --st-invariants: #ff8c00;
+  --st-blacklisted: #ffdc1e;
+  --st-labeled: #e61e1e;
+  /* Topological diagnose overlay */
+  --st-topo-labelled: rgb(50, 220, 80);
+  --st-topo-dropped: rgb(220, 50, 50);
+}

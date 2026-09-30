@@ -27,7 +27,7 @@ for (const tab of ["Config", "Diagnose", "Baseline"]) {
   test(`image, ${tab} tab`, async ({ page }) => {
     await page.goto("/image/testdata/mid.png");
     await page.waitForLoadState("networkidle");
-    await page.getByRole("button", { name: tab, exact: true }).click();
+    await page.getByRole("tab", { name: tab, exact: true }).click();
     await page.waitForLoadState("networkidle");
     await expect(page).toHaveScreenshot(`image-${tab.toLowerCase()}.png`, { timeout: 60_000, mask: timing(page) });
   });

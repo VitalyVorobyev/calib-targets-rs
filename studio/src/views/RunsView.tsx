@@ -6,6 +6,17 @@
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "react-router";
+import {
+  Badge,
+  Button,
+  Empty,
+  ProgressBar,
+  Select,
+  Table,
+  cn,
+  type Column,
+  type Tone,
+} from "@vitavision/ui";
 import { api, encodeLabel } from "../api/client";
 import type {
   DatasetReq,
@@ -14,6 +25,7 @@ import type {
   PerImageReport,
   RunRecord,
 } from "../api/types";
+import { eyebrow, textLink } from "../theme/classes";
 
 type SortKey = "image" | "status" | "corners" | "ms" | "flag";
 
@@ -72,66 +84,57 @@ export function RunsView() {
   });
 
   return (
-    <div style={{ height: "100%", display: "flex", flexDirection: "column" }}>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s2)",
-          padding: "var(--s3) var(--s4)",
-          borderBottom: "1px solid var(--border)",
-          background: "var(--bg1)",
-          flexWrap: "wrap",
-        }}
-      >
-        <span style={{ fontWeight: 700, marginRight: "var(--s2)" }}>Runs</span>
+    <div className="flex h-full flex-col">
+      <header className="flex flex-wrap items-center gap-2 border-b border-line bg-surface px-4 py-3">
+        <h1 className="mr-2 font-bold">Runs</h1>
         <Sel
+          label="Target"
           value={target}
           options={[...KIND_TARGETS, ...groups]}
           onChange={setTarget}
         />
         <Sel
+          label="Engine"
           value={engine}
           options={["pipeline", "grid"]}
           onChange={(v) => setEngine(v as EngineReq)}
         />
         <Sel
+          label="Axis fit"
           value={method}
           options={["ring_fit", "disk_fit"]}
           onChange={(v) => setMethod(v as OrientationMethodReq)}
         />
-        <button
-          className="btn primary"
+        <Button
+          variant="primary"
           disabled={active != null || start.isPending}
           onClick={() => start.mutate()}
         >
           {active ? "running…" : "Launch run"}
-        </button>
+        </Button>
         {start.error != null && (
-          <span style={{ color: "var(--err)", fontSize: 12 }}>
-            {String(start.error)}
-          </span>
+          <span className="text-xs text-defect">{String(start.error)}</span>
         )}
-        <span style={{ flex: 1 }} />
+        <span className="flex-1" />
         {(runs.data ?? []).slice(0, 8).map((r) => (
-          <button
+          <Button
             key={r.id}
-            className="chip"
+            size="sm"
+            variant="ghost"
+            aria-pressed={current?.id === r.id}
             onClick={() => setSelected(r.id)}
-            style={{
-              cursor: "pointer",
-              borderColor:
-                current?.id === r.id ? "var(--accent)" : "var(--border)",
-              color:
-                r.status === "failed"
-                  ? "var(--err)"
-                  : r.status === "running"
-                    ? "var(--warn)"
-                    : "var(--text-muted)",
-            }}
+            className={cn(
+              "font-mono ring-1 ring-inset",
+              current?.id === r.id ? "ring-signal" : "ring-line",
+              r.status === "failed"
+                ? "text-defect"
+                : r.status === "running"
+                  ? "text-warn"
+                  : "text-fg-muted",
+            )}
           >
             {r.id} · {r.dataset}
-          </button>
+          </Button>
         ))}
       </header>
 
@@ -143,17 +146,9 @@ export function RunsView() {
           floorByGroup={floorByGroup}
         />
       ) : (
-        <div
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--text-muted)",
-          }}
-        >
+        <Empty className="flex-1 justify-center">
           No runs yet — launch one to gate the dataset against its baselines.
-        </div>
+        </Empty>
       )}
     </div>
   );
@@ -211,223 +206,168 @@ function RunDetail({
     ? (run.progress.done / run.progress.total) * 100
     : 0;
 
+  const sortHeader = (key: SortKey, text: string) => (
+    <button
+      type="button"
+      onClick={() => clickHeader(key)}
+      className="cursor-pointer hover:text-fg"
+      aria-label={`Sort by ${text}`}
+    >
+      {text}
+      {sort.key === key ? (sort.dir === 1 ? " ▲" : " ▼") : ""}
+    </button>
+  );
+
+  const columns: Column<PerImageReport>[] = [
+    {
+      key: "flag",
+      header: sortHeader("flag", "flag"),
+      cell: (r) => {
+        const flag = flagOf(r, floorFor(r.image));
+        return (
+          flag && (
+            <Badge tone={flag === "none" ? "defect" : "warning"} className="font-mono">
+              {flag}
+            </Badge>
+          )
+        );
+      },
+    },
+    {
+      key: "status",
+      header: sortHeader("status", "status"),
+      cell: (r) => {
+        const status = statusOf(r);
+        const tone: Tone =
+          status === "FAIL" ? "defect" : status.startsWith("PASS") ? "normal" : "neutral";
+        return (
+          <Badge tone={tone} className="font-mono">
+            {status}
+          </Badge>
+        );
+      },
+    },
+    {
+      key: "image",
+      header: sortHeader("image", "image"),
+      cell: (r) => (
+        <Link to={`/image/${encodeLabel(r.image)}`} className={cn("font-mono", textLink)}>
+          {r.image}
+        </Link>
+      ),
+    },
+    {
+      key: "corners",
+      header: sortHeader("corners", "corners"),
+      numeric: true,
+      cell: (r) => r.labelled_count,
+    },
+    {
+      key: "ms",
+      header: sortHeader("ms", "ms"),
+      numeric: true,
+      cell: (r) => r.elapsed_ms.toFixed(1),
+    },
+    {
+      key: "miss",
+      header: "miss",
+      numeric: true,
+      cell: (r) => <Count n={r.diff_vs_baseline.missing_labels.length} warn />,
+    },
+    {
+      key: "extra",
+      header: "extra",
+      numeric: true,
+      cell: (r) => <Count n={r.diff_vs_baseline.extra_labels.length} />,
+    },
+    {
+      key: "pos",
+      header: "pos",
+      numeric: true,
+      cell: (r) => <Count n={r.diff_vs_baseline.wrong_position.length} warn />,
+    },
+    {
+      key: "dup",
+      header: "dup",
+      numeric: true,
+      cell: (r) => <Count n={r.diff_vs_baseline.duplicate_run_positions.length} warn />,
+    },
+  ];
+
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "var(--s4)" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s2)",
-          flexWrap: "wrap",
-          marginBottom: "var(--s3)",
-        }}
-      >
-        <span className="mono" style={{ fontWeight: 600 }}>
-          {run.id}
-        </span>
-        <span className="chip">{run.config_id}</span>
-        <span className="chip">{run.dataset}</span>
+    <div className="flex-1 overflow-y-auto p-4">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className="font-mono font-semibold">{run.id}</span>
+        <Badge className="font-mono">{run.config_id}</Badge>
+        <Badge className="font-mono">{run.dataset}</Badge>
         {run.status === "running" && (
-          <span className="chip warn">
+          <Badge tone="warning" className="font-mono">
             {run.progress.done}/{run.progress.total}
             {run.progress.current ? ` · ${run.progress.current}` : ""}
-          </span>
+          </Badge>
         )}
         {run.status === "failed" && (
-          <span className="chip err">failed: {run.error}</span>
+          <Badge tone="defect" className="font-mono">
+            failed: {run.error}
+          </Badge>
         )}
         {run.summary && (
           <>
-            <span className="chip">total {run.summary.images_total}</span>
-            <span className="chip ok">passed {run.summary.images_passed}</span>
-            <span
-              className={`chip ${run.summary.images_failed ? "err" : ""}`}
+            <Badge className="font-mono">total {run.summary.images_total}</Badge>
+            <Badge tone="normal" className="font-mono">
+              passed {run.summary.images_passed}
+            </Badge>
+            <Badge
+              tone={run.summary.images_failed ? "defect" : "neutral"}
+              className="font-mono"
             >
               failed {run.summary.images_failed}
-            </span>
-            <span className="chip">
+            </Badge>
+            <Badge className="font-mono">
               p50 {run.summary.p50_ms.toFixed(1)} ms · p95{" "}
               {run.summary.p95_ms.toFixed(1)} ms · max{" "}
               {run.summary.max_ms.toFixed(1)} ms
-            </span>
+            </Badge>
           </>
         )}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          gap: "var(--s2)",
-          flexWrap: "wrap",
-          marginBottom: "var(--s3)",
-        }}
-      >
-        <span
-          className="label"
-          style={{ textTransform: "none", color: "var(--text-faint)" }}
-        >
-          detection
-        </span>
-        <span className="chip">
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <span className={cn(eyebrow, "normal-case tracking-normal")}>detection</span>
+        <Badge className="font-mono">
           detected {agg.detected}/{agg.total}
-        </span>
-        <span className="chip">
+        </Badge>
+        <Badge className="font-mono">
           labelled p50 {agg.p50} · min {agg.min}
-        </span>
-        <span className={`chip ${agg.flagged ? "warn" : "ok"}`}>
+        </Badge>
+        <Badge tone={agg.flagged ? "warning" : "normal"} className="font-mono">
           flagged {agg.flagged}
-        </span>
+        </Badge>
       </div>
 
       {run.status === "running" && (
-        <div
-          style={{
-            height: 4,
-            borderRadius: 2,
-            background: "var(--bg2)",
-            marginBottom: "var(--s3)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              height: "100%",
-              width: `${pct}%`,
-              background: "var(--accent)",
-              transition: "width 300ms",
-            }}
-          />
-        </div>
+        <ProgressBar className="mb-3" fraction={pct / 100} aria-label="Run progress" />
       )}
 
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          fontSize: 12,
-        }}
-      >
-        <thead>
-          <tr>
-            <Th onClick={() => clickHeader("flag")}>flag</Th>
-            <Th onClick={() => clickHeader("status")}>status</Th>
-            <Th onClick={() => clickHeader("image")}>image</Th>
-            <Th onClick={() => clickHeader("corners")} right>
-              corners
-            </Th>
-            <Th onClick={() => clickHeader("ms")} right>
-              ms
-            </Th>
-            <Th right>miss</Th>
-            <Th right>extra</Th>
-            <Th right>pos</Th>
-            <Th right>dup</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => {
-            const d = r.diff_vs_baseline;
-            const status = !r.has_baseline
-              ? "NO-BASELINE"
-              : r.passed
-                ? d.extra_labels.length
-                  ? "PASS+"
-                  : "PASS"
-                : "FAIL";
-            const flag = flagOf(r, floorFor(r.image));
-            return (
-              <tr
-                key={r.image}
-                style={{ borderTop: "1px solid var(--border)" }}
-              >
-                <td style={{ padding: "5px 8px" }}>
-                  {flag && (
-                    <span className={`chip ${flag === "none" ? "err" : "warn"}`}>
-                      {flag}
-                    </span>
-                  )}
-                </td>
-                <td style={{ padding: "5px 8px" }}>
-                  <span
-                    className={`chip ${
-                      status === "FAIL"
-                        ? "err"
-                        : status.startsWith("PASS")
-                          ? "ok"
-                          : ""
-                    }`}
-                  >
-                    {status}
-                  </span>
-                </td>
-                <td className="mono" style={{ padding: "5px 8px" }}>
-                  <Link to={`/image/${encodeLabel(r.image)}`}>{r.image}</Link>
-                </td>
-                <Num>{r.labelled_count}</Num>
-                <Num>{r.elapsed_ms.toFixed(1)}</Num>
-                <Num warn={d.missing_labels.length > 0}>
-                  {d.missing_labels.length}
-                </Num>
-                <Num>{d.extra_labels.length}</Num>
-                <Num warn={d.wrong_position.length > 0}>
-                  {d.wrong_position.length}
-                </Num>
-                <Num warn={d.duplicate_run_positions.length > 0}>
-                  {d.duplicate_run_positions.length}
-                </Num>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
+      <Table
+        columns={columns}
+        rows={rows}
+        rowKey={(r) => r.image}
+        caption={`Per-image results of run ${run.id}`}
+      />
     </div>
   );
 }
 
-function Th({
-  children,
-  onClick,
-  right,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  right?: boolean;
-}) {
-  return (
-    <th
-      onClick={onClick}
-      className="label"
-      style={{
-        textAlign: right ? "right" : "left",
-        padding: "4px 8px",
-        cursor: onClick ? "pointer" : "default",
-        userSelect: "none",
-      }}
-    >
-      {children}
-    </th>
-  );
+/** A per-image counter: in the verdict red when it is a failure count and non-zero. */
+function Count({ n, warn = false }: { n: number; warn?: boolean }) {
+  return <span className={warn && n > 0 ? "text-defect" : undefined}>{n}</span>;
 }
 
-function Num({
-  children,
-  warn,
-}: {
-  children: React.ReactNode;
-  warn?: boolean;
-}) {
-  return (
-    <td
-      className="mono"
-      style={{
-        padding: "5px 8px",
-        textAlign: "right",
-        color: warn ? "var(--err)" : "var(--text)",
-      }}
-    >
-      {children}
-    </td>
-  );
+function statusOf(r: PerImageReport): string {
+  if (!r.has_baseline) return "NO-BASELINE";
+  if (!r.passed) return "FAIL";
+  return r.diff_vs_baseline.extra_labels.length ? "PASS+" : "PASS";
 }
 
 /** Dataset group from a snap label: the parent directory name (matches the
@@ -460,26 +400,23 @@ function pctl(xs: number[], q: number): number {
 }
 
 function Sel({
+  label,
   value,
   options,
   onChange,
 }: {
+  label: string;
   value: string;
   options: string[];
   onChange: (v: string) => void;
 }) {
   return (
-    <select
-      className="select"
+    <Select
+      aria-label={label}
       value={value}
-      style={{ fontSize: 12 }}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((o) => (
-        <option key={o} value={o}>
-          {o}
-        </option>
-      ))}
-    </select>
+      options={options.map((o) => ({ value: o, label: o }))}
+      onValueChange={onChange}
+      className="w-auto min-w-28 text-xs"
+    />
   );
 }

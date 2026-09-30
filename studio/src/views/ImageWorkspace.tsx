@@ -7,6 +7,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "react-router";
+import {
+  Badge,
+  Button,
+  DensityProvider,
+  ErrorBox,
+  Field,
+  NumberInput,
+  Select,
+  Switch,
+  Tabs,
+  ToggleChip,
+  type TabItem,
+} from "@vitavision/ui";
 import { api, encodeLabel, errorText } from "../api/client";
 import {
   type BaselineCorner,
@@ -26,8 +39,7 @@ import {
   topoSplitLayer,
   TOPO_COLORS,
 } from "../components/diagnoseOverlays";
-import { DiffTable } from "../components/DiffTable";
-import { LayerToggles } from "../components/LayerToggles";
+import { BaselineDiffSummary } from "../components/BaselineDiffSummary";
 import { PresetPicker } from "../components/PresetPicker";
 import {
   baselineDiffLayer,
@@ -39,6 +51,7 @@ import {
 } from "../components/overlays";
 import { useDebounced } from "../hooks/useDebounced";
 import { useImageBitmap } from "../hooks/useImageBitmap";
+import { eyebrow, quietLink } from "../theme/classes";
 
 interface RunOptions {
   engine: EngineReq;
@@ -46,6 +59,13 @@ interface RunOptions {
 }
 
 type Tab = "detect" | "config" | "diagnose" | "baseline";
+
+const TABS: TabItem<Tab>[] = [
+  { id: "detect", label: "Detect" },
+  { id: "config", label: "Config" },
+  { id: "diagnose", label: "Diagnose" },
+  { id: "baseline", label: "Baseline" },
+];
 
 type HoverData =
   | { kind: "corner"; c: BaselineCorner }
@@ -89,11 +109,16 @@ export function ImageWorkspace() {
   );
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // A control that uses the arrow keys itself (the tab strip, an open select, a
+      // radio group) keeps them.
+      if (e.defaultPrevented) return;
       const el = e.target;
       if (
         el instanceof HTMLInputElement ||
         el instanceof HTMLSelectElement ||
-        el instanceof HTMLTextAreaElement
+        el instanceof HTMLTextAreaElement ||
+        (el instanceof HTMLElement &&
+          el.closest('[role="tablist"], [role="listbox"], [role="combobox"]'))
       )
         return;
       if (e.key === "ArrowLeft") go(prevLabel);
@@ -224,12 +249,10 @@ export function ImageWorkspace() {
   }, [diagnoseMode, diagnose.data, corners]);
 
   return (
-    <div style={{ display: "flex", height: "100%" }}>
-      <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
+    <div className="flex h-full">
+      <div className="relative min-w-0 flex-1">
         {bitmap.error ? (
-          <div style={{ padding: "var(--s5)", color: "var(--err)" }}>
-            {String(bitmap.error)}
-          </div>
+          <ErrorBox className="m-6">{String(bitmap.error)}</ErrorBox>
         ) : (
           <CanvasViewport
             image={bitmap.data ?? null}
@@ -240,155 +263,110 @@ export function ImageWorkspace() {
         )}
       </div>
 
-      <aside
-        style={{
-          width: 330,
-          flexShrink: 0,
-          borderLeft: "1px solid var(--border)",
-          background: "var(--bg1)",
-          overflowY: "auto",
-          padding: "var(--s4)",
-          display: "flex",
-          flexDirection: "column",
-          gap: "var(--s4)",
-        }}
-      >
-        <div>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <Link to="/" style={{ fontSize: 12 }}>
-              ← dataset
-            </Link>
-            <Link
-              to={`/compare?label=${encodeURIComponent(label)}`}
-              style={{ fontSize: 12 }}
-            >
-              compare ⇄
-            </Link>
-          </div>
-          <div
-            className="mono"
-            style={{ fontWeight: 600, marginTop: 4, wordBreak: "break-all" }}
-          >
-            {label}
-          </div>
-          {flatLabels.length > 1 && (
-            <div
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--s2)",
-                marginTop: "var(--s2)",
-              }}
-            >
-              <button
-                className="btn"
-                style={{ padding: "2px 10px" }}
-                disabled={!prevLabel}
-                onClick={() => go(prevLabel)}
-                title="previous snap (←)"
-              >
-                ←
-              </button>
-              <span
-                style={{
-                  flex: 1,
-                  textAlign: "center",
-                  fontSize: 11,
-                  color: "var(--text-muted)",
-                }}
-              >
-                {pos >= 0 ? `${pos + 1} / ${flatLabels.length}` : "—"}
-              </span>
-              <button
-                className="btn"
-                style={{ padding: "2px 10px" }}
-                disabled={!nextLabel}
-                onClick={() => go(nextLabel)}
-                title="next snap (→)"
-              >
-                →
-              </button>
-            </div>
-          )}
-        </div>
-
-        <StatsBlock detect={detect} />
-
-        <div
-          style={{
-            display: "flex",
-            borderBottom: "1px solid var(--border)",
-            gap: 2,
-          }}
-        >
-          {(detector === "chessboard"
-            ? (["detect", "config", "diagnose", "baseline"] as Tab[])
-            : (["detect", "config", "diagnose"] as Tab[])
-          ).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              style={{
-                padding: "6px 10px",
-                background: "transparent",
-                border: "none",
-                borderBottom:
-                  tab === t
-                    ? "2px solid var(--accent)"
-                    : "2px solid transparent",
-                color: tab === t ? "var(--text)" : "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: 12,
-                fontWeight: tab === t ? 600 : 400,
-              }}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
-        </div>
-
-        {tab === "detect" && (
-          <DetectTab
-            draft={draft}
-            setDraft={setDraft}
-            runOpts={runOpts}
-            setRunOpts={setRunOpts}
-            visible={visible}
-            setVisible={setVisible}
-            detector={detector}
-            setDetector={setDetector}
-            board={board}
-            setBoard={setBoard}
-            sweep={sweep}
-            setSweep={setSweep}
-          />
-        )}
-
-        {tab === "config" && <ConfigEditor draft={draft} onChange={setDraft} />}
-
-        {tab === "diagnose" && (
-          <DiagnosePanel
-            data={diagnose.data}
-            isLoading={diagnose.isLoading}
-            error={diagnose.error}
-            algorithm={diagAlgorithm}
-            onAlgorithm={setDiagAlgorithm}
-          />
-        )}
-
-        {tab === "baseline" && (
+      <aside className="flex w-[330px] shrink-0 flex-col gap-4 overflow-y-auto border-l border-line bg-surface p-4 text-xs">
+        <DensityProvider value="compact">
           <div>
-            {detect.data?.baseline?.exists && diff ? (
-              <DiffTable diff={diff} />
-            ) : (
-              <div style={{ color: "var(--text-muted)", fontSize: 12 }}>
-                No baseline pinned for this snap. Baselines are blessed from
-                the bench CLI (<code>cargo bench-bless</code>); the studio is
-                read-only.
+            <div className="flex justify-between">
+              <Link to="/" className={quietLink}>
+                ← dataset
+              </Link>
+              <Link
+                to={`/compare?label=${encodeURIComponent(label)}`}
+                className={quietLink}
+              >
+                compare ⇄
+              </Link>
+            </div>
+            <div className="mt-1 font-mono text-[13px] font-semibold break-all">
+              {label}
+            </div>
+            {flatLabels.length > 1 && (
+              <div className="mt-2 flex items-center gap-2">
+                <Button
+                  disabled={!prevLabel}
+                  onClick={() => go(prevLabel)}
+                  title="previous snap (←)"
+                  aria-label="Previous snap"
+                >
+                  ←
+                </Button>
+                <span className="flex-1 text-center font-mono text-[11px] text-fg-muted">
+                  {pos >= 0 ? `${pos + 1} / ${flatLabels.length}` : "—"}
+                </span>
+                <Button
+                  disabled={!nextLabel}
+                  onClick={() => go(nextLabel)}
+                  title="next snap (→)"
+                  aria-label="Next snap"
+                >
+                  →
+                </Button>
               </div>
             )}
           </div>
-        )}
+
+          <StatsBlock detect={detect} />
+
+          <Tabs
+            label="Workspace panels"
+            idPrefix="workspace"
+            items={
+              detector === "chessboard"
+                ? TABS
+                : TABS.filter((t) => t.id !== "baseline")
+            }
+            active={tab}
+            onSelect={setTab}
+            className="self-start"
+          />
+
+          <div
+            role="tabpanel"
+            id={`workspace-panel-${tab}`}
+            aria-labelledby={`workspace-tab-${tab}`}
+            className="flex flex-col gap-4"
+          >
+            {tab === "detect" && (
+              <DetectTab
+                draft={draft}
+                setDraft={setDraft}
+                runOpts={runOpts}
+                setRunOpts={setRunOpts}
+                visible={visible}
+                setVisible={setVisible}
+                detector={detector}
+                setDetector={setDetector}
+                board={board}
+                setBoard={setBoard}
+                sweep={sweep}
+                setSweep={setSweep}
+              />
+            )}
+
+            {tab === "config" && <ConfigEditor draft={draft} onChange={setDraft} />}
+
+            {tab === "diagnose" && (
+              <DiagnosePanel
+                data={diagnose.data}
+                isLoading={diagnose.isLoading}
+                error={diagnose.error}
+                algorithm={diagAlgorithm}
+                onAlgorithm={setDiagAlgorithm}
+              />
+            )}
+
+            {tab === "baseline" &&
+              (detect.data?.baseline?.exists && diff ? (
+                <BaselineDiffSummary diff={diff} />
+              ) : (
+                <p className="text-fg-muted">
+                  No baseline pinned for this snap. Baselines are blessed from
+                  the bench CLI (<code className="font-mono">cargo bench-bless</code>);
+                  the studio is read-only.
+                </p>
+              ))}
+          </div>
+        </DensityProvider>
       </aside>
     </div>
   );
@@ -402,7 +380,7 @@ function HoverTooltip({ h }: { h: HoverData }) {
         <div>
           (i, j) = ({c.i}, {c.j}){c.id != null && <> · id {c.id}</>}
         </div>
-        <div style={{ color: "var(--text-muted)" }}>
+        <div className="text-fg-muted">
           x {c.x.toFixed(2)} · y {c.y.toFixed(2)} · score {c.score.toFixed(1)}
         </div>
       </>
@@ -416,7 +394,7 @@ function HoverTooltip({ h }: { h: HoverData }) {
       >
         ● {c.labelled ? "labelled" : "dropped"}
       </div>
-      <div style={{ color: "var(--text-muted)" }}>
+      <div className="text-fg-muted">
         σ ({((c.sigma0 * 180) / Math.PI).toFixed(1)}°,{" "}
         {((c.sigma1 * 180) / Math.PI).toFixed(1)}°)
       </div>
@@ -462,40 +440,36 @@ function DetectTab({
     staleTime: Infinity,
   });
   const ed = effectiveDefaults.data;
+  const layers: { id: string; label: string; swatch?: string }[] = [
+    { id: "edges", label: "Grid edges", swatch: OVERLAY_COLORS.edge },
+    { id: "corners", label: "Corners", swatch: OVERLAY_COLORS.corner },
+    { id: "rings", label: "Origin / far rings", swatch: OVERLAY_COLORS.origin },
+    { id: "ids", label: "(i, j) labels · zoom ≥ 2×" },
+    { id: "baseline-diff", label: "Baseline diff", swatch: OVERLAY_COLORS.missing },
+  ];
+  const layerDefault = (id: string) => id !== "ids";
   return (
     <>
       <PresetPicker onLoad={setDraft} />
-      <div>
-        <div className="label" style={{ marginBottom: "var(--s2)" }}>
-          Target
-        </div>
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
-        >
-          <SelectRow
-            label="Family"
-            value={detector}
-            options={["chessboard", "charuco", "puzzleboard"]}
-            onChange={(v) => setDetector(v as DetectorReq)}
+      <Group title="Target">
+        <SelectRow
+          label="Family"
+          value={detector}
+          options={["chessboard", "charuco", "puzzleboard"]}
+          onChange={(v) => setDetector(v as DetectorReq)}
+        />
+        {detector !== "chessboard" && (
+          <BoardForm
+            detector={detector}
+            board={board}
+            setBoard={setBoard}
+            sweep={sweep}
+            setSweep={setSweep}
           />
-          {detector !== "chessboard" && (
-            <BoardForm
-              detector={detector}
-              board={board}
-              setBoard={setBoard}
-              sweep={sweep}
-              setSweep={setSweep}
-            />
-          )}
-        </div>
-      </div>
-      <div>
-        <div className="label" style={{ marginBottom: "var(--s2)" }}>
-          Run options
-        </div>
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
-        >
+        )}
+      </Group>
+      <Group title="Run options">
+        <div className="grid grid-cols-2 gap-2">
           <SelectRow
             label="Engine"
             value={runOpts.engine}
@@ -514,15 +488,10 @@ function DetectTab({
             }
           />
         </div>
-      </div>
+      </Group>
 
-      <div>
-        <div className="label" style={{ marginBottom: "var(--s2)" }}>
-          Basic config
-        </div>
-        <div
-          style={{ display: "flex", flexDirection: "column", gap: "var(--s2)" }}
-        >
+      <Group title="Basic config">
+        <div className="grid grid-cols-3 gap-2">
           <NumberRow
             label="Min strength"
             value={draft.min_corner_strength}
@@ -544,63 +513,44 @@ function DetectTab({
             onChange={(v) => setDraftField({ max_components: v })}
           />
         </div>
-        <div
-          style={{
-            fontSize: 11,
-            color: "var(--text-muted)",
-            marginTop: "var(--s1)",
-            lineHeight: 1.4,
-          }}
-        >
-          Placeholders are the <strong>{detector}</strong> defaults. charuco /
-          puzzleboard pin a different strength floor — that is why the same
+        <p className="text-[11px] leading-snug text-fg-muted">
+          Placeholders are the <strong className="text-fg">{detector}</strong> defaults.
+          charuco / puzzleboard pin a different strength floor — that is why the same
           image detects differently across families. Edit to override; clear to
           restore the default.
-        </div>
-      </div>
+        </p>
+      </Group>
 
-      <div>
-        <div className="label" style={{ marginBottom: "var(--s2)" }}>
-          Layers
+      <Group title="Layers">
+        <div className="flex flex-wrap gap-1.5">
+          {layers.map((l) => {
+            const checked = visible[l.id] ?? layerDefault(l.id);
+            return (
+              <ToggleChip
+                key={l.id}
+                checked={checked}
+                {...(l.swatch !== undefined ? { swatch: l.swatch } : {})}
+                onCheckedChange={(next) =>
+                  setVisible((v) => ({ ...v, [l.id]: next }))
+                }
+              >
+                {l.label}
+              </ToggleChip>
+            );
+          })}
         </div>
-        <LayerToggles
-          toggles={[
-            {
-              id: "edges",
-              label: "Grid edges",
-              checked: visible["edges"] ?? true,
-              swatch: OVERLAY_COLORS.edge,
-            },
-            {
-              id: "corners",
-              label: "Corners",
-              checked: visible["corners"] ?? true,
-              swatch: OVERLAY_COLORS.corner,
-            },
-            {
-              id: "rings",
-              label: "Origin / far rings",
-              checked: visible["rings"] ?? true,
-              swatch: OVERLAY_COLORS.origin,
-            },
-            {
-              id: "ids",
-              label: "(i, j) labels · zoom ≥ 2×",
-              checked: visible["ids"] ?? false,
-            },
-            {
-              id: "baseline-diff",
-              label: "Baseline diff",
-              checked: visible["baseline-diff"] ?? true,
-              swatch: OVERLAY_COLORS.missing,
-            },
-          ]}
-          onChange={(id, checked) =>
-            setVisible((v) => ({ ...v, [id]: checked }))
-          }
-        />
-      </div>
+      </Group>
     </>
+  );
+}
+
+/** A titled group of controls in the side panel. */
+function Group({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="flex flex-col gap-2">
+      <h3 className={eyebrow}>{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -623,20 +573,8 @@ function BoardForm({
     onChange: (v: number) => void,
     step = 1,
   ) => (
-    <label
-      style={{
-        display: "grid",
-        gridTemplateColumns: "90px 1fr",
-        alignItems: "center",
-        gap: "var(--s2)",
-        fontSize: 12,
-        color: "var(--text-muted)",
-      }}
-    >
-      {label}
-      <input
-        className="input"
-        type="number"
+    <Field label={label}>
+      <NumberInput
         step={step}
         value={value ?? ""}
         onChange={(e) => {
@@ -644,20 +582,22 @@ function BoardForm({
           if (!Number.isNaN(v)) onChange(v);
         }}
       />
-    </label>
+    </Field>
   );
   return (
     <>
-      {num("Rows", board.rows, (v) => setBoard({ ...board, rows: v }))}
-      {num("Cols", board.cols, (v) => setBoard({ ...board, cols: v }))}
-      {num(
-        "Cell size",
-        board.cell_size,
-        (v) => setBoard({ ...board, cell_size: v }),
-        0.001,
-      )}
+      <div className="grid grid-cols-3 gap-2">
+        {num("Rows", board.rows, (v) => setBoard({ ...board, rows: v }))}
+        {num("Cols", board.cols, (v) => setBoard({ ...board, cols: v }))}
+        {num(
+          "Cell size",
+          board.cell_size,
+          (v) => setBoard({ ...board, cell_size: v }),
+          0.001,
+        )}
+      </div>
       {detector === "charuco" && (
-        <>
+        <div className="grid grid-cols-[1fr_2fr] gap-2">
           {num(
             "Marker rel",
             board.marker_size_rel,
@@ -684,36 +624,24 @@ function BoardForm({
             ]}
             onChange={(v) => setBoard({ ...board, dictionary: v })}
           />
-        </>
+        </div>
       )}
       {detector === "puzzleboard" && (
-        <>
+        <div className="grid grid-cols-2 gap-2">
           {num("Origin row", board.origin_row, (v) =>
             setBoard({ ...board, origin_row: v }),
           )}
           {num("Origin col", board.origin_col, (v) =>
             setBoard({ ...board, origin_col: v }),
           )}
-        </>
+        </div>
       )}
-      <label
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          fontSize: 12,
-          cursor: "pointer",
-          color: "var(--text-muted)",
-        }}
-      >
-        <input
-          type="checkbox"
-          checked={sweep}
-          onChange={(e) => setSweep(e.target.checked)}
-          style={{ accentColor: "var(--accent)" }}
-        />
-        Multi-config sweep (detect_*_best)
-      </label>
+      <Switch
+        checked={sweep}
+        onCheckedChange={setSweep}
+        label="Multi-config sweep"
+        description="detect_*_best"
+      />
     </>
   );
 }
@@ -724,14 +652,10 @@ function StatsBlock({
   detect: { isLoading: boolean; error: unknown; data?: DetectResponse | undefined };
 }) {
   if (detect.isLoading) {
-    return <div style={{ color: "var(--text-muted)" }}>detecting…</div>;
+    return <div className="text-fg-muted">detecting…</div>;
   }
   if (detect.error) {
-    return (
-      <div style={{ color: "var(--err)", fontSize: 12 }}>
-        {errorText(detect.error)}
-      </div>
-    );
+    return <ErrorBox>{errorText(detect.error)}</ErrorBox>;
   }
   const d = detect.data;
   if (!d) return null;
@@ -743,54 +667,65 @@ function StatsBlock({
     diff.wrong_id.length === 0 &&
     !diff.inconsistent_shift &&
     diff.duplicate_run_positions.length === 0;
+  const stat = "font-mono";
   return (
-    <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s1)" }}>
-      <span className="chip" title="labelled corners">
-        {d.detection?.labelled_count ?? 0} corners
-      </span>
-      <span className="chip" title="detection time">
-        {d.elapsed_ms.toFixed(1)} ms
-      </span>
+    <div className="flex flex-wrap gap-1">
+      <Badge className={stat}>
+        <span title="labelled corners">{d.detection?.labelled_count ?? 0} corners</span>
+      </Badge>
+      <Badge className={stat}>
+        <span title="detection time">{d.elapsed_ms.toFixed(1)} ms</span>
+      </Badge>
       {d.detection != null && d.detection.cell_size_px > 0 && (
-        <span className="chip" title="estimated cell size">
-          cell {d.detection.cell_size_px.toFixed(1)} px
-        </span>
+        <Badge className={stat}>
+          <span title="estimated cell size">
+            cell {d.detection.cell_size_px.toFixed(1)} px
+          </span>
+        </Badge>
       )}
       {d.baseline?.exists ? (
         passed ? (
-          <span className="chip ok">
+          <Badge tone="normal" className={stat}>
             baseline PASS
             {diff && diff.extra_labels.length > 0
               ? `+${diff.extra_labels.length}`
               : ""}
-          </span>
+          </Badge>
         ) : (
-          <span className="chip err">
+          <Badge tone="defect" className={stat}>
             baseline FAIL
             {diff &&
               ` · miss ${diff.missing_labels.length} · pos ${diff.wrong_position.length}`}
-          </span>
+          </Badge>
         )
       ) : (
-        <span className="chip">no baseline</span>
+        <Badge className={stat}>no baseline</Badge>
       )}
       {d.info?.markers != null && (
-        <span className="chip" title="decoded ArUco markers">
-          {d.info.markers} markers
-        </span>
+        <Badge className={stat}>
+          <span title="decoded ArUco markers">{d.info.markers} markers</span>
+        </Badge>
       )}
       {d.info?.decode != null && (
         <>
-          <span className="chip" title="decode bit error rate">
-            BER {(d.info.decode.bit_error_rate * 100).toFixed(2)}%
-          </span>
-          <span className="chip" title="master pattern origin">
-            origin ({d.info.decode.master_origin_row},{" "}
-            {d.info.decode.master_origin_col})
-          </span>
+          <Badge className={stat}>
+            <span title="decode bit error rate">
+              BER {(d.info.decode.bit_error_rate * 100).toFixed(2)}%
+            </span>
+          </Badge>
+          <Badge className={stat}>
+            <span title="master pattern origin">
+              origin ({d.info.decode.master_origin_row},{" "}
+              {d.info.decode.master_origin_col})
+            </span>
+          </Badge>
         </>
       )}
-      {d.detection == null && <span className="chip err">no detection</span>}
+      {d.detection == null && (
+        <Badge tone="defect" className={stat}>
+          no detection
+        </Badge>
+      )}
     </div>
   );
 }
@@ -809,20 +744,8 @@ function NumberRow({
   onChange: (v: number | undefined) => void;
 }) {
   return (
-    <label
-      style={{
-        display: "grid",
-        gridTemplateColumns: "90px 1fr",
-        alignItems: "center",
-        gap: "var(--s2)",
-        fontSize: 12,
-        color: "var(--text-muted)",
-      }}
-    >
-      {label}
-      <input
-        className="input"
-        type="number"
+    <Field label={label}>
+      <NumberInput
         step={integer ? 1 : "any"}
         value={value ?? ""}
         placeholder={placeholder !== undefined ? String(placeholder) : ""}
@@ -835,7 +758,7 @@ function NumberRow({
           if (!Number.isNaN(v)) onChange(v);
         }}
       />
-    </label>
+    </Field>
   );
 }
 
@@ -843,38 +766,20 @@ function SelectRow({
   label,
   value,
   options,
-  disabledOptions = [],
   onChange,
 }: {
   label: string;
   value: string;
   options: string[];
-  disabledOptions?: string[];
   onChange: (v: string) => void;
 }) {
   return (
-    <label
-      style={{
-        display: "grid",
-        gridTemplateColumns: "90px 1fr",
-        alignItems: "center",
-        gap: "var(--s2)",
-        fontSize: 12,
-        color: "var(--text-muted)",
-      }}
-    >
-      {label}
-      <select
-        className="select"
+    <Field label={label}>
+      <Select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-      >
-        {options.map((o) => (
-          <option key={o} value={o} disabled={disabledOptions.includes(o)}>
-            {o}
-          </option>
-        ))}
-      </select>
-    </label>
+        options={options.map((o) => ({ value: o, label: o }))}
+        onValueChange={onChange}
+      />
+    </Field>
   );
 }

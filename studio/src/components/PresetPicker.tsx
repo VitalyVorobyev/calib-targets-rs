@@ -5,8 +5,10 @@
 // lives in ConfigEditor's library, not here.
 
 import { useQuery } from "@tanstack/react-query";
+import { Button, cn } from "@vitavision/ui";
 import { api } from "../api/client";
 import type { DetectorParamsOverride } from "../api/types";
+import { eyebrow } from "../theme/classes";
 
 export function PresetPicker({
   onLoad,
@@ -20,48 +22,39 @@ export function PresetPicker({
   });
   const configs = useQuery({ queryKey: ["configs"], queryFn: api.configs });
 
-  const chip: React.CSSProperties = { padding: "2px 8px", fontSize: 11 };
-
   return (
     <div>
-      <div className="label" style={{ marginBottom: "var(--s2)" }}>
-        Presets
-      </div>
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s1)" }}>
+      <div className={cn(eyebrow, "mb-2")}>Presets</div>
+      <div className="flex flex-wrap gap-1">
         {(presets.data ?? []).map((p) => (
-          <button
+          <Button
             key={p.name}
-            className="btn"
-            style={chip}
+            size="sm"
+            className="font-mono"
             title={p.description}
             onClick={() => onLoad(p.params)}
           >
             {p.name}
-          </button>
+          </Button>
         ))}
         {presets.data?.length === 0 && (
-          <span style={{ color: "var(--text-faint)", fontSize: 11 }}>none</span>
+          <span className="text-[11px] text-fg-subtle">none</span>
         )}
       </div>
       {(configs.data?.length ?? 0) > 0 && (
         <>
-          <div
-            className="label"
-            style={{ margin: "var(--s2) 0", textTransform: "none" }}
-          >
-            <span style={{ color: "var(--text-faint)" }}>saved configs</span>
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--s1)" }}>
+          <div className="my-2 text-[11px] text-fg-subtle">saved configs</div>
+          <div className="flex flex-wrap gap-1">
             {(configs.data ?? []).map((c) => (
-              <button
+              <Button
                 key={c.name}
-                className="btn"
-                style={chip}
+                size="sm"
+                className="font-mono"
                 title={`load ${c.name}${c.has_advanced ? " · adv" : ""}`}
                 onClick={() => void api.config(c.name).then(onLoad)}
               >
                 {c.name}
-              </button>
+              </Button>
             ))}
           </div>
         </>

@@ -245,15 +245,8 @@ export function CanvasViewport<T>({
   return (
     <div
       ref={containerRef}
-      style={{
-        position: "relative",
-        width: "100%",
-        height: "100%",
-        overflow: "hidden",
-        background: "var(--bg0)",
-        cursor: dragging.current ? "grabbing" : "crosshair",
-        touchAction: "none",
-      }}
+      className="relative size-full touch-none overflow-hidden bg-canvas"
+      style={{ cursor: dragging.current ? "grabbing" : "crosshair" }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
@@ -269,46 +262,16 @@ export function CanvasViewport<T>({
       onPointerMove={onPointerMove}
       onDoubleClick={fit}
     >
-      <canvas
-        ref={canvasRef}
-        style={{ width: "100%", height: "100%", display: "block" }}
-      />
+      <canvas ref={canvasRef} className="block size-full" />
       {hover && renderTooltip && (
         <div
-          style={{
-            position: "absolute",
-            left: hover.px + 14,
-            top: hover.py + 14,
-            pointerEvents: "none",
-            zIndex: 10,
-            background: "color-mix(in srgb, var(--bg1) 92%, transparent)",
-            border: "1px solid var(--border-strong)",
-            borderRadius: "var(--radius)",
-            padding: "6px 10px",
-            fontFamily: "var(--font-mono)",
-            fontSize: 11,
-            whiteSpace: "nowrap",
-            boxShadow: "0 4px 16px rgba(0,0,0,0.5)",
-          }}
+          className="pointer-events-none absolute z-10 rounded-control border border-line bg-overlay/95 px-2.5 py-1.5 font-mono text-[11px] whitespace-nowrap text-fg shadow-lg shadow-black/25"
+          style={{ left: hover.px + 14, top: hover.py + 14 }}
         >
           {renderTooltip(hover.data)}
         </div>
       )}
-      <div
-        style={{
-          position: "absolute",
-          right: 8,
-          bottom: 8,
-          padding: "2px 8px",
-          borderRadius: "var(--radius-sm)",
-          background: "color-mix(in srgb, var(--bg1) 85%, transparent)",
-          border: "1px solid var(--border)",
-          fontFamily: "var(--font-mono)",
-          fontSize: 11,
-          color: "var(--text-muted)",
-          pointerEvents: "none",
-        }}
-      >
+      <div className="pointer-events-none absolute right-2 bottom-2 rounded-control border border-line bg-surface/85 px-2 py-0.5 font-mono text-[11px] text-fg-muted">
         {zoomPct}%
       </div>
     </div>

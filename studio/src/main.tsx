@@ -6,7 +6,6 @@ import { initTheme, TooltipProvider } from "@vitavision/ui";
 import App from "./App";
 import { THEME_STORAGE_KEY } from "./theme/storage";
 import "./index.css";
-import "./theme/tokens.css";
 
 // The inline script in index.html already painted the stored theme (dark when nothing was
 // stored); this keeps a "system" choice following the OS while the app runs.

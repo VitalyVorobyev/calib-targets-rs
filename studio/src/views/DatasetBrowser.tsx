@@ -3,8 +3,10 @@
 
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Link, useNavigate } from "react-router";
+import { Badge, Button, ErrorBox, PageHeader, Panel, cn } from "@vitavision/ui";
 import { api, encodeLabel, imageUrl } from "../api/client";
 import type { DatasetReq, ImageInfo } from "../api/types";
+import { eyebrow, textLink } from "../theme/classes";
 
 export function DatasetBrowser() {
   const navigate = useNavigate();
@@ -37,79 +39,69 @@ export function DatasetBrowser() {
   const upscaledCount = images.filter((i) => i.upscale > 1).length;
 
   return (
-    <div style={{ height: "100%", overflowY: "auto", padding: "var(--s5)" }}>
-      <h1 style={{ fontSize: 18, margin: "0 0 var(--s4)" }}>Dataset</h1>
-      <div
-        className="panel"
-        style={{
-          padding: "var(--s3)",
-          marginBottom: "var(--s5)",
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: "var(--s3)",
-        }}
-      >
-        <span className="chip">
-          {availableCount}/{images.length} images available
-        </span>
-        <span className="chip">{snapCount(images)} snaps</span>
-        {upscaledCount > 0 && (
-          <span className="chip warn">{upscaledCount} upscaled</span>
-        )}
-        <span style={{ flex: 1 }} />
-        <span
-          className="label"
-          style={{ textTransform: "none", color: "var(--text-faint)" }}
-        >
-          run dataset →
-        </span>
-        <button
-          className="btn"
-          disabled={startRun.isPending}
-          onClick={() => startRun.mutate({ dataset: "public" })}
-        >
-          Public
-        </button>
-        <button
-          className="btn"
-          disabled={startRun.isPending}
-          onClick={() => startRun.mutate({ dataset: "private" })}
-        >
-          Private
-        </button>
-        <button
-          className="btn primary"
-          disabled={startRun.isPending}
-          onClick={() => startRun.mutate({ dataset: "all" })}
-        >
-          All
-        </button>
-      </div>
+    <div className="h-full overflow-y-auto p-6">
+      <PageHeader
+        className="mb-6"
+        title="Dataset"
+        meta={
+          <>
+            <Badge className="font-mono">
+              {availableCount}/{images.length} images available
+            </Badge>
+            <Badge className="font-mono">{snapCount(images)} snaps</Badge>
+            {upscaledCount > 0 && (
+              <Badge tone="warning" className="font-mono">
+                {upscaledCount} upscaled
+              </Badge>
+            )}
+          </>
+        }
+        actions={
+          <>
+            <span className="text-xs text-fg-subtle">run dataset →</span>
+            <Button
+              disabled={startRun.isPending}
+              onClick={() => startRun.mutate({ dataset: "public" })}
+            >
+              Public
+            </Button>
+            <Button
+              disabled={startRun.isPending}
+              onClick={() => startRun.mutate({ dataset: "private" })}
+            >
+              Private
+            </Button>
+            <Button
+              variant="primary"
+              disabled={startRun.isPending}
+              onClick={() => startRun.mutate({ dataset: "all" })}
+            >
+              All
+            </Button>
+          </>
+        }
+      />
       {startRun.error && (
-        <div
-          style={{
-            color: "var(--err)",
-            fontSize: 12,
-            marginBottom: "var(--s4)",
-          }}
-        >
-          {String(startRun.error)} · <Link to="/runs">see runs</Link>
-        </div>
+        <ErrorBox className="mb-4">
+          {String(startRun.error)} ·{" "}
+          <Link to="/runs" className={textLink}>
+            see runs
+          </Link>
+        </ErrorBox>
       )}
       {groupByDataset(images).map((g) => (
         <Section
           key={g.name}
           title={`${g.kind === "private" ? "🔒 " : ""}${g.name} (${g.images.length} frames · ${snapCount(g.images)} snaps)`}
           action={
-            <button
-              className="btn"
+            <Button
+              size="sm"
               disabled={startRun.isPending}
               onClick={() => startRun.mutate({ group: g.name })}
               title={`Run all ${snapCount(g.images)} snaps of ${g.name}`}
             >
               Run this dataset
-            </button>
+            </Button>
           }
         >
           {g.images.map((img) => (
@@ -152,159 +144,91 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section style={{ marginBottom: "var(--s6)" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s3)",
-          marginBottom: "var(--s3)",
-        }}
-      >
-        <div className="label">{title}</div>
-        <span style={{ flex: 1 }} />
+    <section className="mb-8">
+      <div className="mb-3 flex items-center gap-3">
+        <h2 className={eyebrow}>{title}</h2>
+        <span className="flex-1" />
         {action}
       </div>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(420px, 1fr))",
-          gap: "var(--s3)",
-        }}
-      >
+      <div className="grid grid-cols-[repeat(auto-fill,minmax(420px,1fr))] gap-3">
         {children}
       </div>
     </section>
   );
 }
 
+const SNAP_LINK = "font-mono hover:underline";
+
 function EntryCard({ img }: { img: ImageInfo }) {
   const firstSnap = img.snaps[0];
   return (
-    <div
-      className="panel"
-      style={{
-        display: "flex",
-        gap: "var(--s3)",
-        padding: "var(--s3)",
-        opacity: img.available ? 1 : 0.55,
-      }}
+    <Panel
+      className={cn(!img.available && "opacity-55")}
+      bodyClassName="flex gap-3 p-3"
     >
-      <div
-        style={{
-          width: 96,
-          height: 72,
-          flexShrink: 0,
-          borderRadius: "var(--radius-sm)",
-          overflow: "hidden",
-          background: "var(--bg0)",
-          border: "1px solid var(--border)",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
+      <div className="flex h-18 w-24 shrink-0 items-center justify-center overflow-hidden rounded-control border border-line bg-canvas">
         {img.available && firstSnap ? (
           <Link to={`/image/${encodeLabel(firstSnap.label)}`}>
             <img
               src={imageUrl(firstSnap.label)}
               alt={img.path}
               loading="lazy"
-              style={{ width: 96, height: 72, objectFit: "cover" }}
+              className="h-18 w-24 object-cover"
             />
           </Link>
         ) : (
-          <span style={{ fontSize: 11, color: "var(--text-faint)" }}>
-            missing
-          </span>
+          <span className="text-[11px] text-fg-subtle">missing</span>
         )}
       </div>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        <div
-          className="mono"
-          style={{
-            fontWeight: 600,
-            whiteSpace: "nowrap",
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-          }}
-          title={img.path}
-        >
+      <div className="min-w-0 flex-1">
+        <div className="truncate font-mono font-semibold" title={img.path}>
           {img.path}
         </div>
-        <div
-          style={{
-            color: "var(--text-muted)",
-            fontSize: 12,
-            margin: "2px 0 var(--s2)",
-            display: "-webkit-box",
-            WebkitLineClamp: 2,
-            WebkitBoxOrient: "vertical",
-            overflow: "hidden",
-          }}
-        >
+        <div className="mt-0.5 mb-2 line-clamp-2 text-xs text-fg-muted">
           {img.note}
         </div>
-        <div
-          style={{
-            display: "flex",
-            flexWrap: "wrap",
-            gap: "var(--s1)",
-            alignItems: "center",
-          }}
-        >
-          {!img.available && <span className="chip err">not provisioned</span>}
+        <div className="flex flex-wrap items-center gap-1">
+          {!img.available && <Badge tone="defect">not provisioned</Badge>}
           {img.upscale > 1 && (
-            <span className="chip warn">×{img.upscale} upscale</span>
+            <Badge tone="warning" className="font-mono">
+              ×{img.upscale} upscale
+            </Badge>
           )}
           {firstSnap?.width != null && (
-            <span className="chip">
+            <Badge className="font-mono">
               {firstSnap.width}×{firstSnap.height}
-            </span>
+            </Badge>
           )}
           {img.stitched ? (
             img.snaps.map((s) =>
               img.available ? (
-                <Link
-                  key={s.label}
-                  to={`/image/${encodeLabel(s.label)}`}
-                  className="chip"
-                  style={{ color: "var(--accent)" }}
-                >
-                  #{s.index}
-                </Link>
+                <Badge key={s.label} tone="info">
+                  <Link to={`/image/${encodeLabel(s.label)}`} className={SNAP_LINK}>
+                    #{s.index}
+                  </Link>
+                </Badge>
               ) : (
-                <span key={s.label} className="chip">
+                <Badge key={s.label} className="font-mono">
                   #{s.index}
-                </span>
+                </Badge>
               ),
             )
           ) : img.available && firstSnap ? (
-            <Link
-              to={`/image/${encodeLabel(firstSnap.label)}`}
-              className="chip"
-              style={{ color: "var(--accent)" }}
-            >
-              open
-            </Link>
+            <Badge tone="info">
+              <Link to={`/image/${encodeLabel(firstSnap.label)}`} className={SNAP_LINK}>
+                open
+              </Link>
+            </Badge>
           ) : null}
         </div>
       </div>
-    </div>
+    </Panel>
   );
 }
 
 function Centered({ children }: { children: React.ReactNode }) {
   return (
-    <div
-      style={{
-        height: "100%",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        color: "var(--text-muted)",
-      }}
-    >
+    <div className="flex h-full items-center justify-center text-fg-muted">
       {children}
     </div>
   );
