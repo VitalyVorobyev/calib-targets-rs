@@ -65,14 +65,16 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
           {funnel.map(([name, count], k) => (
             <div key={name} className="flex items-center gap-2">
               <span className="w-16 shrink-0 font-mono text-[11px] text-fg-muted">{name}</span>
-              <div
-                className={cn(
-                  "h-2.5 min-w-0.5 rounded-sm",
-                  k === 0 ? "bg-line-strong" : "bg-signal",
-                )}
-                style={{ width: `${(count / Math.max(d.input_count, 1)) * 100}%` }}
-              />
-              <span className="shrink-0 font-mono text-[11px]">{count}</span>
+              <div className="min-w-0 flex-1">
+                <div
+                  className={cn(
+                    "h-2.5 min-w-0.5 rounded-sm",
+                    k === 0 ? "bg-line-strong" : "bg-signal",
+                  )}
+                  style={{ width: `${(count / Math.max(d.input_count, 1)) * 100}%` }}
+                />
+              </div>
+              <span className="w-8 shrink-0 text-right font-mono text-[11px]">{count}</span>
             </div>
           ))}
         </div>
