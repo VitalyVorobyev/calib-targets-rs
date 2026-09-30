@@ -1,4 +1,6 @@
 import { NavLink, Route, Routes } from "react-router";
+import { ThemeToggle } from "@vitavision/ui";
+import { THEME_STORAGE_KEY } from "./theme/storage";
 import { CompareView } from "./views/CompareView";
 import { DatasetBrowser } from "./views/DatasetBrowser";
 import { ImageWorkspace } from "./views/ImageWorkspace";
@@ -31,9 +33,15 @@ export default function App() {
             fontSize: 14,
             padding: "0 var(--s2) var(--s4)",
             letterSpacing: "0.02em",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          <span style={{ color: "var(--accent)" }}>◇</span> Calib Studio
+          <span>
+            <span style={{ color: "var(--accent)" }}>◇</span> Calib Studio
+          </span>
+          <ThemeToggle storageKey={THEME_STORAGE_KEY} />
         </div>
         {NAV.map((item) => (
           <NavLink

@@ -1,0 +1,21 @@
+@import "tailwindcss";
+/* The vitavision design system (@vitavision/ui): IBM Plex, the semantic colour tokens
+   (ground/surface/raised/overlay, line, canvas, fg, signal, the verdicts), the radii and the
+   `.dark` variant. Both stylesheets declare their own `@source`, so the package's class names
+   are found without one here. */
+@import "@vitavision/ui/fonts.css";
+@import "@vitavision/ui/styles.css";
+
+@layer base {
+  html,
+  body,
+  #root {
+    margin: 0;
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--fg);
+  }
+}
