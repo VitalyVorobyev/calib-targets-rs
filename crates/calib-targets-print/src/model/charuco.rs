@@ -14,14 +14,21 @@ pub(super) fn default_border_bits() -> usize {
 /// Printable ChArUco target.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CharucoTargetSpec {
     /// Number of board squares vertically.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub rows: u32,
     /// Number of board squares horizontally.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub cols: u32,
     /// Side length of one square in millimeters.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
     pub square_size_mm: f64,
     /// Marker side length as a fraction of the square side, in `(0, 1]`.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 1.0)))]
     pub marker_size_rel: f64,
     /// The ArUco dictionary the markers are drawn from.
     pub dictionary: Dictionary,
@@ -30,6 +37,7 @@ pub struct CharucoTargetSpec {
     pub marker_layout: MarkerLayout,
     /// Marker border width in cells.
     #[serde(default = "default_border_bits")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
     pub border_bits: usize,
     /// White inset square drawn centred inside every plain black checker
     /// square (never inside an ArUco marker's bit cells), as a fraction of
@@ -37,6 +45,8 @@ pub struct CharucoTargetSpec {
     /// `Some(0.0)` both mean no inset. Does not move any corner
     /// intersection — see [`crate::TargetSpec::resolved_points`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMaximum" = 1.0)))]
     pub inner_square_rel: Option<f64>,
 }
 

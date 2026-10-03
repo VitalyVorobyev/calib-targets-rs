@@ -1,0 +1,325 @@
+{
+  "$defs": {
+    "ChessboardAdvancedTuning": {
+      "additionalProperties": false,
+      "description": "Advanced, **unstable** per-stage tuning knobs for the chessboard detector.\n\nBehind `ChessboardParams::advanced`. The\nknobs are named after the live topological pipeline stages. The defaults are\nchosen to hold the detector's precision-by-construction contract — a\ncalibration consumer has no basis to set any of them and should leave the\nwhole struct at `Default`. Tune a knob only when a specific input fails and\nyou have evidence for the change.\n\n**NOT covered by semver.** These knobs are named after, and coupled to,\ninternal pipeline stages; they may be **renamed, retyped, or removed\nbetween minor versions** without a major-version bump. Do not depend on the\nfield set being stable. The stable configuration contract lives entirely on\n`ChessboardParams`'s three top-level fields.\n\nWhen set on `ChessboardParams` via\n`with_advanced`, the whole struct\nserializes under a nested `\"advanced\"` JSON object — the knobs are not\nflattened. When left unset, the serialized config carries no `\"advanced\"`\nkey and detection behaves exactly as if every knob held its `Default`\nvalue (see `ChessboardParams::effective_tuning`).",
+      "properties": {
+        "attach_ambiguity_factor": {
+          "description": "Ambiguity factor: if the second-nearest candidate is within\n`factor × nearest_distance`, the attachment is skipped.",
+          "format": "float",
+          "type": "number"
+        },
+        "attach_axis_tol_deg": {
+          "description": "Axis alignment tolerance at attachment time (degrees).",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "attach_search_rel": {
+          "description": "Candidate-search radius (fraction of `s`) around a predicted `(i, j)`\nwhen the booster attaches a corner to an empty cell.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "cluster_sigma_k": {
+          "description": "Multiplier on the per-corner axis sigma added to `cluster_tol_deg`\nwhen admitting a corner. Default `0.0`: sigma-aware tolerance is\nplumbed through but disabled. Set to e.g. `2.0` (a ≈95% one-sided\nconfidence band) to pass corners whose true axis is within tolerance\nbut whose ChESS estimate fell outside under noise.\n\n`cluster_tol_deg`: ChessboardAdvancedTuning::cluster_tol_deg",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "cluster_tol_deg": {
+          "description": "Per-axis absolute tolerance (degrees) for a corner's axis to count as\nmatching a cluster center. The effective per-corner gate is\n`cluster_tol_deg + cluster_sigma_k * max(σ_a0, σ_a1)`, so noisier\naxis estimates get proportional slack — see `cluster_sigma_k`.\n\n`cluster_sigma_k`: ChessboardAdvancedTuning::cluster_sigma_k",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "component_merge": {
+          "$ref": "#/$defs/LocalMergeParams",
+          "description": "Tuning knobs for the shared local-geometry component merger that\nreunites the topological grid's connected components in label space."
+        },
+        "edge_axis_tol_deg": {
+          "description": "Edge axis-direction tolerance (degrees) enforced at admission time.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "enable_final_edge_shape_check": {
+          "description": "Enable the final local edge-shape gate (the direct topological\nwrong-label check: interior skipped-corner edges and duplicate-pixel\nlabels).\n\nDefault `true` for direct chessboard detection. Downstream\ntarget-specific detectors with their own geometry/ID alignment gates\n(e.g. ChArUco) may disable it to preserve recall.",
+          "type": "boolean"
+        },
+        "enable_geometry_only_recovery": {
+          "default": true,
+          "description": "Enable a final, geometry-only rescue for strong corners whose measured\naxes failed clustering.\n\nThis pass is deliberately narrower than the axis-aware booster: it\nrequires an L-shaped set of three already-labelled neighbours and does\nnot let recovered corners support further recovery. It exists for the\ncase where the image-space corner position is reliable but the local\norientation fit is not.",
+          "type": "boolean"
+        },
+        "enable_weak_cluster_rescue": {
+          "description": "Enable the weak-cluster rescue booster: re-admit corners that\nclustered only within the looser `weak_cluster_tol_deg`.",
+          "type": "boolean"
+        },
+        "geometry_check_line_tol_rel": {
+          "description": "Line-collinearity tolerance (fraction of cell_size) for the MANDATORY\nfinal geometry check that runs before any detection is emitted. Loose\nby design — the geometry check's role is to catch gross mislabels\n(diagonal / full-cell shifts), not the borderline perspective drift the\ngrid builder already accepted.\n\nDefault `0.45` of cell_size. A tight tolerance here produces\ncatastrophic recall regressions on heavy-radial-distortion boards.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "geometry_check_local_h_tol_rel": {
+          "description": "Local-H residual tolerance (fraction of cell_size) for the MANDATORY\nfinal geometry check. A diagonal mislabel shifts a corner by ~1.4 cell\nfrom its predicted position; `0.6 × cell_size` is well below that gap\nwhile leaving the legitimate perspective-distorted corners alone.\n\nDefault `0.6` of cell_size.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "geometry_recovery_tol_rel": {
+          "default": 0.15,
+          "description": "Maximum geometry-only prediction residual and candidate-search radius,\nas a fraction of the local cell size.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "line_min_members": {
+          "description": "Minimum members required to fit a line / column for the geometry\ncheck's collinearity test.",
+          "format": "uint",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "max_booster_iters": {
+          "description": "Cap on the outer booster loop.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_iters_2means": {
+          "description": "Max 2-means refinement iterations over axis votes.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_peak_weight_fraction": {
+          "description": "Minimal fraction of total axis-vote weight required for a peak to be\nconsidered.",
+          "format": "float",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "num_bins": {
+          "description": "Number of histogram bins on `[0, π)` for axis-direction clustering.",
+          "format": "uint",
+          "minimum": 4,
+          "type": "integer"
+        },
+        "peak_min_separation_deg": {
+          "description": "Minimal angular separation (degrees) between the two peaks. Guards\nagainst seed-peak collisions; true grid axes are `~90°` apart.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "step_tol": {
+          "description": "Edge-length window (fraction of `s`) enforced when admitting edges\nfrom a newly-attached corner to its labelled neighbours.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "topological": {
+          "$ref": "#/$defs/TopologicalParams",
+          "description": "Tuning knobs for the topological (Delaunay + axis-driven cell test)\ngrid builder — the only graph builder the detector ships."
+        },
+        "validate_step_aware": {
+          "description": "When `true`, the geometry check's tolerances are multiplied by a\nper-corner local step (computed from labelled grid neighbours) instead\nof the global cell size. Anisotropic thresholds catch outliers in\ndense (perspective-foreshortened) regions that a global threshold would\nmiss, and stay loose in distorted regions where the local cell pitch\ngrows.\n\nDefault `false`: the capability is shipped without changing behaviour.\nEnabling it currently drops one labelled corner on\n`testdata/puzzleboard_reference/example1.png` (the tighter back-edge\ntolerance over-flags), so treat it as a focused per-dataset experiment\nuntil a tuned tolerance pair holds the precision contract on every\nblessed image. Set to `true` to opt in.",
+          "type": "boolean"
+        },
+        "weak_cluster_tol_deg": {
+          "description": "Cluster tolerance for \"weakly clustered\" corners eligible as recall-\nbooster candidates. Must be ≥ `cluster_tol_deg`.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        }
+      },
+      "required": [
+        "topological",
+        "component_merge",
+        "num_bins",
+        "max_iters_2means",
+        "cluster_tol_deg",
+        "cluster_sigma_k",
+        "peak_min_separation_deg",
+        "min_peak_weight_fraction",
+        "attach_search_rel",
+        "attach_axis_tol_deg",
+        "attach_ambiguity_factor",
+        "step_tol",
+        "edge_axis_tol_deg",
+        "enable_weak_cluster_rescue",
+        "weak_cluster_tol_deg",
+        "max_booster_iters",
+        "geometry_check_line_tol_rel",
+        "geometry_check_local_h_tol_rel",
+        "line_min_members",
+        "validate_step_aware",
+        "enable_final_edge_shape_check"
+      ],
+      "type": "object"
+    },
+    "LocalMergeParams": {
+      "description": "Tuning knobs for `merge_components_local`.",
+      "properties": {
+        "cell_size_ratio_tol": {
+          "description": "Cell-size agreement tolerance: `|s_p - s_q| / max(s_p, s_q)` must\nbe ≤ this value to even attempt a merge. Default: `0.20`.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "max_components": {
+          "description": "Upper bound on returned components after merging. Default: `4`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_overlap": {
+          "description": "Minimum number of overlapping labels (after candidate alignment)\nfor a merge to be accepted. Default: `2`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "position_tol_rel": {
+          "description": "Position tolerance for accepting two corners as the same physical\npoint, expressed as a fraction of the mean per-component cell\nsize in pixels. Default: `0.20`.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "position_tol_rel",
+        "cell_size_ratio_tol",
+        "min_overlap",
+        "max_components"
+      ],
+      "type": "object"
+    },
+    "TopologicalParams": {
+      "description": "Tuning knobs for the axis-driven topological pipeline.\n\nDefaults are conservative values pinned by the crate's regression tests.\nAdding new fields is non-breaking via `#[non_exhaustive]`;\nliteral-construction from outside the crate goes through `default`\n+ struct-update syntax or `new`.",
+      "properties": {
+        "axis_align_tol_rad": {
+          "description": "Maximum angular distance, in radians, between an edge's\ndirection and a corner's axis for the edge to classify as a\ngrid edge at that corner. Default: 15° = 0.262 rad.",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number",
+          "x-unit": "rad"
+        },
+        "axis_cluster_centers": {
+          "description": "Optional global grid-direction centers, in radians, interpreted\nmodulo π. When `Some([θ₀, θ₁])`, a feature is admitted to\nDelaunay only if at least one of its informative axes is within\n`cluster_axis_tol_rad` of one of the centers. When\n`None`, the gate is skipped.",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
+            "null"
+          ],
+          "x-unit": "rad"
+        },
+        "cluster_axis_tol_rad": {
+          "description": "Per-axis admission tolerance against\n`axis_cluster_centers`, in radians. Only consulted when\n`axis_cluster_centers.is_some()`. Default: `16° = 0.279`.",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number",
+          "x-unit": "rad"
+        },
+        "edge_length_max_rel": {
+          "description": "Upper bound on a quad's perimeter edge length, expressed as a\nfraction of the per-component median quad edge length. Quads\nwith any edge longer than `edge_length_max_rel * component_median`\nare rejected as \"above local cell scale\" (typically a quad formed\nacross a missing corner). Default: `2.5`. Set to `+inf` to\ndisable the upper bound entirely (JSON has no infinity: pass a very\nlarge finite value such as `1e30` instead).",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number"
+        },
+        "edge_length_min_rel": {
+          "description": "Lower bound on a quad's perimeter edge length, expressed as a\nfraction of the per-component median quad edge length. Quads\nwith any edge shorter than `edge_length_min_rel * component_median`\nare rejected as \"below local cell scale\". Default: `0.4`.\nSet to `0.0` to disable the lower bound entirely.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "max_axis_sigma_rad": {
+          "description": "Maximum 1σ axis uncertainty (radians) for a feature axis to be\nconsidered informative. Features whose both axes have\n`sigma_rad ≥ max_axis_sigma_rad` are excluded from Delaunay;\nclassification skips individual axes above the threshold.\nDefault: `0.6 ≈ 34°`. `sigma_rad = None` is treated as informative.",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number",
+          "x-unit": "rad"
+        },
+        "min_corners_for_component": {
+          "description": "Discard labelled components with fewer than this many corners.\nDefault: `4` (one quad of four corners).",
+          "format": "uint",
+          "minimum": 4,
+          "type": "integer"
+        },
+        "min_quads_per_component": {
+          "description": "Discard connected quad-mesh components below this size. Default:\n`1` (keep all). Set higher to reject isolated noise quads.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "opposing_edge_ratio_max": {
+          "description": "Reject quads whose opposing edges differ in length by more than\nthis factor (paper's parallelogram test). Default: `1.5`.",
+          "format": "float",
+          "minimum": 1.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis_align_tol_rad",
+        "max_axis_sigma_rad",
+        "opposing_edge_ratio_max",
+        "edge_length_min_rel",
+        "edge_length_max_rel",
+        "min_corners_for_component",
+        "min_quads_per_component",
+        "cluster_axis_tol_rad"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Chessboard detector configuration: a stable core of three knobs (`min_labeled_corners`, `max_components`, `min_corner_strength`) plus an opt-in, unstable `advanced` block of per-stage tuning knobs that is not covered by semver. Omit `advanced` to keep the precision-by-construction defaults.",
+  "properties": {
+    "advanced": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ChessboardAdvancedTuning"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Opt-in, **unstable** per-stage tuning knobs. Leave unset (`None`)\nunless a specific input fails and you have evidence for the change;\n`None` behaves exactly like `ChessboardAdvancedTuning::default()`. Set via\n`with_advanced`. See `ChessboardAdvancedTuning` — its\nfields are NOT covered by semver.\n\nSerialized under a nested `\"advanced\"` object when `Some`, and omitted\nentirely when `None`."
+    },
+    "max_components": {
+      "description": "Maximum number of components returned by `ChessboardDetector::detect_all`.\n\nA chessboard can split into multiple disconnected pieces on ChArUco\nscenes where markers break contiguity. Each iteration peels off one\ngrown grid from the unconsumed corners and re-runs seed → grow →\nvalidate. Default `3` (`ChessboardParams::default`); a **required** key\nin a serialized config.\n\nDoes NOT claim to support scenes with two separate physical boards —\none target per frame is the contract.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "min_corner_strength": {
+      "description": "Minimum corner strength (ChESS response) for the Stage-1 pre-filter.\nCorners with `strength < min_corner_strength` are dropped before\nclustering. `0.0` disables the filter.\n\n**Default `33.0`.** A defocused board edge (or marker-bit saddle)\nfires the ChESS detector weakly — strength ≈ 15–30 against a sharp\nboard's ≈ 90+ — and such corners, while grid-consistent in position,\nare low-confidence and pollute the labelled frontier with a ragged,\nnoisy row that is unhelpful for calibration. A `33.0` floor removes\nthat weak frontier; sharp boards (whose every corner clears the\nfloor) are unaffected. The value matches the ChArUco detector's floor\n(`CharucoParams::for_board`), so the chessboard and ChArUco grid\nbuilds now start from the same corner set — set this to `0.0`\nexplicitly to recover the previous maximum-recall behaviour.\n\nPart of the stable configuration core. A **required** key in a\nserialized config (top-level `min_corner_strength`).",
+      "format": "float",
+      "minimum": 0.0,
+      "type": "number"
+    },
+    "min_labeled_corners": {
+      "description": "Minimum labelled corners for a\n`ChessboardDetection` to be emitted.\nDefault `8` (`ChessboardParams::default`); a **required** key in a\nserialized config.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "min_labeled_corners",
+    "max_components",
+    "min_corner_strength"
+  ],
+  "title": "ChessboardParams",
+  "type": "object"
+}

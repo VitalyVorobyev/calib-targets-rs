@@ -14,18 +14,22 @@ use tracing::instrument;
 /// Decoder configuration for scanning markers.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(default)]
 pub struct ScanDecodeConfig {
     /// Marker border width in cells (OpenCV typically uses 1).
     pub border_bits: usize,
     /// Fraction of a square to ignore near edges (0.08..0.15 typical).
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub inset_frac: f32,
     /// Marker side length relative to the square cell side.
     ///
     /// - `1.0`: marker fills the entire square (no extra white margin).
     /// - `< 1.0`: marker is centered inside the square (ChArUco-style).
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 1.0)))]
     pub marker_size_rel: f32,
     /// Require border-black ratio >= this.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 1.0)))]
     pub min_border_score: f32,
     /// If true, keep only the best detection per marker id.
     pub dedup_by_id: bool,

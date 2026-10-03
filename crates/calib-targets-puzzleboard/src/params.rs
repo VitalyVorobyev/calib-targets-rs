@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 /// Configuration for the PuzzleBoard detector.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PuzzleBoardParams {
     /// ChESS corner front-end configuration for the main detection pass.
@@ -30,6 +31,8 @@ pub struct PuzzleBoardParams {
     pub chess: DetectorConfig,
     /// Pixels per board square in the rectified sampling space.
     #[serde(default = "default_px_per_square")]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub px_per_square: f32,
     /// Chessboard detection parameters.
     #[serde(default)]

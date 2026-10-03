@@ -13,6 +13,17 @@ keywords = ["calibration", "computer-vision", "chessboard", "charuco", "aruco"]
 categories = ["computer-vision", "science"]
 
 [features]
+# Opt-in: derive `schemars::JsonSchema` for the serde-serializable config types
+# so a JSON Schema of the configs can be generated (`cargo xtask emit-schemas`).
+schemars = [
+    "calib-targets-aruco/schemars",
+    "calib-targets-charuco/schemars",
+    "calib-targets-chessboard/schemars",
+    "calib-targets-core/schemars",
+    "calib-targets-marker/schemars",
+    "calib-targets-print/schemars",
+    "calib-targets-puzzleboard/schemars",
+]
 # Opt-in ONNX-backed subpixel refiner (`ChessRefiner::Ml`, upstream's
 # `chess-corners/ml-refiner`). OFF by default: it drags the `tract` ONNX
 # runtime into the build — which took the WASM bundle from ~0.85 MB to ~10 MB

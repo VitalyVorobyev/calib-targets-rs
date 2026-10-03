@@ -13,6 +13,9 @@ keywords = ["calibration", "computer-vision", "chessboard", "detection", "grid"]
 categories = ["computer-vision", "science"]
 
 [features]
+# Opt-in: derive `schemars::JsonSchema` for the serde-serializable config types
+# so a JSON Schema of the configs can be generated (`cargo xtask emit-schemas`).
+schemars = ["dep:schemars", "projective-grid/schemars", "calib-targets-core/schemars"]
 # Opt-in ONNX-backed subpixel refiner (`ChessRefiner::Ml`, upstream's
 # `chess-corners/ml-refiner`). OFF by default: it drags the `tract` ONNX
 # runtime into the build — which took the WASM bundle from ~0.85 MB to ~10 MB
@@ -33,6 +36,7 @@ dataset = ["dep:serde_json", "diagnostics"]
 tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
 
 [dependencies]
+schemars = { workspace = true, optional = true }
 calib-targets-core.workspace = true
 projective-grid.workspace = true
 chess-corners = { workspace = true, features = ["rayon"] }

@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 /// Integer coordinates for a square cell in the grid (top-left corner indices).
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CellCoords {
     /// Cell column index (`i` increases rightward).
     pub i: i32,

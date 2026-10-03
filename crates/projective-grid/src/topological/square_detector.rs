@@ -82,49 +82,63 @@ struct SquareTopology {
 /// literal-construction from outside the crate goes through [`Self::default`]
 /// + struct-update syntax or [`Self::new`].
 #[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct TopologicalParams {
     /// Maximum angular distance, in radians, between an edge's
     /// direction and a corner's axis for the edge to classify as a
     /// grid edge at that corner. Default: 15° = 0.262 rad.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "rad")))]
     pub axis_align_tol_rad: f32,
     /// Maximum 1σ axis uncertainty (radians) for a feature axis to be
     /// considered informative. Features whose both axes have
     /// `sigma_rad ≥ max_axis_sigma_rad` are excluded from Delaunay;
     /// classification skips individual axes above the threshold.
     /// Default: `0.6 ≈ 34°`. `sigma_rad = None` is treated as informative.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "rad")))]
     pub max_axis_sigma_rad: f32,
     /// Reject quads whose opposing edges differ in length by more than
     /// this factor (paper's parallelogram test). Default: `1.5`.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1.0)))]
     pub opposing_edge_ratio_max: f32,
     /// Lower bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
     /// with any edge shorter than `edge_length_min_rel * component_median`
     /// are rejected as "below local cell scale". Default: `0.4`.
     /// Set to `0.0` to disable the lower bound entirely.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub edge_length_min_rel: f32,
     /// Upper bound on a quad's perimeter edge length, expressed as a
     /// fraction of the per-component median quad edge length. Quads
     /// with any edge longer than `edge_length_max_rel * component_median`
     /// are rejected as "above local cell scale" (typically a quad formed
     /// across a missing corner). Default: `2.5`. Set to `+inf` to
-    /// disable the upper bound entirely.
+    /// disable the upper bound entirely (JSON has no infinity: pass a very
+    /// large finite value such as `1e30` instead).
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub edge_length_max_rel: f32,
     /// Discard labelled components with fewer than this many corners.
     /// Default: `4` (one quad of four corners).
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4)))]
     pub min_corners_for_component: usize,
     /// Discard connected quad-mesh components below this size. Default:
     /// `1` (keep all). Set higher to reject isolated noise quads.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
     pub min_quads_per_component: usize,
     /// Optional global grid-direction centers, in radians, interpreted
     /// modulo π. When `Some([θ₀, θ₁])`, a feature is admitted to
     /// Delaunay only if at least one of its informative axes is within
     /// [`Self::cluster_axis_tol_rad`] of one of the centers. When
     /// `None`, the gate is skipped.
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "rad")))]
     pub axis_cluster_centers: Option<[f32; 2]>,
     /// Per-axis admission tolerance against
     /// [`Self::axis_cluster_centers`], in radians. Only consulted when
     /// `axis_cluster_centers.is_some()`. Default: `16° = 0.279`.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "rad")))]
     pub cluster_axis_tol_rad: f32,
 }
 

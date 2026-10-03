@@ -247,6 +247,36 @@ edges and soft-mode runner-up scoring evidence are returned by
 | `render_target_bundle_json(doc)` | `GeneratedTargetBundle` — full `PrintableTargetDocument`: page size, orientation, margin and every spec field |
 | `default_chess_config()`, `default_chessboard_params()`, `default_puzzleboard_params(rows, cols)`, `default_marker_board_params()` | baseline configs |
 
+## JSON Schemas
+
+The package ships a JSON Schema (draft 2020-12) for every config object the
+functions above accept, under `schemas/`, so a schema-driven form or a
+validator can edit and check them. Import them by deep path (the package has no
+`exports` map):
+
+| File | Describes |
+| --- | --- |
+| `schemas/chess_config.json` | the ChESS corner-detector config: `default_chess_config()`, the `chess_cfg` argument, the `chess` field of the params below |
+| `schemas/chessboard_params.json` | `default_chessboard_params()`, the elements of `chessboard_sweep_default()` |
+| `schemas/charuco_params.json` | `default_charuco_params(...)`, the elements of `charuco_sweep_for_board(...)` |
+| `schemas/marker_board_params.json` | `default_marker_board_params()`, the elements of `marker_board_sweep_for_board(...)` |
+| `schemas/marker_board_spec.json` | the `spec` argument of `marker_board_sweep_for_board` |
+| `schemas/puzzleboard_params.json` | `default_puzzleboard_params(...)`, the elements of `puzzleboard_sweep_for_board(...)` |
+| `schemas/printable_target_document.json` | the `doc` argument of `render_target_bundle_json` |
+
+The `detect_*_best` functions take an array of the matching params object, so
+they need no schema of their own. Field descriptions carry the unit in an
+`x-unit` annotation (`px`, `mm`, `rad`, `deg`, `dpi`) and the range the code
+enforces as `minimum` / `maximum` / `exclusiveMinimum`; the ArUco
+`dictionary` is a closed `enum` of the names `list_aruco_dictionaries()`
+returns. A field the detector overwrites (only `scan.border_bits` of the
+ChArUco params, which comes from `board.border_bits`) is marked `readOnly`.
+The schemas also use the non-standard `format` values `float`,
+`double`, `int32`, `uint32` and `uint` that `schemars` emits for Rust numeric
+types, so an Ajv validator in strict mode needs `ajv.addVocabulary(["x-unit"])`
+and those formats declared (or `strict: false`). JSON has no infinity: a knob
+documented as "`+inf` disables" takes a very large number such as `1e30`.
+
 ## Tuning difficult cases
 
 - Always prefer `detect_*_best` over `detect_*` — the 3-config sweep

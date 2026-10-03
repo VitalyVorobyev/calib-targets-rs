@@ -45,6 +45,13 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
 
+      - name: JSON Schemas are up to date
+        # Regenerates schemas/*.json from the Rust config types (default
+        # features, no ml-refiner) and fails on any drift from the committed
+        # copies. Fix with `cargo xtask emit-schemas`.
+        if: matrix.toolchain == 'stable'
+        run: cargo xtask emit-schemas --check
+
       - name: CMake consumer smoke
         if: matrix.toolchain == 'stable'
         run: cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
@@ -198,6 +205,15 @@ jobs:
           test -f demo/pkg/calib_targets_wasm_bg.wasm
           test -f demo/pkg/calib_targets_wasm.d.ts
           ls -lh demo/pkg/calib_targets_wasm_bg.wasm
+
+      - name: Ship the config schemas in the package
+        # Mirrors release-npm.yml: copies schemas/*.json into the package,
+        # appends `schemas` to `files` (no `exports` field) and asserts via
+        # `npm pack --dry-run` that the tarball would contain every schema.
+        run: scripts/package-npm-schemas.sh demo/pkg
+
+      - name: Hand-written TypeScript shapes agree with the schemas
+        run: node crates/calib-targets-wasm/tests/check-schema-keys.mjs
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2

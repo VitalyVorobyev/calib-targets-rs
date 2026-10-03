@@ -1,6 +1,6 @@
 [package]
 name = "projective-grid"
-version = "0.14.1"
+version = "0.14.2"
 edition.workspace = true
 license.workspace = true
 repository.workspace = true
@@ -13,6 +13,9 @@ keywords = ["computer-vision", "geometry", "homography", "grid", "calibration"]
 categories = ["computer-vision", "science", "algorithms"]
 
 [features]
+# Opt-in: derive `schemars::JsonSchema` for the serde-serializable config types
+# so a JSON Schema of the configs can be generated (`cargo xtask emit-schemas`).
+schemars = ["dep:schemars"]
 default = []
 # Opt-in exact stage snapshots and rejection reports. Keeping diagnostics out
 # of the default surface makes the ordinary 1.0 contract small while detector
@@ -24,6 +27,7 @@ diagnostics = []
 tracing = ["dep:tracing"]
 
 [dependencies]
+schemars = { workspace = true, optional = true }
 delaunator = { workspace = true }
 kiddo = { workspace = true }
 nalgebra = { workspace = true }

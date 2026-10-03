@@ -57,6 +57,7 @@ fn default_render_options() -> RenderOptions {
 /// Union of all printable target geometries.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum TargetSpec {
     /// A plain chessboard target.
@@ -252,9 +253,11 @@ impl TargetSpec {
 /// Top-level printable target document (the JSON file on disk).
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PrintableTargetDocument {
     /// JSON schema version of this document.
     #[serde(default = "default_schema_version")]
+    #[cfg_attr(feature = "schemars", schemars(extend("const" = 1)))]
     pub schema_version: u32,
     /// The target geometry to render.
     pub target: TargetSpec,

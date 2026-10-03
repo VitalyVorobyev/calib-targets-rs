@@ -38,20 +38,29 @@ use super::puzzleboard::{default_puzzleboard_dot_diameter_rel, PuzzleBoardTarget
 /// cylinder axis.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PuzzlePoleTargetSpec {
-    /// Pieces around the circumference. Must be a supported period.
+    /// Pieces around the circumference. Must be a supported period: the pair
+    /// `(circumference_squares, start_row)` has to be one of the verified
+    /// periods (`PuzzlePolePeriod`, e.g. `12` pieces).
     pub circumference_squares: u32,
     /// Master row the strip is cut from — the seam.
     pub start_row: u32,
     /// Master column the strip is cut from.
     #[serde(default)]
     pub axial_start_col: u32,
-    /// Pieces along the cylinder axis.
+    /// Pieces along the cylinder axis (`>= 4`; `axial_start_col + axial_squares + 1`
+    /// must not exceed 501).
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4, max = 500)))]
     pub axial_squares: u32,
     /// Side length of one piece in millimeters.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
     pub square_size_mm: f64,
     /// Edge-dot diameter as a fraction of the piece side.
     #[serde(default = "default_puzzleboard_dot_diameter_rel")]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 1.0)))]
     pub dot_diameter_rel: f64,
 }
 

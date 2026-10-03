@@ -7,6 +7,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.2] - 2026-10-03
+
+### Added
+
+- **Optional `schemars` feature.** `TopologicalParams` and `LocalMergeParams`
+  derive `schemars::JsonSchema` behind it, so the detector crates that embed
+  them in their configs can publish a JSON Schema. Off by default; the API and
+  the serde shape are unchanged.
+
 ## [0.14.1] - 2026-09-28
 
 ### Changed

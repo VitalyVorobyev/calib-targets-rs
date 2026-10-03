@@ -21,21 +21,32 @@ pub(crate) fn default_puzzleboard_dot_diameter_rel() -> f64 {
 /// `(origin_row, origin_col)`.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PuzzleBoardTargetSpec {
     /// Number of board squares vertically.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4, max = 501)))]
     pub rows: u32,
     /// Number of board squares horizontally.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4, max = 501)))]
     pub cols: u32,
     /// Side length of one square in millimeters.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
     pub square_size_mm: f64,
     /// Row offset into the 501×501 master pattern the board is cut from.
+    /// `origin_row + rows` must not exceed 501.
     #[serde(default)]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 500)))]
     pub origin_row: u32,
     /// Column offset into the 501×501 master pattern the board is cut from.
+    /// `origin_col + cols` must not exceed 501.
     #[serde(default)]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 500)))]
     pub origin_col: u32,
     /// Edge-dot diameter as a fraction of the square side.
     #[serde(default = "default_puzzleboard_dot_diameter_rel")]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 1.0)))]
     pub dot_diameter_rel: f64,
 }
 

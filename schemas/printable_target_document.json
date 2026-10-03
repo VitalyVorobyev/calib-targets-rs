@@ -1,0 +1,605 @@
+{
+  "$defs": {
+    "CharucoTargetSpec": {
+      "description": "Printable ChArUco target.",
+      "properties": {
+        "border_bits": {
+          "default": 1,
+          "description": "Marker border width in cells.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cols": {
+          "description": "Number of board squares horizontally.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "dictionary": {
+          "$ref": "#/$defs/Dictionary",
+          "description": "The ArUco dictionary the markers are drawn from."
+        },
+        "inner_square_rel": {
+          "description": "White inset square drawn centred inside every plain black checker\nsquare (never inside an ArUco marker's bit cells), as a fraction of\nthe square side, in `[0.0, 1.0)`. `None` (the default) and\n`Some(0.0)` both mean no inset. Does not move any corner\nintersection — see `TargetSpec::resolved_points`.",
+          "exclusiveMaximum": 1.0,
+          "format": "double",
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "marker_layout": {
+          "$ref": "#/$defs/MarkerLayout",
+          "default": "opencv_charuco",
+          "description": "How markers are placed and numbered on the board."
+        },
+        "marker_size_rel": {
+          "description": "Marker side length as a fraction of the square side, in `(0, 1]`.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "maximum": 1.0,
+          "type": "number"
+        },
+        "rows": {
+          "description": "Number of board squares vertically.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "square_size_mm": {
+          "description": "Side length of one square in millimeters.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": "number",
+          "x-unit": "mm"
+        }
+      },
+      "required": [
+        "rows",
+        "cols",
+        "square_size_mm",
+        "marker_size_rel",
+        "dictionary"
+      ],
+      "type": "object"
+    },
+    "ChessboardTargetSpec": {
+      "description": "Printable chessboard target.\n\n`inner_rows × inner_cols` refers to the number of *inner corner\nintersections* (not squares).",
+      "properties": {
+        "inner_cols": {
+          "description": "Number of inner corner-intersection columns.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "inner_rows": {
+          "description": "Number of inner corner-intersection rows.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "inner_square_rel": {
+          "description": "White inset square drawn centred inside every black square, as a\nfraction of the square side, in `[0.0, 1.0)`. `None` (the default)\nand `Some(0.0)` both mean no inset; the two are equivalent because\ndownstream callers always send an explicit number with `0` meaning\n\"off\". Does not move any corner intersection — see\n`TargetSpec::resolved_points`.",
+          "exclusiveMaximum": 1.0,
+          "format": "double",
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "square_size_mm": {
+          "description": "Side length of one square in millimeters.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": "number",
+          "x-unit": "mm"
+        }
+      },
+      "required": [
+        "inner_rows",
+        "inner_cols",
+        "square_size_mm"
+      ],
+      "type": "object"
+    },
+    "CirclePolarity": {
+      "description": "Whether the circle marker prints as white-on-black or black-on-white.\n\n# Adding a variant\n\n`#[non_exhaustive]` forces external matchers to use a `_` arm. When you\nadd a variant you MUST also update every adapter site in lockstep\n(guarded by `circle_polarity_variant_guard` in this file's tests):\n- `crates/calib-targets-print/src/render.rs` (SVG/PNG renderer)",
+      "enum": [
+        "white",
+        "black"
+      ],
+      "oneOf": [
+        {
+          "const": "white",
+          "description": "A white (bright) disk on a dark cell.",
+          "type": "string"
+        },
+        {
+          "const": "black",
+          "description": "A black (dark) disk on a light cell.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "Dictionary": {
+      "description": "Name of a built-in ArUco / AprilTag marker dictionary.",
+      "enum": [
+        "DICT_4X4_100",
+        "DICT_4X4_1000",
+        "DICT_4X4_250",
+        "DICT_4X4_50",
+        "DICT_5X5_100",
+        "DICT_5X5_1000",
+        "DICT_5X5_250",
+        "DICT_5X5_50",
+        "DICT_6X6_100",
+        "DICT_6X6_1000",
+        "DICT_6X6_250",
+        "DICT_6X6_50",
+        "DICT_7X7_100",
+        "DICT_7X7_1000",
+        "DICT_7X7_250",
+        "DICT_7X7_50",
+        "DICT_APRILTAG_16h5",
+        "DICT_APRILTAG_25h9",
+        "DICT_APRILTAG_36h10",
+        "DICT_APRILTAG_36h11",
+        "DICT_ARUCO_MIP_36h12",
+        "DICT_ARUCO_ORIGINAL"
+      ],
+      "type": "string"
+    },
+    "MarkerBoardTargetSpec": {
+      "description": "Printable marker-board (checkerboard + coloured circle overlay) target.",
+      "properties": {
+        "circle_diameter_rel": {
+          "default": 0.5,
+          "description": "Circle diameter as a fraction of the square side.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "maximum": 1.0,
+          "type": "number"
+        },
+        "circles": {
+          "description": "The three marker circles overlaid on the board.",
+          "items": {
+            "$ref": "#/$defs/MarkerCircleSpec"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "inner_cols": {
+          "description": "Number of inner corner-intersection columns.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "inner_rows": {
+          "description": "Number of inner corner-intersection rows.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "inner_square_rel": {
+          "description": "White inset square drawn centred inside every black checkerboard\nsquare, as a fraction of the square side, in `[0.0, 1.0)`. `None`\n(the default) and `Some(0.0)` both mean no inset. Does not move any\ncorner intersection — see `TargetSpec::resolved_points`.",
+          "exclusiveMaximum": 1.0,
+          "format": "double",
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "square_size_mm": {
+          "description": "Side length of one square in millimeters.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": "number",
+          "x-unit": "mm"
+        }
+      },
+      "required": [
+        "inner_rows",
+        "inner_cols",
+        "square_size_mm",
+        "circles"
+      ],
+      "type": "object"
+    },
+    "MarkerCircleSpec": {
+      "description": "One circle in the printable marker board layout.",
+      "properties": {
+        "i": {
+          "description": "Cell column index of the circle.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "j": {
+          "description": "Cell row index of the circle.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "polarity": {
+          "$ref": "#/$defs/CirclePolarity",
+          "description": "Whether the circle is a white or black disk."
+        }
+      },
+      "required": [
+        "i",
+        "j",
+        "polarity"
+      ],
+      "type": "object"
+    },
+    "MarkerLayout": {
+      "description": "Marker placement scheme for the board.",
+      "enum": [
+        "opencv_charuco"
+      ],
+      "oneOf": [
+        {
+          "const": "opencv_charuco",
+          "description": "OpenCV-style ChArUco layout:\n- markers are placed on white squares only (assuming top-left square is black),\n- marker IDs are assigned sequentially in row-major order over those squares.\n\nThis is OpenCV's **modern** pattern — its default since 4.6 — so marker\n0 sits at column 1 of the top row. It is *not* `setLegacyPattern(true)`,\nwhich inverts the parity and places a white square, carrying marker 0,\nat `(0, 0)`. Only the modern pattern is implemented; a board printed\nwith the legacy parity will not match these IDs.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "PageOrientation": {
+      "description": "Page orientation for printable targets.",
+      "enum": [
+        "portrait",
+        "landscape"
+      ],
+      "oneOf": [
+        {
+          "const": "portrait",
+          "description": "Tall orientation: the page's longer side runs vertically.",
+          "type": "string"
+        },
+        {
+          "const": "landscape",
+          "description": "Wide orientation: the page's longer side runs horizontally.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "PageSize": {
+      "description": "Page size for printable targets.",
+      "oneOf": [
+        {
+          "description": "ISO A4 paper: 210 × 297 mm in portrait.",
+          "properties": {
+            "kind": {
+              "const": "a4",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "US Letter paper: 8.5 × 11 inches in portrait.",
+          "properties": {
+            "kind": {
+              "const": "letter",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "description": "An explicit page size given in millimeters (portrait dimensions).",
+          "properties": {
+            "height_mm": {
+              "description": "Page height in millimeters (`> 0`).",
+              "exclusiveMinimum": 0.0,
+              "format": "double",
+              "type": "number",
+              "x-unit": "mm"
+            },
+            "kind": {
+              "const": "custom",
+              "type": "string"
+            },
+            "width_mm": {
+              "description": "Page width in millimeters (`> 0`).",
+              "exclusiveMinimum": 0.0,
+              "format": "double",
+              "type": "number",
+              "x-unit": "mm"
+            }
+          },
+          "required": [
+            "kind",
+            "width_mm",
+            "height_mm"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "PageSpec": {
+      "description": "Combined page-size + orientation + margin specification.",
+      "properties": {
+        "margin_mm": {
+          "default": 10.0,
+          "description": "Uniform margin in millimeters subtracted from each edge of the page.",
+          "format": "double",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "mm"
+        },
+        "orientation": {
+          "$ref": "#/$defs/PageOrientation",
+          "default": "portrait",
+          "description": "Page orientation applied on top of `PageSpec::size`."
+        },
+        "size": {
+          "$ref": "#/$defs/PageSize",
+          "default": {
+            "kind": "a4"
+          },
+          "description": "Physical page size (A4, Letter, or a custom millimeter size)."
+        }
+      },
+      "type": "object"
+    },
+    "PuzzleBoardTargetSpec": {
+      "description": "Printable PuzzleBoard target.\n\nA PuzzleBoard is a standard checkerboard of `rows × cols` squares with a\nsmall colour-coded dot at every interior edge midpoint. The dots encode\none bit each (black = 0, white = 1) via the two cyclic sub-perfect maps\nshipped in `calib-targets-puzzleboard`. The printable board is a\ncontiguous sub-rectangle of the 501×501 master pattern anchored at\n`(origin_row, origin_col)`.",
+      "properties": {
+        "cols": {
+          "description": "Number of board squares horizontally.",
+          "format": "uint32",
+          "maximum": 501,
+          "minimum": 4,
+          "type": "integer"
+        },
+        "dot_diameter_rel": {
+          "default": 0.3333333333333333,
+          "description": "Edge-dot diameter as a fraction of the square side.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "maximum": 1.0,
+          "type": "number"
+        },
+        "origin_col": {
+          "default": 0,
+          "description": "Column offset into the 501×501 master pattern the board is cut from.\n`origin_col + cols` must not exceed 501.",
+          "format": "uint32",
+          "maximum": 500,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "origin_row": {
+          "default": 0,
+          "description": "Row offset into the 501×501 master pattern the board is cut from.\n`origin_row + rows` must not exceed 501.",
+          "format": "uint32",
+          "maximum": 500,
+          "minimum": 0,
+          "type": "integer"
+        },
+        "rows": {
+          "description": "Number of board squares vertically.",
+          "format": "uint32",
+          "maximum": 501,
+          "minimum": 4,
+          "type": "integer"
+        },
+        "square_size_mm": {
+          "description": "Side length of one square in millimeters.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": "number",
+          "x-unit": "mm"
+        }
+      },
+      "required": [
+        "rows",
+        "cols",
+        "square_size_mm"
+      ],
+      "type": "object"
+    },
+    "PuzzlePoleTargetSpec": {
+      "description": "Printable PuzzlePole wrap strip.\n\nA PuzzlePole is a PuzzleBoard strip wrapped around a cylinder. The strip is\ncut from the master pattern along a **circumference period** — one of the\nfew row spacings at which the pattern genuinely repeats — so that its two\nends meet without creating any local code the master does not already\ncontain. See `calib_targets_puzzleboard::pole` for the construction.\n\n# Assembling it\n\nThe strip is printed `circumference_squares + 2` pieces tall, two more than\nwraps. Trim it through the **mid-line of the first and last pieces** — the\nline through those pieces' vertical-edge dots — leaving one piece of spare\nmaterial. Wrap it around the cylinder and lay that last piece exactly over\nthe first.\n\nThe overlap is invisible only because the seam repeats **two** consecutive\nrows of the master rather than one: the overlapping band has to reproduce\nthe band it covers, and two rows is exactly what that costs. Trimming\nmid-piece rather than at a piece boundary is what keeps every edge dot\nwhole — a dot sits *on* the joint, so cutting there would halve it.\n\n# Printing\n\nPrint at 100 % scale — the pole's diameter is fixed by\n`circumference_squares * square_size_mm / pi`, and a scaled print silently\nchanges it. The strip runs *around* the cylinder down the page and *along*\nthe cylinder across it: page **y** is the circumference, page **x** the\ncylinder axis.",
+      "properties": {
+        "axial_squares": {
+          "description": "Pieces along the cylinder axis (`>= 4`; `axial_start_col + axial_squares + 1`\nmust not exceed 501).",
+          "format": "uint32",
+          "maximum": 500,
+          "minimum": 4,
+          "type": "integer"
+        },
+        "axial_start_col": {
+          "default": 0,
+          "description": "Master column the strip is cut from.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "circumference_squares": {
+          "description": "Pieces around the circumference. Must be a supported period: the pair\n`(circumference_squares, start_row)` has to be one of the verified\nperiods (`PuzzlePolePeriod`, e.g. `12` pieces).",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "dot_diameter_rel": {
+          "default": 0.3333333333333333,
+          "description": "Edge-dot diameter as a fraction of the piece side.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "maximum": 1.0,
+          "type": "number"
+        },
+        "square_size_mm": {
+          "description": "Side length of one piece in millimeters.",
+          "exclusiveMinimum": 0.0,
+          "format": "double",
+          "type": "number",
+          "x-unit": "mm"
+        },
+        "start_row": {
+          "description": "Master row the strip is cut from — the seam.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "circumference_squares",
+        "start_row",
+        "axial_squares",
+        "square_size_mm"
+      ],
+      "type": "object"
+    },
+    "RenderOptions": {
+      "description": "Rasterization / annotation options.",
+      "properties": {
+        "debug_annotations": {
+          "default": false,
+          "description": "When `true`, overlay diagnostic annotations (coordinate labels, guides)\non the rendered target.",
+          "type": "boolean"
+        },
+        "png_dpi": {
+          "default": 300,
+          "description": "PNG rasterization resolution in dots per inch.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer",
+          "x-unit": "dpi"
+        }
+      },
+      "type": "object"
+    },
+    "TargetSpec": {
+      "description": "Union of all printable target geometries.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ChessboardTargetSpec",
+          "description": "A plain chessboard target.",
+          "properties": {
+            "kind": {
+              "const": "chessboard",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/CharucoTargetSpec",
+          "description": "A ChArUco board target.",
+          "properties": {
+            "kind": {
+              "const": "charuco",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/MarkerBoardTargetSpec",
+          "description": "A checkerboard marker board target.",
+          "properties": {
+            "kind": {
+              "const": "marker_board",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/PuzzleBoardTargetSpec",
+          "description": "A PuzzleBoard self-identifying target.",
+          "properties": {
+            "kind": {
+              "const": "puzzle_board",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        },
+        {
+          "$ref": "#/$defs/PuzzlePoleTargetSpec",
+          "description": "A PuzzlePole cylindrical target, as a flat wrap strip.\n\nThe wire tag is spelled to match `TargetSpec::kind_name`. Its\nPuzzleBoard sibling serializes as `puzzle_board` while naming itself\n`puzzleboard`, and the Python CLI carries a special case to bridge the\ntwo; there is no reason to inherit that.",
+          "properties": {
+            "kind": {
+              "const": "puzzlepole",
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Top-level printable target document (the JSON file on disk).",
+  "properties": {
+    "page": {
+      "$ref": "#/$defs/PageSpec",
+      "default": {
+        "margin_mm": 10.0,
+        "orientation": "portrait",
+        "size": {
+          "kind": "a4"
+        }
+      },
+      "description": "Page size and orientation the target is placed on."
+    },
+    "render": {
+      "$ref": "#/$defs/RenderOptions",
+      "default": {
+        "debug_annotations": false,
+        "png_dpi": 300
+      },
+      "description": "Rendering options (margins, labels, etc.)."
+    },
+    "schema_version": {
+      "const": 1,
+      "default": 1,
+      "description": "JSON schema version of this document.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "target": {
+      "$ref": "#/$defs/TargetSpec",
+      "description": "The target geometry to render."
+    }
+  },
+  "required": [
+    "target"
+  ],
+  "title": "PrintableTargetDocument",
+  "type": "object"
+}

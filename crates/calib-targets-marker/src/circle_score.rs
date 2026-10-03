@@ -14,6 +14,7 @@ use crate::coords::CellCoords;
 /// - `crates/calib-targets-print/src/render.rs` (SVG/PNG renderer)
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum CirclePolarity {
     /// A white (bright) disk on a dark cell.
@@ -31,19 +32,28 @@ pub enum CirclePolarity {
 /// at [`Default`].
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CircleScoreParams {
     /// Canonical patch size (square), e.g. 64
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub patch_size: usize,
     /// How thick the ring is relative to circle radius (0.3..0.6)
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub ring_thickness_frac: f32,
     /// Ring radius multiplier relative to circle radius (e.g. 1.6)
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub ring_radius_mul: f32,
     /// Minimum absolute contrast (0..255 scale) to accept
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 255.0)))]
     pub min_contrast: f32,
     /// Samples on disk perimeter / ring perimeter (per radius)
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
     pub samples: usize,
     /// Small local search around center in patch pixels (0..3 is enough)
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub center_search_px: i32,
 }
 

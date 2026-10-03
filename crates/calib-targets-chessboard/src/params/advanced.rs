@@ -51,6 +51,7 @@ use serde::{Deserialize, Serialize};
 /// value (see [`ChessboardParams::effective_tuning`](super::ChessboardParams::effective_tuning)).
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct ChessboardAdvancedTuning {
     /// Tuning knobs for the topological (Delaunay + axis-driven cell test)
@@ -63,6 +64,7 @@ pub struct ChessboardAdvancedTuning {
 
     // --- `cluster_axes` stage -----------------------------------------------
     /// Number of histogram bins on `[0, π)` for axis-direction clustering.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4)))]
     pub num_bins: usize,
     /// Max 2-means refinement iterations over axis votes.
     pub max_iters_2means: usize,
@@ -72,6 +74,8 @@ pub struct ChessboardAdvancedTuning {
     /// axis estimates get proportional slack — see [`cluster_sigma_k`].
     ///
     /// [`cluster_sigma_k`]: ChessboardAdvancedTuning::cluster_sigma_k
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "deg")))]
     pub cluster_tol_deg: f32,
     /// Multiplier on the per-corner axis sigma added to [`cluster_tol_deg`]
     /// when admitting a corner. Default `0.0`: sigma-aware tolerance is
@@ -80,35 +84,48 @@ pub struct ChessboardAdvancedTuning {
     /// but whose ChESS estimate fell outside under noise.
     ///
     /// [`cluster_tol_deg`]: ChessboardAdvancedTuning::cluster_tol_deg
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub cluster_sigma_k: f32,
     /// Minimal angular separation (degrees) between the two peaks. Guards
     /// against seed-peak collisions; true grid axes are `~90°` apart.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "deg")))]
     pub peak_min_separation_deg: f32,
     /// Minimal fraction of total axis-vote weight required for a peak to be
     /// considered.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 1.0)))]
     pub min_peak_weight_fraction: f32,
 
     // --- recall boosters (interior fill + line extrapolation) ----------------
     /// Candidate-search radius (fraction of `s`) around a predicted `(i, j)`
     /// when the booster attaches a corner to an empty cell.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub attach_search_rel: f32,
     /// Axis alignment tolerance at attachment time (degrees).
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "deg")))]
     pub attach_axis_tol_deg: f32,
     /// Ambiguity factor: if the second-nearest candidate is within
     /// `factor × nearest_distance`, the attachment is skipped.
     pub attach_ambiguity_factor: f32,
     /// Edge-length window (fraction of `s`) enforced when admitting edges
     /// from a newly-attached corner to its labelled neighbours.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub step_tol: f32,
     /// Edge axis-direction tolerance (degrees) enforced at admission time.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "deg")))]
     pub edge_axis_tol_deg: f32,
     /// Enable the weak-cluster rescue booster: re-admit corners that
     /// clustered only within the looser `weak_cluster_tol_deg`.
     pub enable_weak_cluster_rescue: bool,
     /// Cluster tolerance for "weakly clustered" corners eligible as recall-
     /// booster candidates. Must be ≥ `cluster_tol_deg`.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "deg")))]
     pub weak_cluster_tol_deg: f32,
     /// Cap on the outer booster loop.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
     pub max_booster_iters: u32,
 
     /// Enable a final, geometry-only rescue for strong corners whose measured
@@ -124,6 +141,7 @@ pub struct ChessboardAdvancedTuning {
     /// Maximum geometry-only prediction residual and candidate-search radius,
     /// as a fraction of the local cell size.
     #[serde(default = "default_geometry_recovery_tol_rel")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub geometry_recovery_tol_rel: f32,
 
     // --- mandatory final geometry check -------------------------------------
@@ -135,6 +153,7 @@ pub struct ChessboardAdvancedTuning {
     ///
     /// Default `0.45` of cell_size. A tight tolerance here produces
     /// catastrophic recall regressions on heavy-radial-distortion boards.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub geometry_check_line_tol_rel: f32,
     /// Local-H residual tolerance (fraction of cell_size) for the MANDATORY
     /// final geometry check. A diagonal mislabel shifts a corner by ~1.4 cell
@@ -142,9 +161,11 @@ pub struct ChessboardAdvancedTuning {
     /// while leaving the legitimate perspective-distorted corners alone.
     ///
     /// Default `0.6` of cell_size.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub geometry_check_local_h_tol_rel: f32,
     /// Minimum members required to fit a line / column for the geometry
     /// check's collinearity test.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub line_min_members: usize,
     /// When `true`, the geometry check's tolerances are multiplied by a
     /// per-corner local step (computed from labelled grid neighbours) instead
