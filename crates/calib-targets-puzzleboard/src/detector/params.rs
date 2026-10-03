@@ -22,6 +22,7 @@ use crate::detector::error::PuzzleBoardDetectError;
 ///   cameras each seeing a different fragment.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PuzzleBoardSearchMode {
     /// Scan every `(D4, master_row, master_col)` in the 501 × 501 master.
@@ -70,6 +71,7 @@ pub enum PuzzleBoardSearchMode {
 /// far more consistently than hard-weighted scoring.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PuzzleBoardScoringMode {
     /// Hard bit-match count with confidence-weighted tie-break. Kept for
@@ -105,6 +107,7 @@ pub enum PuzzleBoardScoringMode {
 /// fragment simply fails to decode (a miss), which is the safe direction.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PuzzleBoardSymmetryMode {
     /// Search the four 90° rotations only. Default.
@@ -134,6 +137,7 @@ impl PuzzleBoardSymmetryMode {
 /// Tuning parameters for the decoding stage.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PuzzleBoardDecodeConfig {
     /// Minimum fragment span, in **corners** per side, required to attempt a
@@ -183,12 +187,14 @@ pub struct PuzzleBoardDecodeConfig {
     /// dot counts as its own bit and this reverts to a raw-dot rate, which is
     /// strictly stricter.
     #[serde(default = "default_max_bit_error_rate")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 1.0)))]
     pub max_bit_error_rate: f32,
     /// If true, attempt to decode each connected component independently.
     #[serde(default = "default_search_all_components")]
     pub search_all_components: bool,
     /// Sample radius for edge-midpoint disk (fraction of the edge length).
     #[serde(default = "default_sample_radius_rel")]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub sample_radius_rel: f32,
     /// Master-origin search strategy. Defaults to
     /// [`PuzzleBoardSearchMode::Full`]; set to
@@ -234,6 +240,7 @@ pub struct PuzzleBoardDecodeConfig {
 /// against a specific dataset with measured evidence.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PuzzleBoardAdvancedTuning {
     /// Soft-LL logit slope: `logit = bit_likelihood_slope × confidence` at a
@@ -254,6 +261,7 @@ pub struct PuzzleBoardAdvancedTuning {
     /// the other gates use — see
     /// [`edge_consensus`](Self::edge_consensus).
     #[serde(default = "default_alignment_min_margin")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub alignment_min_margin: f32,
     /// Collapse the period-3 replicas to one entry per distinct master bit
     /// before the accept/reject gates. Default `true`.

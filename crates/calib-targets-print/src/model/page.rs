@@ -17,6 +17,7 @@ pub(super) fn default_png_dpi() -> u32 {
 /// Page orientation for printable targets.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum PageOrientation {
     /// Tall orientation: the page's longer side runs vertically.
@@ -29,6 +30,7 @@ pub enum PageOrientation {
 /// Page size for printable targets.
 #[non_exhaustive]
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PageSize {
     /// ISO A4 paper: 210 × 297 mm in portrait.
@@ -38,9 +40,13 @@ pub enum PageSize {
     Letter,
     /// An explicit page size given in millimeters (portrait dimensions).
     Custom {
-        /// Page width in millimeters.
+        /// Page width in millimeters (`> 0`).
+        #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+        #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
         width_mm: f64,
-        /// Page height in millimeters.
+        /// Page height in millimeters (`> 0`).
+        #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+        #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
         height_mm: f64,
     },
 }
@@ -71,6 +77,7 @@ impl PageSize {
 /// Combined page-size + orientation + margin specification.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PageSpec {
     /// Physical page size (A4, Letter, or a custom millimeter size).
     #[serde(default)]
@@ -80,6 +87,8 @@ pub struct PageSpec {
     pub orientation: PageOrientation,
     /// Uniform margin in millimeters subtracted from each edge of the page.
     #[serde(default = "default_margin_mm")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
     pub margin_mm: f64,
 }
 
@@ -142,6 +151,7 @@ impl PageSpec {
 /// Rasterization / annotation options.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct RenderOptions {
     /// When `true`, overlay diagnostic annotations (coordinate labels, guides)
     /// on the rendered target.
@@ -149,6 +159,8 @@ pub struct RenderOptions {
     pub debug_annotations: bool,
     /// PNG rasterization resolution in dots per inch.
     #[serde(default = "default_png_dpi")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "dpi")))]
     pub png_dpi: u32,
 }
 

@@ -62,14 +62,17 @@ const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
 
 /// Tuning knobs for [`merge_components_local`].
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[non_exhaustive]
 pub struct LocalMergeParams {
     /// Position tolerance for accepting two corners as the same physical
     /// point, expressed as a fraction of the mean per-component cell
     /// size in pixels. Default: `0.20`.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub position_tol_rel: f32,
     /// Cell-size agreement tolerance: `|s_p - s_q| / max(s_p, s_q)` must
     /// be ≤ this value to even attempt a merge. Default: `0.20`.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub cell_size_ratio_tol: f32,
     /// Minimum number of overlapping labels (after candidate alignment)
     /// for a merge to be accepted. Default: `2`.

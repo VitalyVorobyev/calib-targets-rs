@@ -13,6 +13,7 @@ pub(super) fn default_circle_diameter_rel() -> f64 {
 /// One circle in the printable marker board layout.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MarkerCircleSpec {
     /// Cell column index of the circle.
     pub i: u32,
@@ -44,23 +45,32 @@ impl MarkerCircleSpec {
 /// Printable marker-board (checkerboard + coloured circle overlay) target.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MarkerBoardTargetSpec {
     /// Number of inner corner-intersection rows.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub inner_rows: u32,
     /// Number of inner corner-intersection columns.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub inner_cols: u32,
     /// Side length of one square in millimeters.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
     pub square_size_mm: f64,
     /// The three marker circles overlaid on the board.
     pub circles: [MarkerCircleSpec; 3],
     /// Circle diameter as a fraction of the square side.
     #[serde(default = "default_circle_diameter_rel")]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 1.0)))]
     pub circle_diameter_rel: f64,
     /// White inset square drawn centred inside every black checkerboard
     /// square, as a fraction of the square side, in `[0.0, 1.0)`. `None`
     /// (the default) and `Some(0.0)` both mean no inset. Does not move any
     /// corner intersection — see [`crate::TargetSpec::resolved_points`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMaximum" = 1.0)))]
     pub inner_square_rel: Option<f64>,
 }
 

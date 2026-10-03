@@ -13,6 +13,7 @@ use crate::coords::{CellCoords, CellOffset};
 /// One expected marker circle on the board.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MarkerCircleSpec {
     /// Expected cell coordinate (top-left corner indices).
     pub cell: CellCoords,
@@ -30,6 +31,7 @@ impl MarkerCircleSpec {
 /// Fixed marker board layout: chessboard size plus 3 circle markers.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct MarkerBoardSpec {
     /// Number of inner-corner rows of the checkerboard.
     pub rows: u32,
@@ -39,6 +41,7 @@ pub struct MarkerBoardSpec {
     ///
     /// When provided, detections will populate `LabeledCorner.target_position`.
     #[serde(default)]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub cell_size: Option<f32>,
     /// Expected circle markers.
     pub circles: [MarkerCircleSpec; 3],
@@ -50,6 +53,7 @@ pub struct MarkerBoardSpec {
     /// [`CircleScoreParams`] could only ever disagree with what was printed.
     /// Matches `circle_diameter_rel` on the printable spec.
     #[serde(default = "default_circle_diameter_rel")]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub circle_diameter_rel: f32,
 }
 
@@ -121,6 +125,7 @@ impl Default for MarkerBoardSpec {
 /// Circle matching settings.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CircleMatchParams {
     /// Keep only the top-N candidates per polarity, ranked by contrast,
@@ -150,6 +155,7 @@ impl Default for CircleMatchParams {
 /// Parameters for marker-board detection.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct MarkerBoardParams {
     /// The fixed marker-board layout to detect.

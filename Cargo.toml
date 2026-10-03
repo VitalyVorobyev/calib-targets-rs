@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "xtask",
     "crates/calib-targets-bench",
     "crates/calib-targets-studio",
     "crates/calib-targets-ffi",
@@ -32,7 +33,7 @@ default-members = [
 resolver = "2"
 
 [workspace.package]
-version = "0.15.3"
+version = "0.15.4"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/VitalyVorobyev/calib-targets-rs"
@@ -58,13 +59,13 @@ calib-targets-chessboard = { version = "0.15", path = "crates/calib-targets-ches
 calib-targets-core = { version = "0.15", path = "crates/calib-targets-core" }
 calib-targets-marker = { version = "0.15", path = "crates/calib-targets-marker" }
 calib-targets-puzzleboard = { version = "0.15", path = "crates/calib-targets-puzzleboard" }
-projective-grid = { version = "0.14.1", path = "crates/projective-grid" }
+projective-grid = { version = "0.14.2", path = "crates/projective-grid" }
 calib-targets-print = { version = "0.15", path = "crates/calib-targets-print" }
 approx = "0.5"
 assert_cmd = "2"
 axum = "0.8"
 cbindgen = "0.29"
-chess-corners = "1.2"
+chess-corners = "1.3"
 clap = "4.5"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 delaunator = "1.0"
@@ -104,6 +105,7 @@ png = "0.18"
 predicates = "3"
 pyo3 = "0.29"
 pyo3-build-config = "0.29"
+schemars = { version = "1", features = ["derive"] }
 serde = "1"
 serde_json = "1"
 tar = "0.4"

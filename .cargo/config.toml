@@ -1,4 +1,5 @@
 [alias]
+xtask         = "run --package xtask --"
 bench-run     = "run --release -p calib-targets-bench --bin bench --"
 bench-check   = "run --release -p calib-targets-bench --bin bench -- check"
 bench-bless   = "run --release -p calib-targets-bench --bin bench -- bless"

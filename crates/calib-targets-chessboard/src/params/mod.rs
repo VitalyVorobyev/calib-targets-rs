@@ -95,6 +95,17 @@ impl std::error::Error for ChessboardParamsError {}
 /// ```
 #[non_exhaustive]
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[cfg_attr(
+    feature = "schemars",
+    schemars(
+        description = "Chessboard detector configuration: a stable core of three knobs \
+                       (`min_labeled_corners`, `max_components`, `min_corner_strength`) \
+                       plus an opt-in, unstable `advanced` block of per-stage tuning knobs \
+                       that is not covered by semver. Omit `advanced` to keep the \
+                       precision-by-construction defaults."
+    )
+)]
 #[serde(deny_unknown_fields)]
 pub struct ChessboardParams {
     /// Minimum labelled corners for a
@@ -132,6 +143,7 @@ pub struct ChessboardParams {
     ///
     /// Part of the stable configuration core. A **required** key in a
     /// serialized config (top-level `min_corner_strength`).
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub min_corner_strength: f32,
 
     /// Opt-in, **unstable** per-stage tuning knobs. Leave unset (`None`)

@@ -9,6 +9,7 @@ use std::path::Path;
 /// Marker placement scheme for the board.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum MarkerLayout {
     /// OpenCV-style ChArUco layout:
@@ -30,14 +31,20 @@ pub enum MarkerLayout {
 /// `rows`/`cols` are **square counts** (not inner corner counts).
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct CharucoBoardSpec {
     /// Number of board squares vertically.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub rows: u32,
     /// Number of board squares horizontally.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub cols: u32,
     /// Side length of one square, in the caller's world units (e.g. mm).
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub cell_size: f32,
     /// Marker side length as a fraction of the square side, in `(0, 1]`.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 1.0)))]
     pub marker_size_rel: f32,
     /// The ArUco dictionary the board's markers are drawn from.
     pub dictionary: Dictionary,
@@ -54,6 +61,7 @@ pub struct CharucoBoardSpec {
     /// `calib-targets-print` round-trips it through
     /// [`CharucoBoardSpec`] in both directions.
     #[serde(default = "default_border_bits")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 1)))]
     pub border_bits: usize,
 }
 

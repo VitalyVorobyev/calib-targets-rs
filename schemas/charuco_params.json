@@ -1,0 +1,1055 @@
+{
+  "$defs": {
+    "CenterOfMassConfig": {
+      "description": "Configuration for the `CenterOfMassRefiner`.\n\nControls the size of the weighted-centroid window. The centroid is\ncomputed over a `(2·radius+1)²` patch on the ChESS response map\ncentered at the rounded seed position.",
+      "properties": {
+        "radius": {
+          "default": 2,
+          "description": "Half-width of the centroid window, in response-map pixels (integer\n`>= 0`; the window is `(2·radius+1)²`). Default `2` (a 5×5 window);\nlarger values smooth single-pixel noise but may merge energy from\nnearby corners.\n\nAdvanced tuning. The default is appropriate for most scenes.",
+          "format": "int32",
+          "minimum": 0,
+          "type": "integer",
+          "x-unit": "px"
+        }
+      },
+      "type": "object"
+    },
+    "CharucoAdvancedTuning": {
+      "additionalProperties": false,
+      "description": "Advanced, unstable tuning knobs for the ChArUco detector.\n\nThese knobs govern the soft-bit log-likelihood scoring and the\nhypothesis-acceptance margin inside `CharucoDetector`'s\nboard-level matcher, plus the grid-smoothness / marker-constrained\ncorner-validation gates and the secondary-component inlier floor. They\nare split out of `CharucoParams` because they are\nimplementation-tuning rather than the small stable configuration core a\ncalibration consumer has a basis to set.\n\n**Unstable:** every field here is **NOT covered by semver** and may be\nretuned, retyped, or removed between minor versions as the detector\nevolves. Leave the whole struct at `Default` unless you are tuning\nagainst a specific dataset with measured evidence.",
+      "properties": {
+        "alignment_min_margin": {
+          "default": 0.05,
+          "description": "Minimum `(best − runner-up) / |best|` margin required for the\nboard-level matcher to accept a hypothesis. Below this, detection\nis rejected rather than mislabelled.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "bit_likelihood_slope": {
+          "default": 36.0,
+          "description": "Logistic slope κ used in the board-level matcher's soft-bit\nlog-likelihood. Larger = more confident per bit. The default `36`\nsits in the saturated regime where the outcome stops changing with the\nslope; a much smaller slope compresses the per-bit logit and lets a\nrunner-up board hypothesis nearly tie the best one.",
+          "format": "float",
+          "type": "number"
+        },
+        "cell_weight_border_threshold": {
+          "default": 0.5,
+          "description": "Border-black fraction threshold below which a cell's weight is\nattenuated linearly toward 0 in the board-level score.",
+          "format": "float",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "corner_validation_threshold_rel": {
+          "default": 0.08,
+          "description": "Relative threshold for marker-constrained corner validation.\n\nA detected ChArUco corner is considered a false corner if its pixel\nposition deviates from the marker-predicted seed by more than\n`corner_validation_threshold_rel * px_per_square` pixels.\n\nSet to `f32::INFINITY` to disable validation entirely (JSON has no\ninfinity: pass a very large finite value such as `1e30` instead).\nTypical value: `0.08` (8 % of a board square side, ~5 px at 60 px/sq).",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "grid_smoothness_threshold_rel": {
+          "default": 0.05,
+          "description": "Relative threshold for the local grid-smoothness pre-filter.\n\nEach grid corner's position is predicted from its immediate neighbors\nvia midpoint averaging. If the actual position deviates by more than\n`grid_smoothness_threshold_rel * px_per_square` pixels, the corner is\nre-detected locally or removed.\n\nSet to `f32::INFINITY` to disable (JSON has no infinity: pass a very\nlarge finite value such as `1e30` instead).\nDefault: `0.05` (3 px at 60 px/sq).",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "min_secondary_marker_inliers": {
+          "default": 1,
+          "description": "Minimum marker inliers for secondary (non-largest) components.\n\nLower than `CharucoParams::min_marker_inliers` because even a few\nmarkers suffice to confirm alignment for a small grid fragment.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "per_bit_floor": {
+          "default": -6.0,
+          "description": "Clip floor applied to each per-bit log-likelihood term before\nsumming across bits, so a single wildly-wrong bit cannot dominate\na cell score.",
+          "format": "float",
+          "type": "number"
+        }
+      },
+      "type": "object"
+    },
+    "CharucoBoardSpec": {
+      "description": "Static ChArUco board specification.\n\n`rows`/`cols` are **square counts** (not inner corner counts).",
+      "properties": {
+        "border_bits": {
+          "default": 1,
+          "description": "Width, in marker cells, of the black border ring printed around each\nmarker payload. OpenCV's `borderBits`, and 1 on virtually every board.\n\nThis is a physical property of the printed target, not a tuning knob:\nthe decoder samples `marker_size + 2 * border_bits` cells per marker, so\na board printed with a wider ring is undecodable unless the spec says\nso. The printable spec carries the same field, and\n`calib-targets-print` round-trips it through\n`CharucoBoardSpec` in both directions.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "cell_size": {
+          "description": "Side length of one square, in the caller's world units (e.g. mm).",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number"
+        },
+        "cols": {
+          "description": "Number of board squares horizontally.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "dictionary": {
+          "$ref": "#/$defs/Dictionary",
+          "description": "The ArUco dictionary the board's markers are drawn from."
+        },
+        "marker_layout": {
+          "$ref": "#/$defs/MarkerLayout",
+          "default": "opencv_charuco",
+          "description": "How markers are placed and numbered on the board."
+        },
+        "marker_size_rel": {
+          "description": "Marker side length as a fraction of the square side, in `(0, 1]`.",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "maximum": 1.0,
+          "type": "number"
+        },
+        "rows": {
+          "description": "Number of board squares vertically.",
+          "format": "uint32",
+          "minimum": 2,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rows",
+        "cols",
+        "cell_size",
+        "marker_size_rel",
+        "dictionary"
+      ],
+      "type": "object"
+    },
+    "ChessConfig": {
+      "description": "Configuration for the ChESS detector branch of `DetectionStrategy`.\n\nCarries the detector ring choice and the subpixel refiner. The shared\nNMS / clustering thresholds (`DetectionParams`), multiscale, and\nupscale live at the top level of `DetectorConfig` and apply to both\nstrategies. Descriptors always sample at the detector ring radius.\n\n# Common knobs\n\n- `ring` — choose the detector kernel radius.\n- `refiner` — select and configure the\n  subpixel refinement backend.",
+      "properties": {
+        "refiner": {
+          "$ref": "#/$defs/ChessRefiner",
+          "default": {
+            "center_of_mass": {
+              "radius": 2
+            }
+          },
+          "description": "Subpixel refiner. Each variant carries its tuning struct."
+        },
+        "ring": {
+          "$ref": "#/$defs/ChessRing",
+          "default": "canonical",
+          "description": "Detector ring radius. `Canonical` selects the paper's `r=5`,\n`Broad` selects `r=10`. Descriptors sample at this same radius."
+        }
+      },
+      "type": "object"
+    },
+    "ChessRefiner": {
+      "description": "Subpixel refiner selection for the ChESS detector.\n\nEach variant carries its own tuning struct as a payload: there is\nno shared discriminator + parallel-tuning-struct shape, so\nswitching variants can never leave a stale config field behind.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "Center-of-mass (intensity centroid) refinement on the response\nmap. Cheapest refiner in the shipped benchmark; the library default.",
+          "properties": {
+            "center_of_mass": {
+              "$ref": "#/$defs/CenterOfMassConfig"
+            }
+          },
+          "required": [
+            "center_of_mass"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Förstner structure-tensor refinement on the image patch.",
+          "properties": {
+            "forstner": {
+              "$ref": "#/$defs/ForstnerConfig"
+            }
+          },
+          "required": [
+            "forstner"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Quadratic surface fit at the saddle point.",
+          "properties": {
+            "saddle_point": {
+              "$ref": "#/$defs/SaddlePointConfig"
+            }
+          },
+          "required": [
+            "saddle_point"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "ChessRing": {
+      "description": "ChESS sampling ring radius. Selects the `r=5` (canonical) or `r=10`\n(broad) ring used by the dense response kernel.",
+      "enum": [
+        "canonical",
+        "broad"
+      ],
+      "oneOf": [
+        {
+          "const": "canonical",
+          "description": "Paper-default radius-5 ring (16 samples).",
+          "type": "string"
+        },
+        {
+          "const": "broad",
+          "description": "Radius-10 ring. Larger support window for callers that want the\ndetector to sample farther from the candidate center.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "ChessboardAdvancedTuning": {
+      "additionalProperties": false,
+      "description": "Advanced, **unstable** per-stage tuning knobs for the chessboard detector.\n\nBehind `ChessboardParams::advanced`. The\nknobs are named after the live topological pipeline stages. The defaults are\nchosen to hold the detector's precision-by-construction contract — a\ncalibration consumer has no basis to set any of them and should leave the\nwhole struct at `Default`. Tune a knob only when a specific input fails and\nyou have evidence for the change.\n\n**NOT covered by semver.** These knobs are named after, and coupled to,\ninternal pipeline stages; they may be **renamed, retyped, or removed\nbetween minor versions** without a major-version bump. Do not depend on the\nfield set being stable. The stable configuration contract lives entirely on\n`ChessboardParams`'s three top-level fields.\n\nWhen set on `ChessboardParams` via\n`with_advanced`, the whole struct\nserializes under a nested `\"advanced\"` JSON object — the knobs are not\nflattened. When left unset, the serialized config carries no `\"advanced\"`\nkey and detection behaves exactly as if every knob held its `Default`\nvalue (see `ChessboardParams::effective_tuning`).",
+      "properties": {
+        "attach_ambiguity_factor": {
+          "description": "Ambiguity factor: if the second-nearest candidate is within\n`factor × nearest_distance`, the attachment is skipped.",
+          "format": "float",
+          "type": "number"
+        },
+        "attach_axis_tol_deg": {
+          "description": "Axis alignment tolerance at attachment time (degrees).",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "attach_search_rel": {
+          "description": "Candidate-search radius (fraction of `s`) around a predicted `(i, j)`\nwhen the booster attaches a corner to an empty cell.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "cluster_sigma_k": {
+          "description": "Multiplier on the per-corner axis sigma added to `cluster_tol_deg`\nwhen admitting a corner. Default `0.0`: sigma-aware tolerance is\nplumbed through but disabled. Set to e.g. `2.0` (a ≈95% one-sided\nconfidence band) to pass corners whose true axis is within tolerance\nbut whose ChESS estimate fell outside under noise.\n\n`cluster_tol_deg`: ChessboardAdvancedTuning::cluster_tol_deg",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "cluster_tol_deg": {
+          "description": "Per-axis absolute tolerance (degrees) for a corner's axis to count as\nmatching a cluster center. The effective per-corner gate is\n`cluster_tol_deg + cluster_sigma_k * max(σ_a0, σ_a1)`, so noisier\naxis estimates get proportional slack — see `cluster_sigma_k`.\n\n`cluster_sigma_k`: ChessboardAdvancedTuning::cluster_sigma_k",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "component_merge": {
+          "$ref": "#/$defs/LocalMergeParams",
+          "description": "Tuning knobs for the shared local-geometry component merger that\nreunites the topological grid's connected components in label space."
+        },
+        "edge_axis_tol_deg": {
+          "description": "Edge axis-direction tolerance (degrees) enforced at admission time.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "enable_final_edge_shape_check": {
+          "description": "Enable the final local edge-shape gate (the direct topological\nwrong-label check: interior skipped-corner edges and duplicate-pixel\nlabels).\n\nDefault `true` for direct chessboard detection. Downstream\ntarget-specific detectors with their own geometry/ID alignment gates\n(e.g. ChArUco) may disable it to preserve recall.",
+          "type": "boolean"
+        },
+        "enable_geometry_only_recovery": {
+          "default": true,
+          "description": "Enable a final, geometry-only rescue for strong corners whose measured\naxes failed clustering.\n\nThis pass is deliberately narrower than the axis-aware booster: it\nrequires an L-shaped set of three already-labelled neighbours and does\nnot let recovered corners support further recovery. It exists for the\ncase where the image-space corner position is reliable but the local\norientation fit is not.",
+          "type": "boolean"
+        },
+        "enable_weak_cluster_rescue": {
+          "description": "Enable the weak-cluster rescue booster: re-admit corners that\nclustered only within the looser `weak_cluster_tol_deg`.",
+          "type": "boolean"
+        },
+        "geometry_check_line_tol_rel": {
+          "description": "Line-collinearity tolerance (fraction of cell_size) for the MANDATORY\nfinal geometry check that runs before any detection is emitted. Loose\nby design — the geometry check's role is to catch gross mislabels\n(diagonal / full-cell shifts), not the borderline perspective drift the\ngrid builder already accepted.\n\nDefault `0.45` of cell_size. A tight tolerance here produces\ncatastrophic recall regressions on heavy-radial-distortion boards.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "geometry_check_local_h_tol_rel": {
+          "description": "Local-H residual tolerance (fraction of cell_size) for the MANDATORY\nfinal geometry check. A diagonal mislabel shifts a corner by ~1.4 cell\nfrom its predicted position; `0.6 × cell_size` is well below that gap\nwhile leaving the legitimate perspective-distorted corners alone.\n\nDefault `0.6` of cell_size.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "geometry_recovery_tol_rel": {
+          "default": 0.15,
+          "description": "Maximum geometry-only prediction residual and candidate-search radius,\nas a fraction of the local cell size.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "line_min_members": {
+          "description": "Minimum members required to fit a line / column for the geometry\ncheck's collinearity test.",
+          "format": "uint",
+          "minimum": 2,
+          "type": "integer"
+        },
+        "max_booster_iters": {
+          "description": "Cap on the outer booster loop.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "max_iters_2means": {
+          "description": "Max 2-means refinement iterations over axis votes.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_peak_weight_fraction": {
+          "description": "Minimal fraction of total axis-vote weight required for a peak to be\nconsidered.",
+          "format": "float",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "num_bins": {
+          "description": "Number of histogram bins on `[0, π)` for axis-direction clustering.",
+          "format": "uint",
+          "minimum": 4,
+          "type": "integer"
+        },
+        "peak_min_separation_deg": {
+          "description": "Minimal angular separation (degrees) between the two peaks. Guards\nagainst seed-peak collisions; true grid axes are `~90°` apart.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        },
+        "step_tol": {
+          "description": "Edge-length window (fraction of `s`) enforced when admitting edges\nfrom a newly-attached corner to its labelled neighbours.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "topological": {
+          "$ref": "#/$defs/TopologicalParams",
+          "description": "Tuning knobs for the topological (Delaunay + axis-driven cell test)\ngrid builder — the only graph builder the detector ships."
+        },
+        "validate_step_aware": {
+          "description": "When `true`, the geometry check's tolerances are multiplied by a\nper-corner local step (computed from labelled grid neighbours) instead\nof the global cell size. Anisotropic thresholds catch outliers in\ndense (perspective-foreshortened) regions that a global threshold would\nmiss, and stay loose in distorted regions where the local cell pitch\ngrows.\n\nDefault `false`: the capability is shipped without changing behaviour.\nEnabling it currently drops one labelled corner on\n`testdata/puzzleboard_reference/example1.png` (the tighter back-edge\ntolerance over-flags), so treat it as a focused per-dataset experiment\nuntil a tuned tolerance pair holds the precision contract on every\nblessed image. Set to `true` to opt in.",
+          "type": "boolean"
+        },
+        "weak_cluster_tol_deg": {
+          "description": "Cluster tolerance for \"weakly clustered\" corners eligible as recall-\nbooster candidates. Must be ≥ `cluster_tol_deg`.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "deg"
+        }
+      },
+      "required": [
+        "topological",
+        "component_merge",
+        "num_bins",
+        "max_iters_2means",
+        "cluster_tol_deg",
+        "cluster_sigma_k",
+        "peak_min_separation_deg",
+        "min_peak_weight_fraction",
+        "attach_search_rel",
+        "attach_axis_tol_deg",
+        "attach_ambiguity_factor",
+        "step_tol",
+        "edge_axis_tol_deg",
+        "enable_weak_cluster_rescue",
+        "weak_cluster_tol_deg",
+        "max_booster_iters",
+        "geometry_check_line_tol_rel",
+        "geometry_check_local_h_tol_rel",
+        "line_min_members",
+        "validate_step_aware",
+        "enable_final_edge_shape_check"
+      ],
+      "type": "object"
+    },
+    "ChessboardParams": {
+      "additionalProperties": false,
+      "description": "Chessboard detector configuration: a stable core of three knobs (`min_labeled_corners`, `max_components`, `min_corner_strength`) plus an opt-in, unstable `advanced` block of per-stage tuning knobs that is not covered by semver. Omit `advanced` to keep the precision-by-construction defaults.",
+      "properties": {
+        "advanced": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ChessboardAdvancedTuning"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Opt-in, **unstable** per-stage tuning knobs. Leave unset (`None`)\nunless a specific input fails and you have evidence for the change;\n`None` behaves exactly like `ChessboardAdvancedTuning::default()`. Set via\n`with_advanced`. See `ChessboardAdvancedTuning` — its\nfields are NOT covered by semver.\n\nSerialized under a nested `\"advanced\"` object when `Some`, and omitted\nentirely when `None`."
+        },
+        "max_components": {
+          "description": "Maximum number of components returned by `ChessboardDetector::detect_all`.\n\nA chessboard can split into multiple disconnected pieces on ChArUco\nscenes where markers break contiguity. Each iteration peels off one\ngrown grid from the unconsumed corners and re-runs seed → grow →\nvalidate. Default `3` (`ChessboardParams::default`); a **required** key\nin a serialized config.\n\nDoes NOT claim to support scenes with two separate physical boards —\none target per frame is the contract.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_corner_strength": {
+          "description": "Minimum corner strength (ChESS response) for the Stage-1 pre-filter.\nCorners with `strength < min_corner_strength` are dropped before\nclustering. `0.0` disables the filter.\n\n**Default `33.0`.** A defocused board edge (or marker-bit saddle)\nfires the ChESS detector weakly — strength ≈ 15–30 against a sharp\nboard's ≈ 90+ — and such corners, while grid-consistent in position,\nare low-confidence and pollute the labelled frontier with a ragged,\nnoisy row that is unhelpful for calibration. A `33.0` floor removes\nthat weak frontier; sharp boards (whose every corner clears the\nfloor) are unaffected. The value matches the ChArUco detector's floor\n(`CharucoParams::for_board`), so the chessboard and ChArUco grid\nbuilds now start from the same corner set — set this to `0.0`\nexplicitly to recover the previous maximum-recall behaviour.\n\nPart of the stable configuration core. A **required** key in a\nserialized config (top-level `min_corner_strength`).",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "min_labeled_corners": {
+          "description": "Minimum labelled corners for a\n`ChessboardDetection` to be emitted.\nDefault `8` (`ChessboardParams::default`); a **required** key in a\nserialized config.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "min_labeled_corners",
+        "max_components",
+        "min_corner_strength"
+      ],
+      "type": "object"
+    },
+    "DetectionParams": {
+      "description": "Shared non-maximum-suppression and peak-clustering thresholds.\n\nThese two knobs have identical meaning for the ChESS and Radon\ndetectors, so they live once at the `DetectorConfig` level rather\nthan being duplicated inside each strategy config. Both are expressed\nin the detector's working-resolution pixels (for Radon, that is after\n`image_upsample`). Tune them through\n`DetectorConfig::with_detection`.\n\nThe defaults match the ChESS presets; the Radon presets raise\n`nms_radius` to `4` to suit the wider Radon response peak.",
+      "properties": {
+        "min_cluster_size": {
+          "default": 2,
+          "description": "Minimum number of positive-response neighbours within the NMS\nwindow that a candidate must have to be accepted (integer `>= 0`,\nunitless count). Increase to suppress isolated noise peaks, at the\ncost of possibly missing weak corners near image boundaries.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "nms_radius": {
+          "default": 2,
+          "description": "Non-maximum-suppression half-radius, in working-resolution pixels\n(integer `>= 0`). Only the highest-response pixel within this radius\nis kept: reduce when corners are packed closer than `2·nms_radius`\npixels, increase to suppress near-duplicates on blurry images.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer",
+          "x-unit": "px"
+        }
+      },
+      "type": "object"
+    },
+    "DetectionStrategy": {
+      "description": "Top-level detector dispatch. Selects between the ChESS kernel\npipeline and the Radon whole-image detector. The chosen variant\ncarries all detector-specific tuning; settings that don't apply to\nthe active detector are simply unreachable, so the type system\nenforces correctness instead of silently ignoring fields.",
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "description": "ChESS kernel detection with optional coarse-to-fine multiscale.",
+          "properties": {
+            "chess": {
+              "$ref": "#/$defs/ChessConfig"
+            }
+          },
+          "required": [
+            "chess"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Whole-image Radon (Duda-Frese) detection.",
+          "properties": {
+            "radon": {
+              "$ref": "#/$defs/RadonConfig"
+            }
+          },
+          "required": [
+            "radon"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "DetectorConfig": {
+      "description": "High-level detection configuration.\n\nBuild one with `DetectorConfig::chess`,\n`DetectorConfig::chess_multiscale`, `DetectorConfig::radon`, or\n`DetectorConfig::radon_multiscale` and tweak only the fields you need.\nThe detector translates this into the low-level `ChessParams` /\n`RadonDetectorParams` consumed by `chess-corners-core` at the detection\nboundary.\n\n# Common knobs\n\nThese fields are the primary surface for most callers:\n\n- `strategy` — choose ChESS or Radon and\n  configure its parameters.\n- `threshold` — control how many corners are\n  returned: lower → more candidates, higher → fewer and stronger. ChESS\n  reads it as an absolute response floor; Radon as a fraction of the\n  per-frame maximum.\n- `multiscale` — enable coarse-to-fine\n  pyramid detection (`Pyramid`) or keep it off (`SingleScale`).\n- `upscale` — pre-pipeline integer bilinear\n  upscaling for low-resolution inputs where corners have fewer than 5 px\n  of ring support. `Disabled` by default.\n- `orientation_method` — how corner\n  axis orientations are estimated when building descriptors.\n\n# Advanced tuning\n\n- `detection` — shared NMS / clustering\n  thresholds applied by both strategies. See `DetectionParams`.\n- `merge_radius` — duplicate-suppression\n  radius across pyramid levels. See the field docs below.",
+      "properties": {
+        "detection": {
+          "$ref": "#/$defs/DetectionParams",
+          "default": {
+            "min_cluster_size": 2,
+            "nms_radius": 2
+          },
+          "description": "Shared non-maximum-suppression and peak-clustering thresholds.\nHonoured by both strategies. See `DetectionParams`."
+        },
+        "merge_radius": {
+          "default": 3.0,
+          "description": "Advanced tuning. Merge radius for cross-level and cross-seed\nduplicate suppression, in base-image pixels (`>= 0`, default `3.0`).\nAfter coarse-level seeds are refined into the base image, any two\nrefined positions within this radius are merged into one corner:\nincrease if you see duplicates of the same physical corner, decrease\nif distinct corners closer than `2·merge_radius` pixels get merged.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "px"
+        },
+        "multiscale": {
+          "$ref": "#/$defs/MultiscaleConfig",
+          "default": "single_scale",
+          "description": "Coarse-to-fine multiscale configuration. `SingleScale` skips\nthe pyramid entirely; `Pyramid` detects seeds on a coarse level and\nrefines them into the base image. Honoured by both strategies."
+        },
+        "orientation_method": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/OrientationMethod"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": "ring_fit",
+          "description": "Orientation-fit method used when building corner descriptors, or\n`None` to skip the per-corner fit entirely. When `None`, every\ndescriptor carries `axes: None`; positions and responses are\nunaffected. Skipping orientation is the cheaper path for consumers\nthat derive board geometry themselves."
+        },
+        "strategy": {
+          "$ref": "#/$defs/DetectionStrategy",
+          "default": {
+            "chess": {
+              "refiner": {
+                "center_of_mass": {
+                  "radius": 2
+                }
+              },
+              "ring": "canonical"
+            }
+          },
+          "description": "Detector dispatch: ChESS or Radon, each carrying its own tuning."
+        },
+        "threshold": {
+          "default": 30.0,
+          "description": "Detector acceptance threshold (`>= 0`).\n\nChESS reads it as an absolute floor on the raw response\n`R = SR − DR − 16·MR`: a candidate is kept when `R` exceeds it.\nUseful floors run roughly `30..=300` depending on image contrast;\nthe default is `30`, which suppresses texture noise while keeping\nwell-formed corners.\nRadon reads it as a fraction in `[0.0, 1.0]` of the per-frame\nmaximum response, because Radon's `(max − min)²` score scales\nwith image size and has no portable absolute scale.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "upscale": {
+          "$ref": "#/$defs/UpscaleConfig",
+          "default": "disabled",
+          "description": "Pre-pipeline integer bilinear upscaling for low-resolution inputs.\n`Disabled` skips the stage; `Fixed(k)` upscales by the unitless\nfactor `k` in `{2, 3, 4}`. Output coordinates stay in input pixels."
+        }
+      },
+      "type": "object"
+    },
+    "Dictionary": {
+      "description": "Name of a built-in ArUco / AprilTag marker dictionary.",
+      "enum": [
+        "DICT_4X4_100",
+        "DICT_4X4_1000",
+        "DICT_4X4_250",
+        "DICT_4X4_50",
+        "DICT_5X5_100",
+        "DICT_5X5_1000",
+        "DICT_5X5_250",
+        "DICT_5X5_50",
+        "DICT_6X6_100",
+        "DICT_6X6_1000",
+        "DICT_6X6_250",
+        "DICT_6X6_50",
+        "DICT_7X7_100",
+        "DICT_7X7_1000",
+        "DICT_7X7_250",
+        "DICT_7X7_50",
+        "DICT_APRILTAG_16h5",
+        "DICT_APRILTAG_25h9",
+        "DICT_APRILTAG_36h10",
+        "DICT_APRILTAG_36h11",
+        "DICT_ARUCO_MIP_36h12",
+        "DICT_ARUCO_ORIGINAL"
+      ],
+      "type": "string"
+    },
+    "ForstnerConfig": {
+      "description": "Configuration for the `ForstnerRefiner`.",
+      "properties": {
+        "max_condition_number": {
+          "default": 50.0,
+          "description": "Maximum ratio of the larger to the smaller structure-tensor\neigenvalue (unitless, `>= 1`). A high ratio indicates an edge\nrather than a corner; the default `50.0` is permissive (literature\nvalues span roughly 10–100).",
+          "format": "float",
+          "minimum": 1.0,
+          "type": "number"
+        },
+        "max_offset": {
+          "default": 1.5,
+          "description": "Maximum displacement from the initial integer seed to the refined\nlocation, in pixels (`>= 0`). Larger offsets suggest a mislocated\nseed and the result is rejected; the default is `1.5`.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "px"
+        },
+        "min_det": {
+          "default": 0.001,
+          "description": "Minimum determinant of the structure tensor (product of\neigenvalues; `>= 0`). Guards against singular systems where the\nleast-squares solution is numerically unstable; the default `1e-3`\nrejects only truly degenerate cases.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "min_trace": {
+          "default": 25.0,
+          "description": "Minimum trace of the structure tensor (sum of eigenvalues; `>= 0`,\nin squared gradient units). Rejects flat regions with too little\ngradient energy; the default `25.0` is roughly a mean gradient\nmagnitude of 5 per pixel in a 5×5 window.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "radius": {
+          "default": 2,
+          "description": "Half-size of the local gradient window, in image pixels (integer\n`>= 1`; the window is `(2·radius+1)²`). Default `2` gives a 5×5\npatch, large enough to capture the gradient structure around a\ncorner while staying local.",
+          "format": "int32",
+          "minimum": 1,
+          "type": "integer",
+          "x-unit": "px"
+        }
+      },
+      "type": "object"
+    },
+    "LocalMergeParams": {
+      "description": "Tuning knobs for `merge_components_local`.",
+      "properties": {
+        "cell_size_ratio_tol": {
+          "description": "Cell-size agreement tolerance: `|s_p - s_q| / max(s_p, s_q)` must\nbe ≤ this value to even attempt a merge. Default: `0.20`.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "max_components": {
+          "description": "Upper bound on returned components after merging. Default: `4`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "min_overlap": {
+          "description": "Minimum number of overlapping labels (after candidate alignment)\nfor a merge to be accepted. Default: `2`.",
+          "format": "uint",
+          "minimum": 0,
+          "type": "integer"
+        },
+        "position_tol_rel": {
+          "description": "Position tolerance for accepting two corners as the same physical\npoint, expressed as a fraction of the mean per-component cell\nsize in pixels. Default: `0.20`.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "position_tol_rel",
+        "cell_size_ratio_tol",
+        "min_overlap",
+        "max_components"
+      ],
+      "type": "object"
+    },
+    "MarkerLayout": {
+      "description": "Marker placement scheme for the board.",
+      "enum": [
+        "opencv_charuco"
+      ],
+      "oneOf": [
+        {
+          "const": "opencv_charuco",
+          "description": "OpenCV-style ChArUco layout:\n- markers are placed on white squares only (assuming top-left square is black),\n- marker IDs are assigned sequentially in row-major order over those squares.\n\nThis is OpenCV's **modern** pattern — its default since 4.6 — so marker\n0 sits at column 1 of the top row. It is *not* `setLegacyPattern(true)`,\nwhich inverts the parity and places a white square, carrying marker 0,\nat `(0, 0)`. Only the modern pattern is implemented; a board printed\nwith the legacy parity will not match these IDs.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "MultiscaleConfig": {
+      "description": "Coarse-to-fine multiscale configuration.\n\nJSON shape mirrors `UpscaleConfig`:\n\n- `\"single_scale\"` — run the detector once on the full image.\n- `{ \"pyramid\": { \"levels\": 3, \"min_size\": 128, \"refinement_radius\": 3 } }`\n  — build an image pyramid, detect seeds on the coarsest level, and\n  refine each seed into the base image. Honoured by both ChESS and\n  Radon strategies.",
+      "oneOf": [
+        {
+          "const": "single_scale",
+          "description": "Single-scale detection (no pyramid).",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Coarse-to-fine pyramid detection.",
+          "properties": {
+            "pyramid": {
+              "properties": {
+                "levels": {
+                  "description": "Number of pyramid levels (integer `>= 1`, at most 255). Level 0\nis the base image; each subsequent level is a 2× box-filter\ndownsample.",
+                  "format": "uint8",
+                  "maximum": 255,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "min_size": {
+                  "description": "Minimum short-edge length of a pyramid level, in pixels. The\npyramid stops once the next level would fall below this size.",
+                  "format": "uint",
+                  "minimum": 0,
+                  "type": "integer",
+                  "x-unit": "px"
+                },
+                "refinement_radius": {
+                  "description": "ROI half-radius at the coarse level used to refine each seed\ninto the base image, in coarse-level pixels (integer `>= 0`).",
+                  "format": "uint32",
+                  "minimum": 0,
+                  "type": "integer",
+                  "x-unit": "px"
+                }
+              },
+              "required": [
+                "levels",
+                "min_size",
+                "refinement_radius"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "pyramid"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "OrientationMethod": {
+      "description": "Method used to fit the two grid axes at a detected corner.\n\n`RingFit` is the default. `DiskFit` samples a larger\nlocal support region and is intended for corners with strong\nprojective skew (axis separation far from 90°).\n\nAll variants emit `axes[0]` and `axes[1]` under the same canonical\nconvention documented on `CornerDescriptor`:\n`axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle,\naxes[0].angle + π)`, and the CCW arc `(axes[0], axes[1])` is a *dark*\nsector of the corner. Downstream consumers can therefore compare\n`axes[0]` slot parity between corners regardless of which method\nproduced them.",
+      "enum": [
+        "ring_fit",
+        "disk_fit"
+      ],
+      "oneOf": [
+        {
+          "const": "ring_fit",
+          "description": "Fit the parametric two-axis chessboard intensity model\n`I(φ) = μ + A·tanh(β·sin(φ−θ₁))·tanh(β·sin(φ−θ₂))` to 16\nring samples via Gauss-Newton seeded from the 2nd-harmonic\norientation. Suspicious local minima are retried from a small\ndeterministic seed grid over the same 16 samples. When a\nradius-10 detector ring is used and the fit still looks\nsuspicious, the canonical radius-5 ring is sampled as a cheap\nsafety check and used when it produces a valid contrast/residual\nfit. Per-axis 1σ uncertainties are calibrated by a\npiecewise-linear lookup table keyed on the contrast-relative\nresidual, bringing reported sigmas closer to the empirical RMSE.\n\nThis is the **default** method. Suitable for the full range of\nstandard chessboard images.",
+          "type": "string"
+        },
+        {
+          "const": "disk_fit",
+          "description": "Full-disk crossing-line estimator. Samples all image pixels in a\ndisk around the corner center and fits two possibly non-orthogonal\naxes from the resulting gradient field. When local evidence is\nweak or the ring fit already indicates a clean orthogonal corner,\nfalls back to `RingFit` output transparently.\n\nUse this when standard chessboards are imaged under strong\nprojective warp (axis separation far from 90°). It has higher\nper-corner cost than `RingFit`; the lazy gate keeps the full disk\nfit off clean orthogonal corners.\n\nOutput axes use the same canonical convention as `RingFit`\n— see the type-level doc comment above and\n`CornerDescriptor`.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "PeakFitMode": {
+      "description": "Subpixel peak-fitting mode.",
+      "enum": [
+        "parabolic",
+        "gaussian"
+      ],
+      "oneOf": [
+        {
+          "const": "parabolic",
+          "description": "Classic parabolic fit on the raw response values.",
+          "type": "string"
+        },
+        {
+          "const": "gaussian",
+          "description": "Parabolic fit on `log(response)` — equivalent to fitting a\nGaussian through three samples. This is the paper default and\nthe facade preset.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "RadonConfig": {
+      "description": "Configuration for the whole-image Radon detector branch of\n`DetectionStrategy`.\n\nAll radii and counts are in **working-resolution** pixels (i.e.\nafter `image_upsample`). The shared NMS / clustering thresholds\n(`DetectionParams`), multiscale, and upscale live at the top level\nof `DetectorConfig` and apply to both strategies.\n\n# Common knobs\n\n- `image_upsample` — `2` (the default)\n  reproduces the paper's 2× supersampled detection; `1` is faster but\n  less accurate on low-resolution inputs.\n\n# Advanced tuning\n\nThe remaining fields control low-level detection behaviour. The\ndefaults reproduce the paper's recommended settings and work well\nfor typical camera images. Adjust them only when you have a specific\nreason (e.g. a non-standard image resolution or SNR budget).",
+      "properties": {
+        "image_upsample": {
+          "default": 2,
+          "description": "Image-level supersampling factor applied before ray integration\n(`1` or `2`). `1` operates on the input grid; `2` (paper default)\nbilinearly upsamples the input first, giving sub-pixel ray\npositioning. The core detector clamps values outside `1..=2`.",
+          "format": "uint32",
+          "maximum": 2,
+          "minimum": 1,
+          "type": "integer"
+        },
+        "peak_fit": {
+          "$ref": "#/$defs/PeakFitMode",
+          "default": "gaussian",
+          "description": "Advanced tuning. Peak-fit mode for the 3-point subpixel\nrefinement of the response-map argmax. `Gaussian` (default) fits\non log-response (more accurate near the peak); `Parabolic` fits\ndirectly on the response values. See `PeakFitMode`."
+        },
+        "ray_radius": {
+          "default": 4,
+          "description": "Advanced tuning. Half-length of each Radon ray, in\nworking-resolution pixels (integer `>= 1`; the ray has\n`2·ray_radius + 1` samples). Paper default at `image_upsample = 2`\nis `4`. Shorter rays are faster but integrate less signal; longer\nrays are more discriminating but may cross into neighbouring cells.",
+          "format": "uint32",
+          "minimum": 1,
+          "type": "integer",
+          "x-unit": "px"
+        },
+        "response_blur_radius": {
+          "default": 1,
+          "description": "Advanced tuning. Half-size of the box blur applied to the Radon\nresponse map after integration, in working-resolution pixels\n(integer `>= 0`). `0` disables blurring; the default `1` yields a\n3×3 box that smooths quantisation noise.",
+          "format": "uint32",
+          "minimum": 0,
+          "type": "integer",
+          "x-unit": "px"
+        }
+      },
+      "type": "object"
+    },
+    "SaddlePointConfig": {
+      "description": "Configuration for the `SaddlePointRefiner`.\n\nAll thresholds below are advanced tuning knobs. The defaults are\nappropriate for most scenes; adjust only if you observe excessive\nrejection or acceptance of clearly-wrong refinements.",
+      "properties": {
+        "det_margin": {
+          "default": 0.001,
+          "description": "Margin on the Hessian determinant of the fitted quadratic\n(unitless, `>= 0`): a saddle is confirmed only when\n`det(H) < -det_margin`. Increase to require a sharper saddle.\n\nAdvanced tuning.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "max_offset": {
+          "default": 1.5,
+          "description": "Maximum displacement from the seed to the fitted stationary point,\nin pixels (`>= 0`); refinements that move farther are rejected.\nThe effective bound is also capped at `radius + 0.5`.\n\nAdvanced tuning.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number",
+          "x-unit": "px"
+        },
+        "min_abs_det": {
+          "default": 0.0001,
+          "description": "Minimum absolute value of `det(H)` (unitless, `>= 0`). Rejects\nnear-flat surfaces whose determinant is too close to zero to be\nmeaningful.\n\nAdvanced tuning.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "radius": {
+          "default": 2,
+          "description": "Half-size of the image patch used for the surface fit, in image\npixels (integer `>= 1`; the patch is `(2·radius+1)²`). Default `2`\n(5×5 patch).\n\nAdvanced tuning.",
+          "format": "int32",
+          "minimum": 1,
+          "type": "integer",
+          "x-unit": "px"
+        }
+      },
+      "type": "object"
+    },
+    "ScanDecodeConfig": {
+      "description": "Decoder configuration for scanning markers.",
+      "properties": {
+        "border_bits": {
+          "default": 1,
+          "description": "Marker border width in cells (OpenCV typically uses 1).\n\nDerived, not configured: the ChArUco detector overwrites it with `board.border_bits`, so set the border width on the board.",
+          "format": "uint",
+          "minimum": 0,
+          "readOnly": true,
+          "type": "integer"
+        },
+        "dedup_by_id": {
+          "default": true,
+          "description": "If true, keep only the best detection per marker id.",
+          "type": "boolean"
+        },
+        "inset_frac": {
+          "default": 0.1,
+          "description": "Fraction of a square to ignore near edges (0.08..0.15 typical).",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "marker_size_rel": {
+          "default": 1.0,
+          "description": "Marker side length relative to the square cell side.\n\n- `1.0`: marker fills the entire square (no extra white margin).\n- `< 1.0`: marker is centered inside the square (ChArUco-style).",
+          "format": "float",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "min_border_score": {
+          "default": 0.85,
+          "description": "Require border-black ratio >= this.",
+          "format": "float",
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "multi_threshold": {
+          "default": true,
+          "description": "If true, try multiple binarization thresholds per cell and select the\none that yields a valid dictionary match. Improves recall on blurry or\nunevenly-lit images at a small compute cost.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "TopologicalParams": {
+      "description": "Tuning knobs for the axis-driven topological pipeline.\n\nDefaults are conservative values pinned by the crate's regression tests.\nAdding new fields is non-breaking via `#[non_exhaustive]`;\nliteral-construction from outside the crate goes through `default`\n+ struct-update syntax or `new`.",
+      "properties": {
+        "axis_align_tol_rad": {
+          "description": "Maximum angular distance, in radians, between an edge's\ndirection and a corner's axis for the edge to classify as a\ngrid edge at that corner. Default: 15° = 0.262 rad.",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number",
+          "x-unit": "rad"
+        },
+        "axis_cluster_centers": {
+          "description": "Optional global grid-direction centers, in radians, interpreted\nmodulo π. When `Some([θ₀, θ₁])`, a feature is admitted to\nDelaunay only if at least one of its informative axes is within\n`cluster_axis_tol_rad` of one of the centers. When\n`None`, the gate is skipped.",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 2,
+          "minItems": 2,
+          "type": [
+            "array",
+            "null"
+          ],
+          "x-unit": "rad"
+        },
+        "cluster_axis_tol_rad": {
+          "description": "Per-axis admission tolerance against\n`axis_cluster_centers`, in radians. Only consulted when\n`axis_cluster_centers.is_some()`. Default: `16° = 0.279`.",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number",
+          "x-unit": "rad"
+        },
+        "edge_length_max_rel": {
+          "description": "Upper bound on a quad's perimeter edge length, expressed as a\nfraction of the per-component median quad edge length. Quads\nwith any edge longer than `edge_length_max_rel * component_median`\nare rejected as \"above local cell scale\" (typically a quad formed\nacross a missing corner). Default: `2.5`. Set to `+inf` to\ndisable the upper bound entirely (JSON has no infinity: pass a very\nlarge finite value such as `1e30` instead).",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number"
+        },
+        "edge_length_min_rel": {
+          "description": "Lower bound on a quad's perimeter edge length, expressed as a\nfraction of the per-component median quad edge length. Quads\nwith any edge shorter than `edge_length_min_rel * component_median`\nare rejected as \"below local cell scale\". Default: `0.4`.\nSet to `0.0` to disable the lower bound entirely.",
+          "format": "float",
+          "minimum": 0.0,
+          "type": "number"
+        },
+        "max_axis_sigma_rad": {
+          "description": "Maximum 1σ axis uncertainty (radians) for a feature axis to be\nconsidered informative. Features whose both axes have\n`sigma_rad ≥ max_axis_sigma_rad` are excluded from Delaunay;\nclassification skips individual axes above the threshold.\nDefault: `0.6 ≈ 34°`. `sigma_rad = None` is treated as informative.",
+          "exclusiveMinimum": 0.0,
+          "format": "float",
+          "type": "number",
+          "x-unit": "rad"
+        },
+        "min_corners_for_component": {
+          "description": "Discard labelled components with fewer than this many corners.\nDefault: `4` (one quad of four corners).",
+          "format": "uint",
+          "minimum": 4,
+          "type": "integer"
+        },
+        "min_quads_per_component": {
+          "description": "Discard connected quad-mesh components below this size. Default:\n`1` (keep all). Set higher to reject isolated noise quads.",
+          "format": "uint",
+          "minimum": 1,
+          "type": "integer"
+        },
+        "opposing_edge_ratio_max": {
+          "description": "Reject quads whose opposing edges differ in length by more than\nthis factor (paper's parallelogram test). Default: `1.5`.",
+          "format": "float",
+          "minimum": 1.0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "axis_align_tol_rad",
+        "max_axis_sigma_rad",
+        "opposing_edge_ratio_max",
+        "edge_length_min_rel",
+        "edge_length_max_rel",
+        "min_corners_for_component",
+        "min_quads_per_component",
+        "cluster_axis_tol_rad"
+      ],
+      "type": "object"
+    },
+    "UpscaleConfig": {
+      "description": "Optional pre-pipeline integer-factor upscaling.\n\nJSON shape mirrors the other enum-with-payload knobs\n(`MultiscaleConfig`):\n\n- `\"disabled\"` — no upscaling (default).\n- `{ \"fixed\": 2 }` — upscale by an integer factor before detection.\n  Allowed factors: `{2, 3, 4}`. Output corner coordinates are\n  rescaled back to the original input-pixel frame by the facade.",
+      "oneOf": [
+        {
+          "const": "disabled",
+          "description": "Do not upscale.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Upscale by a fixed integer factor (unitless; allowed: 2, 3, 4).",
+          "properties": {
+            "fixed": {
+              "format": "uint32",
+              "maximum": 4,
+              "minimum": 2,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "fixed"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Configuration for the ChArUco detector.",
+  "properties": {
+    "advanced": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CharucoAdvancedTuning"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Opt-in, **unstable** board-level-matcher and corner-validation tuning\nknobs. Leave unset (`None`) unless a specific input fails and you have\nevidence for the change; `None` behaves exactly like\n`CharucoAdvancedTuning::default()`. Set via\n`with_advanced`. See `CharucoAdvancedTuning` —\nits fields are NOT covered by semver.\n\nSerialized under a nested `\"advanced\"` object when `Some`, and omitted\nentirely when `None`."
+    },
+    "board": {
+      "$ref": "#/$defs/CharucoBoardSpec",
+      "description": "ChArUco board parameters"
+    },
+    "chess": {
+      "$ref": "#/$defs/DetectorConfig",
+      "default": {
+        "detection": {
+          "min_cluster_size": 2,
+          "nms_radius": 2
+        },
+        "merge_radius": 3.0,
+        "multiscale": "single_scale",
+        "orientation_method": "ring_fit",
+        "strategy": {
+          "chess": {
+            "refiner": {
+              "center_of_mass": {
+                "radius": 2
+              }
+            },
+            "ring": "canonical"
+          }
+        },
+        "threshold": 15.0,
+        "upscale": "disabled"
+      },
+      "description": "ChESS corner front-end configuration for the main detection pass.\n\nDefaults to `default_chess_config`. Override it to run the corner\npass coarse-to-fine (`MultiscaleConfig::Pyramid`) on large frames, or\nto pre-upscale low-resolution board crops (`UpscaleConfig::Fixed`)\nwhose corners would otherwise fall inside the ChESS ring margin —\nthe common failure mode on small ChArUco cutouts. Corner positions are\nalways reported in input-image pixels regardless.\n\nThis is the *main* detection pass; the local re-detection of individual\nsuspicious corners runs on separate, internal fixed defaults.\n\nEvery whole-image entry point runs this front-end over the input image\nto produce the corner cloud:\n`CharucoDetector::detect`,\n`CharucoDetector::detect_corners`,\nand the facade's `detect_charuco` / `detect_charuco_best`. The\n`*_with_corners` entry points consume an already-detected\n`&[ChessCorner]` and never read this field."
+    },
+    "chessboard": {
+      "$ref": "#/$defs/ChessboardParams",
+      "default": {
+        "max_components": 3,
+        "min_corner_strength": 33.0,
+        "min_labeled_corners": 8
+      },
+      "description": "Chessboard detection parameters.\n\nChArUco runs on the **topological** grid builder (the workspace\ndefault). The `min_corner_strength` floor set by\n`CharucoParams::for_board` keeps marker-bit saddles out of the grid,\nso the topological cell test labels ChArUco grids cleanly, and the\nmarker-decode stages downstream of grid construction are\nbuilder-agnostic."
+    },
+    "min_marker_inliers": {
+      "default": 1,
+      "description": "Minimal number of marker inliers needed to accept the alignment.",
+      "format": "uint",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "px_per_square": {
+      "default": 60.0,
+      "description": "Pixels per board square in the canonical sampling space.",
+      "exclusiveMinimum": 0.0,
+      "format": "float",
+      "type": "number",
+      "x-unit": "px"
+    },
+    "scan": {
+      "$ref": "#/$defs/ScanDecodeConfig",
+      "default": {
+        "border_bits": 1,
+        "dedup_by_id": true,
+        "inset_frac": 0.1,
+        "marker_size_rel": 1.0,
+        "min_border_score": 0.85,
+        "multi_threshold": true
+      },
+      "description": "Marker scan parameters.\n\n`CharucoParams::for_board` uses a slightly smaller inset\n(`inset_frac = 0.06`) to improve real-image robustness. If\n`scan.marker_size_rel <= 0.0`, it is filled from the board spec.\n\n**`scan.border_bits` is derived, not configured.**\n`CharucoDetector::new` overwrites it with\n`CharucoBoardSpec::border_bits`, because the two describe the same\nprinted ring and the board is what describes the target. Set it on the\nboard — `CharucoBoardSpec::with_border_bits` — not here."
+    }
+  },
+  "required": [
+    "board"
+  ],
+  "title": "CharucoParams",
+  "type": "object"
+}

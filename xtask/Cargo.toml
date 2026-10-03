@@ -1,0 +1,29 @@
+[package]
+name = "xtask"
+version = "0.0.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+publish = false
+description = "Workspace task runner (JSON Schema generation)"
+
+[dependencies]
+anyhow = "1"
+schemars.workspace = true
+serde_json.workspace = true
+# Default features only (no `ml-refiner`): the committed schemas must match the
+# npm (wasm) build, which does not enable the ONNX refiner.
+calib-targets-aruco = { workspace = true, features = ["schemars"] }
+calib-targets-charuco = { workspace = true, features = ["schemars"] }
+calib-targets-chessboard = { workspace = true, features = ["schemars"] }
+calib-targets-core = { workspace = true, features = ["schemars"] }
+calib-targets-marker = { workspace = true, features = ["schemars"] }
+calib-targets-print = { workspace = true, features = ["schemars"] }
+calib-targets-puzzleboard = { workspace = true, features = ["schemars"] }
+
+[dev-dependencies]
+jsonschema = { version = "0.30", default-features = false }
+serde.workspace = true
+
+[lints]
+workspace = true

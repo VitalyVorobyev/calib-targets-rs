@@ -11,6 +11,12 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
+## ABI 5.0.0 — unchanged in workspace 0.15.4
+
+Workspace 0.15.4 adds JSON Schemas for the npm package's configs (an optional
+`schemars` feature on the config-owning crates, and `schemas/` in the package).
+It does not reach the C API; the ABI stays at 5.0.0.
+
 ## ABI 5.0.0 — unchanged in workspace 0.15.3
 
 Workspace 0.15.3 widens the nalgebra requirement to `>=0.34, <0.36`. It does not

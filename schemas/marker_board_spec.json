@@ -1,0 +1,111 @@
+{
+  "$defs": {
+    "CellCoords": {
+      "description": "Integer coordinates for a square cell in the grid (top-left corner indices).",
+      "properties": {
+        "i": {
+          "description": "Cell column index (`i` increases rightward).",
+          "format": "int32",
+          "type": "integer"
+        },
+        "j": {
+          "description": "Cell row index (`j` increases downward).",
+          "format": "int32",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "i",
+        "j"
+      ],
+      "type": "object"
+    },
+    "CirclePolarity": {
+      "description": "Whether the circle marker prints as white-on-black or black-on-white.\n\n# Adding a variant\n\n`#[non_exhaustive]` forces external matchers to use a `_` arm. When you\nadd a variant you MUST also update every adapter site in lockstep\n(guarded by `circle_polarity_variant_guard` in this file's tests):\n- `crates/calib-targets-print/src/render.rs` (SVG/PNG renderer)",
+      "enum": [
+        "white",
+        "black"
+      ],
+      "oneOf": [
+        {
+          "const": "white",
+          "description": "A white (bright) disk on a dark cell.",
+          "type": "string"
+        },
+        {
+          "const": "black",
+          "description": "A black (dark) disk on a light cell.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
+    "MarkerCircleSpec": {
+      "description": "One expected marker circle on the board.",
+      "properties": {
+        "cell": {
+          "$ref": "#/$defs/CellCoords",
+          "description": "Expected cell coordinate (top-left corner indices)."
+        },
+        "polarity": {
+          "$ref": "#/$defs/CirclePolarity",
+          "description": "Expected polarity of the disk in that cell."
+        }
+      },
+      "required": [
+        "cell",
+        "polarity"
+      ],
+      "type": "object"
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Fixed marker board layout: chessboard size plus 3 circle markers.",
+  "properties": {
+    "cell_size": {
+      "default": null,
+      "description": "Optional square size (in your chosen world units, e.g. millimeters).\n\nWhen provided, detections will populate `LabeledCorner.target_position`.",
+      "exclusiveMinimum": 0.0,
+      "format": "float",
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "circle_diameter_rel": {
+      "default": 0.5,
+      "description": "Printed circle diameter as a fraction of the square side.\n\nEvery radius the circle scorer probes is relative to this, so it is the\none place the disk size is stated: it is a property of the printed\nboard, not of the imaging conditions, and a second copy in\n`CircleScoreParams` could only ever disagree with what was printed.\nMatches `circle_diameter_rel` on the printable spec.",
+      "exclusiveMinimum": 0.0,
+      "format": "float",
+      "type": "number"
+    },
+    "circles": {
+      "description": "Expected circle markers.",
+      "items": {
+        "$ref": "#/$defs/MarkerCircleSpec"
+      },
+      "maxItems": 3,
+      "minItems": 3,
+      "type": "array"
+    },
+    "cols": {
+      "description": "Number of inner-corner columns of the checkerboard.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    },
+    "rows": {
+      "description": "Number of inner-corner rows of the checkerboard.",
+      "format": "uint32",
+      "minimum": 0,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "rows",
+    "cols",
+    "circles"
+  ],
+  "title": "MarkerBoardSpec",
+  "type": "object"
+}

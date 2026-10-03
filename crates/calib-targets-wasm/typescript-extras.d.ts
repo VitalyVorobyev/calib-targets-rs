@@ -477,6 +477,7 @@ export interface TopologicalParams {
   axis_align_tol_rad: number;
   max_axis_sigma_rad: number;
   opposing_edge_ratio_max: number;
+  min_corners_for_component: number;
   min_quads_per_component: number;
   axis_cluster_centers: AxisClusterCenters | null;
   cluster_axis_tol_rad: number;

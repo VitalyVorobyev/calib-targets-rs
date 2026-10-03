@@ -9,6 +9,7 @@ use std::borrow::Cow;
 /// Configuration for the ChArUco detector.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CharucoParams {
     /// ChESS corner front-end configuration for the main detection pass.
@@ -34,6 +35,8 @@ pub struct CharucoParams {
     pub chess: DetectorConfig,
     /// Pixels per board square in the canonical sampling space.
     #[serde(default = "default_px_per_square")]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
     pub px_per_square: f32,
     /// Chessboard detection parameters.
     ///
@@ -105,11 +108,14 @@ pub struct CharucoParams {
 /// against a specific dataset with measured evidence.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct CharucoAdvancedTuning {
     /// Logistic slope κ used in the board-level matcher's soft-bit
-    /// log-likelihood. Larger = more confident per bit; 8–16 is a
-    /// reasonable range.
+    /// log-likelihood. Larger = more confident per bit. The default `36`
+    /// sits in the saturated regime where the outcome stops changing with the
+    /// slope; a much smaller slope compresses the per-bit logit and lets a
+    /// runner-up board hypothesis nearly tie the best one.
     #[serde(default = "default_bit_likelihood_slope")]
     pub bit_likelihood_slope: f32,
     /// Clip floor applied to each per-bit log-likelihood term before
@@ -121,10 +127,12 @@ pub struct CharucoAdvancedTuning {
     /// board-level matcher to accept a hypothesis. Below this, detection
     /// is rejected rather than mislabelled.
     #[serde(default = "default_alignment_min_margin")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub alignment_min_margin: f32,
     /// Border-black fraction threshold below which a cell's weight is
     /// attenuated linearly toward 0 in the board-level score.
     #[serde(default = "default_cell_weight_border_threshold")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 1.0)))]
     pub cell_weight_border_threshold: f32,
     /// Relative threshold for the local grid-smoothness pre-filter.
     ///
@@ -133,9 +141,11 @@ pub struct CharucoAdvancedTuning {
     /// `grid_smoothness_threshold_rel * px_per_square` pixels, the corner is
     /// re-detected locally or removed.
     ///
-    /// Set to `f32::INFINITY` to disable.
+    /// Set to `f32::INFINITY` to disable (JSON has no infinity: pass a very
+    /// large finite value such as `1e30` instead).
     /// Default: `0.05` (3 px at 60 px/sq).
     #[serde(default = "default_grid_smoothness_threshold_rel")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub grid_smoothness_threshold_rel: f32,
     /// Relative threshold for marker-constrained corner validation.
     ///
@@ -143,9 +153,11 @@ pub struct CharucoAdvancedTuning {
     /// position deviates from the marker-predicted seed by more than
     /// `corner_validation_threshold_rel * px_per_square` pixels.
     ///
-    /// Set to `f32::INFINITY` to disable validation entirely.
+    /// Set to `f32::INFINITY` to disable validation entirely (JSON has no
+    /// infinity: pass a very large finite value such as `1e30` instead).
     /// Typical value: `0.08` (8 % of a board square side, ~5 px at 60 px/sq).
     #[serde(default = "default_corner_validation_threshold_rel")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
     pub corner_validation_threshold_rel: f32,
     /// Minimum marker inliers for secondary (non-largest) components.
     ///

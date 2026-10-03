@@ -7,6 +7,54 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## 0.15.4
+
+A patch: JSON Schemas for every config the npm package accepts, so a
+schema-driven form can edit them. Nothing is removed or renamed and no serde
+shape changes. The C ABI is unchanged at 5.0.0; `projective-grid` moves to
+0.14.2 (below) and must be published before the workspace crates.
+
+### Added
+
+- **JSON Schemas in `@vitavision/calib-targets`.** The package now ships
+  `schemas/chess_config.json` (the `DetectorConfig` the detectors and the
+  `chess` field of the compound params take), `chessboard_params.json`,
+  `charuco_params.json`, `marker_board_params.json`, `marker_board_spec.json`
+  (the argument of `marker_board_sweep_for_board`), `puzzleboard_params.json`
+  and `printable_target_document.json` (the argument of
+  `render_target_bundle_json`). The `*_sweep_*` presets and `detect_*_best`
+  take a plain array of the matching params type, so they need no file of
+  their own. Field descriptions carry units (`x-unit`: `px`, `mm`, `rad`,
+  `deg`, `dpi`) and the ranges the code enforces. `aruco::Dictionary`, which
+  serialises as a name, is a closed `enum` of every built-in dictionary name,
+  generated from the table the deserializer reads. The files are consumed by
+  deep import (`@vitavision/calib-targets/schemas/<name>.json`); the package
+  has no `exports` map.
+- **`schemars` feature** (off by default) on `projective-grid` (0.14.2),
+  `calib-targets-aruco`, `-chessboard`, `-charuco`, `-marker`, `-puzzleboard`,
+  `-print` and the `calib-targets` facade (which forwards to all of them and,
+  through `calib-targets-core`, to `chess-corners/schemars`). It derives
+  `schemars::JsonSchema` on the config types and adds no dependency to a build
+  that leaves it off.
+- **`cargo xtask emit-schemas [--check]`** writes `schemas/`; CI runs `--check`
+  so the committed files cannot drift from the types. Its tests validate every
+  value behind the wasm `default_*` and sweep functions, every printable target
+  kind and `testdata/printable/*.json` against the schemas, round-trip every
+  dictionary name, and require invalid documents (unknown fields, out-of-range
+  values, a bad dictionary name) to be rejected.
+- **`crates/calib-targets-wasm/tests/check-schema-keys.mjs`** checks the
+  hand-written `typescript-extras.d.ts` interfaces against the schemas
+  (every declared key exists, every required key is declared). It found
+  `TopologicalParams.min_corners_for_component` missing from the declarations;
+  that field is added.
+
+### Changed
+
+- **`chess-corners` 1.3.** The schema of `DetectorConfig` comes from
+  `chess-corners`' own `schemars` feature, which first ships in 1.3.0.
+- `.gitattributes` normalises text files to LF so the generated schemas compare
+  byte-for-byte on every platform.
+
 ## 0.15.3
 
 A patch: nalgebra is now `>=0.34, <0.36` instead of `0.35`, in every crate

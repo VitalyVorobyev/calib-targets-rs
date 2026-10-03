@@ -10,12 +10,17 @@ use super::error::PrintableTargetError;
 /// intersections* (not squares).
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ChessboardTargetSpec {
     /// Number of inner corner-intersection rows.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub inner_rows: u32,
     /// Number of inner corner-intersection columns.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 2)))]
     pub inner_cols: u32,
     /// Side length of one square in millimeters.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "mm")))]
     pub square_size_mm: f64,
     /// White inset square drawn centred inside every black square, as a
     /// fraction of the square side, in `[0.0, 1.0)`. `None` (the default)
@@ -24,6 +29,8 @@ pub struct ChessboardTargetSpec {
     /// "off". Does not move any corner intersection — see
     /// [`crate::TargetSpec::resolved_points`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMaximum" = 1.0)))]
     pub inner_square_rel: Option<f64>,
 }
 

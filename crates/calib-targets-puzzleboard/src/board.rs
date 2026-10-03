@@ -19,18 +19,26 @@ pub const MASTER_COLS: u32 = 501;
 /// `(rows - 1) × (cols - 1)` corners.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PuzzleBoardSpec {
     /// Number of squares vertically.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4, max = 501)))]
     pub rows: u32,
     /// Number of squares horizontally.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4, max = 501)))]
     pub cols: u32,
     /// Physical size of one square (typically millimetres in board frame).
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub cell_size: f32,
     /// Row offset into the 501×501 master pattern from which this board is cut.
+    /// `origin_row + rows` must not exceed 501.
     #[serde(default)]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 500)))]
     pub origin_row: u32,
     /// Column offset into the 501×501 master pattern from which this board is cut.
+    /// `origin_col + cols` must not exceed 501.
     #[serde(default)]
+    #[cfg_attr(feature = "schemars", schemars(range(max = 500)))]
     pub origin_col: u32,
 }
 

@@ -12,7 +12,13 @@ readme = "README.md"
 keywords = ["calibration", "computer-vision", "charuco", "chessboard", "svg"]
 categories = ["computer-vision", "science"]
 
+[features]
+# Opt-in: derive `schemars::JsonSchema` for the serde-serializable config types
+# so a JSON Schema of the configs can be generated (`cargo xtask emit-schemas`).
+schemars = ["dep:schemars", "calib-targets-aruco/schemars", "calib-targets-charuco/schemars", "calib-targets-marker/schemars", "calib-targets-puzzleboard/schemars"]
+
 [dependencies]
+schemars = { workspace = true, optional = true }
 calib-targets-aruco.workspace = true
 calib-targets-charuco.workspace = true
 calib-targets-core.workspace = true
