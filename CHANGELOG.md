@@ -23,6 +23,12 @@ translation changes for rotated boards (below). The C ABI is unchanged at
   implied by a cell alignment (same linear part, translation shifted by the
   rotation's corner offset).
 
+### Security
+
+- `calib-targets-ffi` moves to `zip` 9 (RUSTSEC-2026-0367, -0368, -0369).
+  The advisories concern `ZipArchive::extract`, which nothing here calls (the
+  crate only writes its release archives), but 8.x has no patched release.
+
 ### Fixed
 
 - **ChArUco and marker-board corners were labelled one square off whenever the
