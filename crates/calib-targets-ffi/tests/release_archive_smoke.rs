@@ -144,7 +144,7 @@ fn unpack_archive(archive_path: &Path, unpack_dir: &Path) -> Result<PathBuf, Str
                 Some(path) => unpack_dir.join(path),
                 None => continue,
             };
-            if file.name().ends_with('/') {
+            if file.is_dir() {
                 fs::create_dir_all(&out_path)
                     .map_err(|err| format!("create directory {}: {err}", out_path.display()))?;
                 continue;

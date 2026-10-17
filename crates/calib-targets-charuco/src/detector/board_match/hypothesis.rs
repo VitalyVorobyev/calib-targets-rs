@@ -27,7 +27,8 @@ use tracing::instrument;
 pub struct DiagHypothesis {
     /// Board rotation, in 90° steps.
     pub rotation: u8,
-    /// Board `[Δcol, Δrow]` translation on the grid.
+    /// Board `[Δcol, Δrow]` translation carrying detected marker cells onto
+    /// board cells (a cell translation, not the corner alignment's).
     pub translation: [i32; 2],
     /// Aggregate score of this hypothesis across contributing cells.
     pub score: f32,
@@ -51,6 +52,10 @@ pub(super) fn margin_from_scores(best: f32, runner_up: Option<f32>) -> f32 {
     delta / denom
 }
 
+/// The hypothesis as a *cell* alignment: it maps a marker cell's grid
+/// coordinate (its top-left corner) to the board cell it lands on. Convert
+/// with [`calib_targets_core::cell_to_corner_alignment`] before relabelling
+/// corners.
 pub(super) fn hypothesis_to_alignment(h: &DiagHypothesis) -> GridAlignment {
     GRID_TRANSFORMS_D4[h.rotation as usize].with_translation(h.translation)
 }

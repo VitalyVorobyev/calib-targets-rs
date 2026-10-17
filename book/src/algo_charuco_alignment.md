@@ -69,6 +69,23 @@ The accepted alignment must still clear the downstream inlier floors
 (non-primary components); because the margin gate already does the real
 accept/reject work, `for_board` keeps these floors low.
 
+## Cell alignment and corner alignment
+
+The matcher places *cells*: a cell is named by its top-left corner, and
+the chosen placement carries each marker cell onto the board cell it
+lands on. That is not yet the alignment of the corners. Under a rotation
+a cell's four corners land on the four corners of its board cell, but its
+top-left lands on a different one of them: the top-right under a quarter
+turn, the bottom-right under a half turn. The two alignments share their
+rotation and differ in translation by that offset.
+`calib_targets_core::cell_to_corner_alignment` converts one to the other.
+Corner IDs are assigned through the corner alignment, and it is what
+`CharucoDetection::alignment` reports: `alignment.apply(corner_grid)` is
+the board corner, and `alignment.apply(marker.gc)` the top-left board
+corner of the marker's square. Before 0.15.5 the cell alignment was used
+for corners, so a board seen turned by more than 45° was labelled one
+square off.
+
 ## Corner-ID assignment
 
 With the alignment fixed, each board-spec inner-corner position is mapped

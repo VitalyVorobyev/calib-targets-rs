@@ -12,7 +12,8 @@ use calib_targets_chessboard::{
     ChessboardDetection, ChessboardDetector as ChessDetector, ChessboardParamsError,
 };
 use calib_targets_core::{
-    CornerMap, GrayImageView, GridAlignment, LabeledCorner, TargetDetection, TargetKind,
+    cell_to_corner_alignment, CornerMap, GrayImageView, GridAlignment, LabeledCorner,
+    TargetDetection, TargetKind,
 };
 
 /// Marker board detector: chessboard + three circle markers.
@@ -310,8 +311,12 @@ impl MarkerBoardDetector {
 /// corner ids, and the workspace rule that a labelled set's bounding-box
 /// minimum is `(0, 0)`. One shift converts, and it belongs here rather than in
 /// the layout, so a hand-written `MarkerBoardSpec` keeps naming squares.
+///
+/// The frame is found by matching cells, so before that shift it is turned
+/// into the alignment of the cells' corners: under a rotation a cell's
+/// top-left corner lands on another corner of its board cell.
 fn corner_frame(alignment: GridAlignment) -> GridAlignment {
-    let [di, dj] = alignment.translation();
+    let [di, dj] = cell_to_corner_alignment(alignment).translation();
     alignment.with_translation([di - 1, dj - 1])
 }
 
