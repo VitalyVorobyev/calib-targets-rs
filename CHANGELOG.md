@@ -7,6 +7,32 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Fixed
+
+- **ChArUco and marker-board corners were labelled one square off whenever the
+  board appeared turned by more than 45°.** The chessboard stage canonicalises
+  its grid to the image axes, so such a board reaches the matchers as a
+  non-identity rotation. Both matchers resolve that rotation by matching
+  *cells* (a marker square, a circle square), each named by its top-left
+  corner, and then applied the cell alignment to the *corners* unchanged; but a
+  rotated cell's top-left lands on another corner of its board cell. Every
+  corner id, grid label and `target_position` was off by one square (both axes
+  at 180°), the outermost row or column lost its id, and
+  `CharucoDetection::alignment.apply(marker.gc)` no longer named the marker's
+  square. The 0° case, the only one the round-trip tests rendered, was
+  unaffected. The new `calib_targets_core::cell_to_corner_alignment` converts a
+  cell alignment to its corner alignment (it shifts the translation by the
+  rotation's offset: `(0, 1)` for `GRID_TRANSFORMS_D4[1]`, `(1, 1)` for `[2]`,
+  `(1, 0)` for `[3]`, and the matching offsets for the reflections), and
+  `CharucoDetector` and `MarkerBoardDetector` now report that. The returned
+  alignment's translation therefore changes for rotated boards; its linear part
+  does not. `tests/rotated_roundtrip.rs` in `calib-targets-print` renders both
+  boards at 0°, 30°, 90°, 100°, 180° and 270° and checks every labelled corner
+  against the drawn geometry. PuzzleBoard does not go through a cell
+  alignment.
+
 ## 0.15.4
 
 A patch: JSON Schemas for every config the npm package accepts, so a

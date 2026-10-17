@@ -39,7 +39,7 @@ mod diagnostics;
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
 use calib_targets_aruco::{sample_cell, CellSamples, MarkerCell, MarkerDetection};
-use calib_targets_core::{GrayImageView, GridAlignment};
+use calib_targets_core::{cell_to_corner_alignment, GrayImageView, GridAlignment};
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
@@ -213,8 +213,11 @@ fn match_board_core<S: MatchSink>(
     let margin = margin_from_scores(best.score, runner_up.map(|h| h.score));
     sink.record_hypotheses(&best, runner_up.as_ref(), total, margin);
 
-    let chosen_align = hypothesis_to_alignment(&best);
-    sink.fill_cells_and_expected(board, cells, &samples, &matrix, &chosen_align, bits);
+    // A cell alignment: it carries each marker cell (named by its top-left
+    // corner) onto its board cell. Emission and diagnostics look markers up
+    // by cell; the corner-mapping stage needs the corner alignment below.
+    let cell_align = hypothesis_to_alignment(&best);
+    sink.fill_cells_and_expected(board, cells, &samples, &matrix, &cell_align, bits);
 
     if margin < cfg.alignment_min_margin {
         sink.reject_margin(margin, cfg.alignment_min_margin);
@@ -226,7 +229,7 @@ fn match_board_core<S: MatchSink>(
         cells,
         &samples,
         &matrix,
-        &chosen_align,
+        &cell_align,
         cfg.px_per_square,
     );
     if markers.is_empty() {
@@ -244,7 +247,7 @@ fn match_board_core<S: MatchSink>(
     Some((
         markers,
         CharucoAlignment {
-            alignment: chosen_align,
+            alignment: cell_to_corner_alignment(cell_align),
             marker_inliers: (0..n_markers).collect(),
         },
     ))

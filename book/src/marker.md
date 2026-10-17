@@ -70,7 +70,7 @@
 ## Notes
 
 - Cell coordinates `(i, j)` refer to **square cells**, expressed by the top-left corner indices. The cell center is at `(i + 0.5, j + 0.5)`.
-- `alignment` maps detected grid coordinates into board coordinates using a rotation and a translation, and it is the frame the returned corner labels are already expressed in.
+- `alignment` maps detected grid coordinates into board coordinates using a rotation and a translation, and it is the frame the returned corner labels are already expressed in. The frame is found by matching circle *cells*; under a rotation a cell's top-left corner lands on another corner of its board cell, so the cell frame is converted to the corner frame (`calib_targets_core::cell_to_corner_alignment`) before labelling.
 - A circle's polarity is fixed by the square underneath it: `white` on an even `i + j`, `black` on an odd one. Any other combination draws a disc the same colour as its square, and `calib-targets-print` rejects it.
 - The frame search covers only the four **rotations**, not the eight dihedral transforms. A camera imaging the printed side of an opaque board cannot produce a reflection, so including them would only let physically unreachable hypotheses compete with the true one.
 - Resolving the frame is all-or-nothing by design. A single circle is consistent with all four rotations, and two leave no redundancy, so anything short of the full layout agreeing — or a second frame agreeing equally well — comes back as a typed error rather than a guess.

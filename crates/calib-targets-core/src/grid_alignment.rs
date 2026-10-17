@@ -38,6 +38,30 @@ pub fn cell_rect_corners_at(gc: Coord, px_per_cell: f32) -> [nalgebra::Point2<f3
     ]
 }
 
+/// The corner alignment implied by a *cell* alignment on a square grid.
+///
+/// A cell is named by its top-left corner (as in [`cell_rect_corners_at`]),
+/// so an alignment found by matching cells — `cell_alignment.apply(gc)` is
+/// the destination cell that cell `gc` lands on — is not itself the alignment
+/// of the corners. A rotation or reflection carries the four corners of cell
+/// `gc` onto the four corners of the destination cell, but the source
+/// top-left generally lands on a different one of them: under `M`, the
+/// destination top-left is `M·gc + t + o`, where `t` is the corner
+/// translation and `o` is the componentwise minimum of `M` over the unit
+/// square's corners. The two translations therefore differ by `o`, which is
+/// zero for the identity and nonzero for every other `D4` element (for
+/// example `(0, -1)` for `GRID_TRANSFORMS_D4[1]`, `(-1, -1)` for `[2]`,
+/// `(-1, 0)` for `[3]`).
+///
+/// Returns the alignment with the same linear part that maps every corner of
+/// a source cell onto the corresponding corner of its destination cell.
+pub fn cell_to_corner_alignment(cell_alignment: GridAlignment) -> GridAlignment {
+    let [[a, b], [c, d]] = cell_alignment.matrix();
+    let offset = [a.min(0) + b.min(0), c.min(0) + d.min(0)];
+    let [tx, ty] = cell_alignment.translation();
+    cell_alignment.with_translation([tx - offset[0], ty - offset[1]])
+}
+
 /// The 8 dihedral transforms `D4` on the integer grid.
 ///
 /// The order intentionally matches the historical workspace table:
@@ -155,6 +179,52 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// For every `D4` element and translation, the corner alignment carries
+    /// the four corners of each cell exactly onto the four corners of the
+    /// cell the cell alignment names.
+    #[test]
+    fn cell_to_corner_alignment_maps_cell_corners_onto_destination_cell() {
+        let unit = [(0, 0), (1, 0), (1, 1), (0, 1)];
+        for (idx, t) in GRID_TRANSFORMS_D4.iter().enumerate() {
+            for translation in [[0, 0], [3, -4], [-2, 5]] {
+                let cell_align = t.with_translation(translation);
+                let corner_align = cell_to_corner_alignment(cell_align);
+                assert_eq!(corner_align.matrix(), cell_align.matrix());
+                for gc in [Coord::new(0, 0), Coord::new(2, 1), Coord::new(-3, 4)] {
+                    let dst = cell_align.apply(gc);
+                    let mut want: Vec<_> = unit
+                        .iter()
+                        .map(|&(du, dv)| (dst.u + du, dst.v + dv))
+                        .collect();
+                    let mut got: Vec<_> = unit
+                        .iter()
+                        .map(|&(du, dv)| {
+                            let p = corner_align.apply(Coord::new(gc.u + du, gc.v + dv));
+                            (p.u, p.v)
+                        })
+                        .collect();
+                    want.sort_unstable();
+                    got.sort_unstable();
+                    assert_eq!(got, want, "D4[{idx}], t={translation:?}, gc={gc:?}");
+                }
+            }
+        }
+    }
+
+    /// The corner translation of each rotation, pinned so a change to the
+    /// `D4` table order shows up here.
+    #[test]
+    fn cell_to_corner_alignment_offsets_of_the_rotations() {
+        let shifted = |idx: usize| {
+            cell_to_corner_alignment(GRID_TRANSFORMS_D4[idx].with_translation([3, -4]))
+                .translation()
+        };
+        assert_eq!(shifted(0), [3, -4]);
+        assert_eq!(shifted(1), [3, -3]);
+        assert_eq!(shifted(2), [4, -3]);
+        assert_eq!(shifted(3), [4, -4]);
     }
 
     #[test]
