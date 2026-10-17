@@ -9,6 +9,20 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+## 0.15.5
+
+A patch: ChArUco and marker-board corners are labelled correctly when the
+board appears turned by more than 45°. Upgrade if you detect boards that can
+be seen rotated. Serde shapes are unchanged; the returned `alignment`'s
+translation changes for rotated boards (below). The C ABI is unchanged at
+5.0.0; `projective-grid` is unchanged at 0.14.2.
+
+### Added
+
+- **`calib_targets_core::cell_to_corner_alignment`**: the corner alignment
+  implied by a cell alignment (same linear part, translation shifted by the
+  rotation's corner offset).
+
 ### Fixed
 
 - **ChArUco and marker-board corners were labelled one square off whenever the

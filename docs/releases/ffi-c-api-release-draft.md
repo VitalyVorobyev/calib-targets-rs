@@ -11,6 +11,13 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
+## ABI 5.0.0 — unchanged in workspace 0.15.5
+
+Workspace 0.15.5 fixes ChArUco and marker-board corner labels for boards seen
+turned by more than 45° (they were one square off). The C API returns the
+corrected ids and positions; no type, function or field changes, so the ABI
+stays at 5.0.0.
+
 ## ABI 5.0.0 — unchanged in workspace 0.15.4
 
 Workspace 0.15.4 adds JSON Schemas for the npm package's configs (an optional

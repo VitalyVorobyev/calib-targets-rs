@@ -459,7 +459,7 @@ checksum = "fc652a48c352aef3ea3aed32080501cf3ef6ed5da78602a020c991775b0aff04"
 
 [[package]]
 name = "calib-targets"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "assert_cmd",
  "calib-targets-aruco",
@@ -487,7 +487,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-aruco"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -503,7 +503,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-bench"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets",
  "calib-targets-chessboard",
@@ -522,7 +522,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-charuco"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets",
  "calib-targets-aruco",
@@ -545,7 +545,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-chessboard"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "approx",
  "calib-targets",
@@ -567,7 +567,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-core"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "chess-corners",
  "nalgebra",
@@ -594,7 +594,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-marker"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets-chessboard",
  "calib-targets-core",
@@ -612,7 +612,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-print"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets-aruco",
  "calib-targets-charuco",
@@ -629,7 +629,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-puzzleboard"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets",
  "calib-targets-chessboard",
@@ -652,7 +652,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-py"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets",
  "chess-corners",
@@ -666,7 +666,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-studio"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "axum",
  "calib-targets",
@@ -685,7 +685,7 @@ dependencies = [
 
 [[package]]
 name = "calib-targets-wasm"
-version = "0.15.4"
+version = "0.15.5"
 dependencies = [
  "calib-targets",
  "calib-targets-aruco",
