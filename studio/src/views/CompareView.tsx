@@ -2,32 +2,25 @@
 // synchronised zoom/pan, or as a single position-matched diff overlay
 // (A-only / B-only / common), plus a metric delta strip.
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router";
 import { Badge, Empty, SegmentedControl, Select, cn } from "@vitavision/ui";
 import { api } from "../api/client";
-import type {
-  BaselineCorner,
-  DetectResponse,
-  EngineReq,
-  OrientationMethodReq,
-} from "../api/types";
-import {
-  CanvasViewport,
-  type HitPoint,
-  type OverlayLayer,
-  type ViewTransform,
-} from "../components/CanvasViewport";
-import { cornersLayer, edgesLayer } from "../components/overlays";
+import type { BaselineCorner, DetectResponse, EngineReq, OrientationMethodReq } from "../api/types";
+import { TargetOverlay, type TargetHit } from "@vitavision/overlays";
+import type { StageLayer, StageView } from "@vitavision/stage2d";
 import { useDebounced } from "../hooks/useDebounced";
-import { useImageBitmap } from "../hooks/useImageBitmap";
+import { useImageSize, type ImageSize } from "../hooks/useImageSize";
 import { eyebrow, quietLink, textLink } from "../theme/classes";
+import { cornerOfId, describeCorner, targetDetectionOf } from "../viewer/detection";
+import { AB_COLORS, AbDiffLayers, abSplit } from "../viewer/layers";
+import { StudioStage, useHoverText } from "../viewer/StudioStage";
 
-// Data colours: what the A/B diff overlay draws each run in (canvas and legend alike).
-const A_COLOR = "rgb(255, 120, 60)";
-const B_COLOR = "rgb(80, 200, 255)";
-const COMMON_COLOR = "rgba(170, 180, 190, 0.8)";
+// What the A/B diff overlay draws each run in (stage and legend alike): the stage's overlay roles.
+const A_COLOR = AB_COLORS.a;
+const B_COLOR = AB_COLORS.b;
+const COMMON_COLOR = AB_COLORS.common;
 
 interface Slot {
   engine: EngineReq;
@@ -68,29 +61,16 @@ export function CompareView() {
   const [a, setA] = useState<Slot>(DEFAULT_A);
   const [b, setB] = useState<Slot>(DEFAULT_B);
 
-  const bitmap = useImageBitmap(label || null);
+  const size = useImageSize(label || null);
   const da = useSlotDetect(label, a);
   const db = useSlotDetect(label, b);
 
-  // One transform object shared by both viewports → synced zoom/pan.
-  const shared = useRef<ViewTransform | null>(null);
+  // One view shared by every stage → synced zoom/pan.
+  const [view, setView] = useState<StageView | null>(null);
 
-  const cornersA = da.data?.detection?.corners ?? [];
-  const cornersB = db.data?.detection?.corners ?? [];
-
-  const layersA = useMemo(
-    () => [edgesLayer(cornersA, true), cornersLayer(cornersA, true)],
-    [cornersA],
-  );
-  const layersB = useMemo(
-    () => [edgesLayer(cornersB, true), cornersLayer(cornersB, true)],
-    [cornersB],
-  );
-
-  const overlay = useMemo(
-    () => diffOverlay(cornersA, cornersB),
-    [cornersA, cornersB],
-  );
+  const cornersA = useMemo(() => da.data?.detection?.corners ?? [], [da.data]);
+  const cornersB = useMemo(() => db.data?.detection?.corners ?? [], [db.data]);
+  const split = useMemo(() => abSplit(cornersA, cornersB), [cornersA, cornersB]);
 
   if (!label) {
     return (
@@ -107,10 +87,7 @@ export function CompareView() {
   return (
     <div className="flex h-full flex-col">
       <header className="flex flex-wrap items-center gap-4 border-b border-line bg-surface px-4 py-3">
-        <Link
-          to={`/image/${label.split("/").map(encodeURIComponent).join("/")}`}
-          className={quietLink}
-        >
+        <Link to={`/image/${label.split("/").map(encodeURIComponent).join("/")}`} className={quietLink}>
           ← workspace
         </Link>
         <span className="font-mono text-xs font-semibold">{label}</span>
@@ -120,71 +97,45 @@ export function CompareView() {
           options={MODES}
           onValueChange={(m) => setMode(m as "side" | "overlay")}
         />
-        <DeltaStrip da={da.data} db={db.data} overlap={overlay.commonCount} />
+        <DeltaStrip da={da.data} db={db.data} overlap={split.common.length} />
       </header>
 
       <div className="flex min-h-0 flex-1 gap-px">
         {mode === "side" ? (
           <>
-            <Pane
-              title="A"
-              color={A_COLOR}
-              slot={a}
-              onSlot={setA}
-              detect={da.data}
-            >
-              <CanvasViewport
-                image={bitmap.data ?? null}
-                layers={layersA}
-                hitPoints={hitPoints(cornersA)}
-                renderTooltip={tooltip}
-                sharedTransform={shared}
+            <Pane title="A" color={A_COLOR} slot={a} onSlot={setA} detect={da.data}>
+              <RunStage
+                label={label}
+                size={size.data}
+                corners={cornersA}
+                view={view}
+                onView={setView}
+                busy={da.isFetching}
               />
             </Pane>
-            <Pane
-              title="B"
-              color={B_COLOR}
-              slot={b}
-              onSlot={setB}
-              detect={db.data}
-            >
-              <CanvasViewport
-                image={bitmap.data ?? null}
-                layers={layersB}
-                hitPoints={hitPoints(cornersB)}
-                renderTooltip={tooltip}
-                sharedTransform={shared}
+            <Pane title="B" color={B_COLOR} slot={b} onSlot={setB} detect={db.data}>
+              <RunStage
+                label={label}
+                size={size.data}
+                corners={cornersB}
+                view={view}
+                onView={setView}
+                busy={db.isFetching}
               />
             </Pane>
           </>
         ) : (
           <div className="flex min-h-0 flex-1">
             <div className="min-w-0 flex-1">
-              <CanvasViewport
-                image={bitmap.data ?? null}
-                layers={[overlay.layer]}
-                hitPoints={overlay.hits}
-                renderTooltip={(d) => (
-                  <>
-                    <div style={{ color: d.color }}>● {d.where}</div>
-                    <div className="text-fg-muted">
-                      (i, j) = ({d.c.i}, {d.c.j}) · x {d.c.x.toFixed(1)} · y{" "}
-                      {d.c.y.toFixed(1)}
-                    </div>
-                  </>
-                )}
-              />
+              <DiffStage label={label} size={size.data} split={split} view={view} onView={setView} />
             </div>
             <aside className="flex w-60 shrink-0 flex-col gap-3 border-l border-line bg-surface p-4">
               <SlotControls title="A" color={A_COLOR} slot={a} onSlot={setA} />
               <SlotControls title="B" color={B_COLOR} slot={b} onSlot={setB} />
               <div className="text-[11px] text-fg-muted">
-                <Legend color={A_COLOR} text={`A only (${overlay.aOnly})`} />
-                <Legend color={B_COLOR} text={`B only (${overlay.bOnly})`} />
-                <Legend
-                  color={COMMON_COLOR}
-                  text={`common (${overlay.commonCount})`}
-                />
+                <Legend color={A_COLOR} text={`A only (${split.aOnly.length})`} />
+                <Legend color={B_COLOR} text={`B only (${split.bOnly.length})`} />
+                <Legend color={COMMON_COLOR} text={`common (${split.common.length})`} />
               </div>
             </aside>
           </div>
@@ -194,91 +145,104 @@ export function CompareView() {
   );
 }
 
-// --- helpers -----------------------------------------------------------------
+// --- stages ------------------------------------------------------------------
 
-function hitPoints(corners: BaselineCorner[]): HitPoint<BaselineCorner>[] {
-  return corners.map((c) => ({ x: c.x, y: c.y, data: c }));
-}
+type StageLayerId = "detection" | "edges";
 
-function tooltip(c: BaselineCorner) {
+/** One run's corners over the image: the same detection overlay as the workspace. */
+function RunStage({
+  label,
+  size,
+  corners,
+  view,
+  onView,
+  busy,
+}: {
+  label: string;
+  size: ImageSize | undefined;
+  corners: BaselineCorner[];
+  view: StageView | null;
+  onView: (view: StageView) => void;
+  busy: boolean;
+}) {
+  const [visible, setVisible] = useState<Record<StageLayerId, boolean>>({ detection: true, edges: true });
+  const hovering = useHoverText();
+  const detection = useMemo(() => targetDetectionOf(corners), [corners]);
+  const menu: StageLayer[] = [
+    { id: "detection", label: "Corners", swatch: "var(--stage-feature)", visible: visible.detection },
+    { id: "edges", label: "Grid edges", swatch: "var(--stage-structure)", visible: visible.edges },
+  ];
+  const report = hovering.reporter("corner");
+  const onHoverChange = (hit: TargetHit | null) => {
+    const c = hit === null ? null : cornerOfId(String(hit.id), corners);
+    report(c === null ? null : describeCorner(c));
+  };
+  if (!size) return null;
   return (
-    <>
-      <div>
-        (i, j) = ({c.i}, {c.j})
-      </div>
-      <div className="text-fg-muted">
-        x {c.x.toFixed(2)} · y {c.y.toFixed(2)} · score {c.score.toFixed(1)}
-      </div>
-    </>
+    <StudioStage
+      key={label}
+      label={label}
+      size={size}
+      layers={menu}
+      onLayer={(id, on) => setVisible((v) => ({ ...v, [id as StageLayerId]: on }))}
+      hover={hovering.text}
+      view={view}
+      onView={onView}
+      busy={busy}
+    >
+      {visible.detection && (
+        <TargetOverlay detection={detection} showEdges={visible.edges} onHoverChange={onHoverChange} />
+      )}
+    </StudioStage>
   );
 }
 
-interface OverlayHit {
-  c: BaselineCorner;
-  where: "A only" | "B only" | "common";
-  color: string;
-}
+type DiffLayerId = "a" | "b" | "common";
 
-function diffOverlay(a: BaselineCorner[], b: BaselineCorner[]) {
-  const key = (c: BaselineCorner) => `${c.x.toFixed(2)},${c.y.toFixed(2)}`;
-  const bKeys = new Set(b.map(key));
-  const aKeys = new Set(a.map(key));
-  const aOnly = a.filter((c) => !bKeys.has(key(c)));
-  const bOnly = b.filter((c) => !aKeys.has(key(c)));
-  const common = a.filter((c) => bKeys.has(key(c)));
-
-  const layer: OverlayLayer = {
-    id: "ab-diff",
-    visible: true,
-    draw: (ctx, scale) => {
-      const r = 3 / Math.sqrt(scale);
-      ctx.fillStyle = COMMON_COLOR;
-      for (const c of common) {
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, r * 0.7, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.lineWidth = 1.6 / Math.sqrt(scale);
-      ctx.strokeStyle = A_COLOR;
-      for (const c of aOnly) {
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, r * 1.6, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-      ctx.strokeStyle = B_COLOR;
-      for (const c of bOnly) {
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, r * 1.6, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-    },
-  };
-
-  const hits: HitPoint<OverlayHit>[] = [
-    ...aOnly.map((c) => ({
-      x: c.x,
-      y: c.y,
-      data: { c, where: "A only" as const, color: A_COLOR },
-    })),
-    ...bOnly.map((c) => ({
-      x: c.x,
-      y: c.y,
-      data: { c, where: "B only" as const, color: B_COLOR },
-    })),
-    ...common.map((c) => ({
-      x: c.x,
-      y: c.y,
-      data: { c, where: "common" as const, color: COMMON_COLOR },
-    })),
+/** The position-matched A/B diff over the image: A only, B only, common. */
+function DiffStage({
+  label,
+  size,
+  split,
+  view,
+  onView,
+}: {
+  label: string;
+  size: ImageSize | undefined;
+  split: ReturnType<typeof abSplit>;
+  view: StageView | null;
+  onView: (view: StageView) => void;
+}) {
+  const [visible, setVisible] = useState<Record<DiffLayerId, boolean>>({ a: true, b: true, common: true });
+  const hovering = useHoverText();
+  const shown = useMemo(
+    () => ({
+      aOnly: visible.a ? split.aOnly : [],
+      bOnly: visible.b ? split.bOnly : [],
+      common: visible.common ? split.common : [],
+    }),
+    [split, visible],
+  );
+  const menu: StageLayer[] = [
+    { id: "a", label: "A only", swatch: A_COLOR, visible: visible.a },
+    { id: "b", label: "B only", swatch: B_COLOR, visible: visible.b },
+    { id: "common", label: "Common", swatch: COMMON_COLOR, visible: visible.common },
   ];
-
-  return {
-    layer,
-    hits,
-    aOnly: aOnly.length,
-    bOnly: bOnly.length,
-    commonCount: common.length,
-  };
+  if (!size) return null;
+  return (
+    <StudioStage
+      key={label}
+      label={label}
+      size={size}
+      layers={menu}
+      onLayer={(id, on) => setVisible((v) => ({ ...v, [id as DiffLayerId]: on }))}
+      hover={hovering.text}
+      view={view}
+      onView={onView}
+    >
+      <AbDiffLayers split={shown} onHover={hovering.reporter("diff")} />
+    </StudioStage>
+  );
 }
 
 function DeltaStrip({
@@ -306,10 +270,7 @@ function DeltaStrip({
           B {cb} corners · {db.elapsed_ms.toFixed(1)} ms
         </span>
       </Badge>
-      <Badge
-        tone={cb - ca > 0 ? "normal" : cb - ca < 0 ? "defect" : "neutral"}
-        className="font-mono"
-      >
+      <Badge tone={cb - ca > 0 ? "normal" : cb - ca < 0 ? "defect" : "neutral"} className="font-mono">
         Δ corners {cb - ca >= 0 ? "+" : ""}
         {cb - ca}
       </Badge>
@@ -368,12 +329,7 @@ function SlotControls({
   onSlot: (s: Slot) => void;
   inline?: boolean;
 }) {
-  const sel = (
-    name: string,
-    value: string,
-    options: string[],
-    onChange: (v: string) => void,
-  ) => (
+  const sel = (name: string, value: string, options: string[], onChange: (v: string) => void) => (
     <Select
       aria-label={`${title ?? "Run"} ${name}`}
       value={value}
@@ -384,9 +340,7 @@ function SlotControls({
   );
   const body = (
     <>
-      {sel("engine", slot.engine, ["pipeline", "grid"], (v) =>
-        onSlot({ ...slot, engine: v as EngineReq }),
-      )}
+      {sel("engine", slot.engine, ["pipeline", "grid"], (v) => onSlot({ ...slot, engine: v as EngineReq }))}
       {sel("axis fit", slot.orientationMethod, ["ring_fit", "disk_fit"], (v) =>
         onSlot({ ...slot, orientationMethod: v as OrientationMethodReq }),
       )}
@@ -409,11 +363,7 @@ function SlotControls({
 function Legend({ color, text }: { color: string; text: string }) {
   return (
     <div className="flex items-center gap-1.5">
-      <span
-        aria-hidden
-        className="inline-block size-2.5 rounded-full border-2"
-        style={{ borderColor: color }}
-      />
+      <span aria-hidden className="inline-block size-2.5 rounded-full border-2" style={{ borderColor: color }} />
       {text}
     </div>
   );

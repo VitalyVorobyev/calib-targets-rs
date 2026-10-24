@@ -31,9 +31,7 @@ export default function App() {
               cn(
                 "block rounded-control px-2.5 py-1.5 transition-colors",
                 focusRing,
-                isActive
-                  ? "bg-signal/12 font-semibold text-signal"
-                  : "text-fg-muted hover:bg-raised hover:text-fg",
+                isActive ? "bg-signal/12 font-semibold text-signal" : "text-fg-muted hover:bg-raised hover:text-fg",
               )
             }
           >

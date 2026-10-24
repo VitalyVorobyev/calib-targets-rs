@@ -10,11 +10,7 @@ import { api } from "../api/client";
 import type { DetectorParamsOverride } from "../api/types";
 import { eyebrow } from "../theme/classes";
 
-export function PresetPicker({
-  onLoad,
-}: {
-  onLoad: (d: DetectorParamsOverride) => void;
-}) {
+export function PresetPicker({ onLoad }: { onLoad: (d: DetectorParamsOverride) => void }) {
   const presets = useQuery({
     queryKey: ["presets"],
     queryFn: api.presets,
@@ -27,19 +23,11 @@ export function PresetPicker({
       <div className={cn(eyebrow, "mb-2")}>Presets</div>
       <div className="flex flex-wrap gap-1">
         {(presets.data ?? []).map((p) => (
-          <Button
-            key={p.name}
-            size="sm"
-            className="font-mono"
-            title={p.description}
-            onClick={() => onLoad(p.params)}
-          >
+          <Button key={p.name} size="sm" className="font-mono" title={p.description} onClick={() => onLoad(p.params)}>
             {p.name}
           </Button>
         ))}
-        {presets.data?.length === 0 && (
-          <span className="text-[11px] text-fg-subtle">none</span>
-        )}
+        {presets.data?.length === 0 && <span className="text-[11px] text-fg-subtle">none</span>}
       </div>
       {(configs.data?.length ?? 0) > 0 && (
         <>

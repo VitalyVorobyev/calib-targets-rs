@@ -2,12 +2,7 @@
 // the topological diagnosis.
 
 import { Badge, ErrorBox, Field, Select, cn } from "@vitavision/ui";
-import type {
-  DiagnoseAlgorithm,
-  DiagnoseResponse,
-  TopologicalDiagnosisWire,
-} from "../api/types";
-import { TOPO_COLORS } from "./diagnoseOverlays";
+import type { DiagnoseAlgorithm, DiagnoseResponse, TopologicalDiagnosisWire } from "../api/types";
 import { errorText } from "../api/client";
 import { eyebrow } from "../theme/classes";
 
@@ -30,13 +25,9 @@ export function DiagnosePanel({
     <div className="flex flex-col gap-3">
       <Field
         label="Diagnose"
-        description="Topological path exposes the prefilter funnel + labelled/unlabelled split (no per-stage trace by construction)."
+        description="Topological path exposes the prefilter funnel and the labelled/dropped split. Hover a dot on the image for its axis uncertainty."
       >
-        <Select
-          value={algorithm}
-          options={ALGORITHMS}
-          onValueChange={(v) => onAlgorithm(v as DiagnoseAlgorithm)}
-        />
+        <Select value={algorithm} options={ALGORITHMS} onValueChange={(v) => onAlgorithm(v as DiagnoseAlgorithm)} />
       </Field>
 
       {isLoading && <div className="text-fg-muted">running…</div>}
@@ -67,10 +58,7 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
               <span className="w-16 shrink-0 font-mono text-[11px] text-fg-muted">{name}</span>
               <div className="min-w-0 flex-1">
                 <div
-                  className={cn(
-                    "h-2.5 min-w-0.5 rounded-sm",
-                    k === 0 ? "bg-line-strong" : "bg-signal",
-                  )}
+                  className={cn("h-2.5 min-w-0.5 rounded-sm", k === 0 ? "bg-line-strong" : "bg-signal")}
                   style={{ width: `${(count / Math.max(d.input_count, 1)) * 100}%` }}
                 />
               </div>
@@ -82,17 +70,16 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
 
       <div className="flex flex-wrap gap-1">
         <Badge className="font-mono text-fg">
-          <Dot color={TOPO_COLORS.labelled} /> labelled {labelled}
+          <Dot className="bg-normal" /> labelled {labelled}
         </Badge>
         <Badge className="font-mono text-fg">
-          <Dot color={TOPO_COLORS.dropped} /> dropped {d.input_count - labelled}
+          <Dot className="bg-defect" /> dropped {d.input_count - labelled}
         </Badge>
       </div>
 
       <div className="font-mono text-[11px] leading-relaxed text-fg-muted">
-        axis_align {deg(d.effective_tols.axis_align_tol_rad)}° · max σ{" "}
-        {deg(d.effective_tols.max_axis_sigma_rad)}° · cluster{" "}
-        {deg(d.effective_tols.cluster_axis_tol_rad)}° · edge_max ×
+        axis_align {deg(d.effective_tols.axis_align_tol_rad)}° · max σ {deg(d.effective_tols.max_axis_sigma_rad)}° ·
+        cluster {deg(d.effective_tols.cluster_axis_tol_rad)}° · edge_max ×
         {d.effective_tols.edge_length_max_rel.toFixed(2)}
       </div>
 
@@ -103,8 +90,7 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
           // eslint-disable-next-line @eslint-react/no-array-index-key -- positional list, see above
           <div key={k} className="font-mono text-[11px] text-fg-muted">
             #{k}: {c.labelled} corners · i[{c.bbox[0]}, {c.bbox[1]}] j[
-            {c.bbox[2]}, {c.bbox[3]}] ({c.bbox[1] - c.bbox[0] + 1}×
-            {c.bbox[3] - c.bbox[2] + 1})
+            {c.bbox[2]}, {c.bbox[3]}] ({c.bbox[1] - c.bbox[0] + 1}×{c.bbox[3] - c.bbox[2] + 1})
           </div>
         ))}
       </div>
@@ -112,13 +98,7 @@ function TopoPanel({ d }: { d: TopologicalDiagnosisWire }) {
   );
 }
 
-/** A dot in a data colour: the colour the overlay draws that class in. */
-function Dot({ color }: { color: string }) {
-  return (
-    <span
-      aria-hidden
-      className="inline-block size-2 rounded-full"
-      style={{ backgroundColor: color }}
-    />
-  );
+/** A dot in the colour the stage paints that class in (the verdict tokens). */
+function Dot({ className }: { className: string }) {
+  return <span aria-hidden className={cn("inline-block size-2 rounded-full", className)} />;
 }

@@ -9,7 +9,15 @@ import { eyebrow } from "../theme/classes";
 const LIST_CAP = 40;
 
 const WRONG_POSITION_COLUMNS: Column<WrongPosition>[] = [
-  { key: "label", header: "(i, j)", cell: (wp) => <span className="font-mono">({wp.i}, {wp.j})</span> },
+  {
+    key: "label",
+    header: "(i, j)",
+    cell: (wp) => (
+      <span className="font-mono">
+        ({wp.i}, {wp.j})
+      </span>
+    ),
+  },
   {
     key: "drift",
     header: "drift",
@@ -30,11 +38,7 @@ export function BaselineDiffSummary({ diff }: { diff: BaselineDiff }) {
     <div className="flex flex-col gap-3">
       <div className="flex flex-wrap gap-1">
         <Badge tone={passed ? "normal" : "defect"} className="font-mono">
-          {passed
-            ? diff.extra_labels.length > 0
-              ? `PASS +${diff.extra_labels.length}`
-              : "PASS"
-            : "FAIL"}
+          {passed ? (diff.extra_labels.length > 0 ? `PASS +${diff.extra_labels.length}` : "PASS") : "FAIL"}
         </Badge>
         {diff.shift && (diff.shift[0] !== 0 || diff.shift[1] !== 0) && (
           <Badge tone="warning" className="font-mono">
@@ -60,9 +64,7 @@ export function BaselineDiffSummary({ diff }: { diff: BaselineDiff }) {
       />
       {diff.wrong_position.length > 0 && (
         <div>
-          <div className={cn(eyebrow, "mb-1")}>
-            Wrong position ({diff.wrong_position.length})
-          </div>
+          <div className={cn(eyebrow, "mb-1")}>Wrong position ({diff.wrong_position.length})</div>
           <Table
             columns={WRONG_POSITION_COLUMNS}
             rows={diff.wrong_position.slice(0, LIST_CAP)}
@@ -94,15 +96,7 @@ export function BaselineDiffSummary({ diff }: { diff: BaselineDiff }) {
   );
 }
 
-function DiffSection({
-  title,
-  items,
-  tone,
-}: {
-  title: string;
-  items: string[];
-  tone: "normal" | "defect";
-}) {
+function DiffSection({ title, items, tone }: { title: string; items: string[]; tone: "normal" | "defect" }) {
   if (!items.length) return null;
   const shown = items.slice(0, LIST_CAP);
   return (
@@ -118,9 +112,7 @@ function DiffSection({
         {shown.map((s) => (
           <span key={s}>{s}</span>
         ))}
-        {items.length > LIST_CAP && (
-          <span className="text-fg-subtle">… {items.length - LIST_CAP} more</span>
-        )}
+        {items.length > LIST_CAP && <span className="text-fg-subtle">… {items.length - LIST_CAP} more</span>}
       </div>
     </div>
   );

@@ -97,11 +97,11 @@ cd demo && bun install && bun run dev
 ## Frontends (`demo/`, `studio/`)
 
 Both follow the vitavision toolchain baseline: compiler options from
-`@vitavision/config-ts`, bun pinned in `packageManager`, and UI built on
-`@vitavision/ui` with Tailwind 4. The demo is on the current baseline
-(TypeScript 7, `oxlint` with `@vitavision/config-oxlint`, `oxfmt`) and also uses
-`@vitavision/stage2d`, `overlays`, `workbench` and `forms`; see `demo/README.md`.
-The studio still lints with ESLint (see `studio/README.md`, "Design system").
+`@vitavision/config-ts`, bun pinned in `packageManager`, UI built on
+`@vitavision/ui` with Tailwind 4, TypeScript 7, `oxlint` with
+`@vitavision/config-oxlint` and `oxfmt`. Both draw images through
+`@vitavision/stage2d` and `overlays` and render configs with `forms`; see
+`demo/README.md` and `studio/README.md`.
 
 ```bash
 # demo/
@@ -113,8 +113,9 @@ bun run test:screens   # local Playwright screenshots against an uncommitted bas
 
 # studio/
 bun run check          # tsc -b
-bun run lint           # eslint, 0 errors (React Compiler rules are warnings for now)
-bun run test:screens   # Playwright screenshots against a local, uncommitted baseline
+bun run lint           # oxlint --max-warnings 0
+bun run fmt:check      # oxfmt --check
+bun run test:screens   # Playwright: contract tests + screenshots against a local, uncommitted baseline
 ```
 
 `test:screens` in `studio/` needs `cargo build --release -p calib-targets-studio`
