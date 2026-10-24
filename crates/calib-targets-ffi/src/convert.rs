@@ -18,7 +18,7 @@ use crate::types::{
     ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t, ct_optional_u32_t, ct_point2f_t,
     ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t,
     ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t, ct_puzzleboard_symmetry_mode_t,
-    ct_scan_decode_config_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK,
+    ct_scan_decode_config_t, ct_uncertainty_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK,
     CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000,
     CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100,
     CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50,
@@ -32,7 +32,8 @@ use crate::types::{
     CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD, CT_PUZZLEBOARD_SEARCH_MODE_FULL,
     CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS, CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS,
     CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER, CT_REFINER_KIND_SADDLE_POINT,
-    CT_TRUE, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
+    CT_TRUE, CT_UNCERTAINTY_OFF, CT_UNCERTAINTY_PROPAGATED, CT_UPSCALE_MODE_DISABLED,
+    CT_UPSCALE_MODE_FIXED,
 };
 use crate::validate::{
     flag_to_bool, require_finite, require_fraction, require_nonnegative, require_positive,
@@ -58,7 +59,7 @@ use calib_targets::puzzleboard::{
 // `OrientationMethod`.
 use chess_corners::{
     CenterOfMassConfig, ChessRefiner, ChessRing, ForstnerConfig, MultiscaleConfig,
-    SaddlePointConfig, UpscaleConfig,
+    SaddlePointConfig, Uncertainty, UpscaleConfig,
 };
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
@@ -164,6 +165,16 @@ fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConf
     Ok(cfg)
 }
 
+fn convert_uncertainty(uncertainty: ct_uncertainty_t) -> FfiResult<Uncertainty> {
+    match uncertainty {
+        CT_UNCERTAINTY_PROPAGATED => Ok(Uncertainty::Propagated),
+        CT_UNCERTAINTY_OFF => Ok(Uncertainty::Off),
+        other => Err(FfiError::config_error(format!(
+            "chess.uncertainty must be a valid ct_uncertainty_t constant, got {other}"
+        ))),
+    }
+}
+
 pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<DetectorConfig> {
     // Lower the flat C `ct_chess_params_t` directly onto the strategy-typed
     // `DetectorConfig`. The flat shape (`use_radius10`, `threshold`,
@@ -187,6 +198,10 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         "chess.multiscale.merge_radius",
     )?;
     let upscale = convert_upscale_config(&config.upscale)?;
+    let noise_sigma = optional_f32_to_option(&config.noise_sigma, "chess.noise_sigma")?
+        .map(|sigma| require_nonnegative(sigma, "chess.noise_sigma"))
+        .transpose()?;
+    let uncertainty = convert_uncertainty(config.uncertainty)?;
 
     // A 1-level pyramid is a no-op; collapse it to `SingleScale` so the
     // detector skips the pyramid path entirely.
@@ -200,7 +215,7 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         }
     };
 
-    Ok(DetectorConfig::chess()
+    let cfg = DetectorConfig::chess()
         .with_threshold(threshold)
         .with_multiscale(multiscale)
         .with_upscale(upscale)
@@ -213,7 +228,12 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         .with_chess(|c| {
             c.ring = ring;
             c.refiner = refiner;
-        }))
+        })
+        .with_uncertainty(uncertainty);
+    Ok(match noise_sigma {
+        Some(sigma) => cfg.with_noise_sigma(sigma),
+        None => cfg,
+    })
 }
 
 // ─── Optional wrappers ──────────────────────────────────────────────────────

@@ -387,28 +387,59 @@ export interface PuzzleBoardDetection {
 export type ChessRing = "canonical" | "broad";
 export type OrientationMethod = "ring_fit" | "disk_fit";
 
-export interface RefinerConfig {
-  kind: "center_of_mass" | "forstner" | "saddle_point";
-  center_of_mass: { radius: number };
-  forstner: {
-    radius: number;
-    min_trace: number;
-    min_det: number;
-    max_condition_number: number;
-    max_offset: number;
-  };
-  saddle_point: {
-    radius: number;
-    det_margin: number;
-    max_offset: number;
-    min_abs_det: number;
-  };
+/**
+ * Which position uncertainty the corner detector computes. `"propagated"`
+ * (the default) propagates the image noise through each corner's localizer
+ * and adds a per-localizer systematic term; `"off"` skips that work and the
+ * per-image noise estimate. Corner positions are identical under both.
+ */
+export type Uncertainty = "off" | "propagated";
+
+/** Center-of-mass refinement on the ChESS response map. */
+export interface CenterOfMassConfig {
+  radius: number;
 }
 
-export type UpscaleConfig =
-  | { mode: "disabled" }
-  | { mode: "fixed"; factor: number }
-  | { mode: "adaptive"; min_corners: number };
+/** Förstner structure-tensor refinement on the image patch. */
+export interface ForstnerConfig {
+  radius: number;
+  min_trace: number;
+  min_det: number;
+  max_condition_number: number;
+  max_offset: number;
+}
+
+/** Quadratic saddle-surface fit on the image patch. */
+export interface SaddlePointConfig {
+  radius: number;
+  det_margin: number;
+  max_offset: number;
+  min_abs_det: number;
+}
+
+/**
+ * ChESS subpixel refiner — an externally tagged union, exactly as Rust's
+ * `chess_corners::ChessRefiner` serialises: the variant name is the single
+ * key and its tuning struct the value, e.g.
+ * `{ saddle_point: { radius: 2, det_margin: 1e-3, max_offset: 1.5, min_abs_det: 1e-4 } }`.
+ */
+export type ChessRefiner =
+  | { center_of_mass: CenterOfMassConfig }
+  | { forstner: ForstnerConfig }
+  | { saddle_point: SaddlePointConfig };
+
+/**
+ * @deprecated Use {@link ChessRefiner}. This name used to describe a
+ * `{ kind, center_of_mass, forstner, saddle_point }` object that the WASM
+ * entry points never accepted; it is now an alias of the real wire shape.
+ */
+export type RefinerConfig = ChessRefiner;
+
+/**
+ * Pre-pipeline integer upscaling: `"disabled"`, or `{ fixed: k }` with
+ * `k` in `{2, 3, 4}`.
+ */
+export type UpscaleConfig = "disabled" | { fixed: number };
 
 export type MultiscaleConfig =
   | "single_scale"
@@ -419,10 +450,29 @@ export type MultiscaleConfig =
 /** Strategy payload nested under {@link ChessConfig.strategy}. */
 export interface ChessStrategyConfig {
   ring: ChessRing;
-  refiner: RefinerConfig;
+  refiner: ChessRefiner;
 }
 
-export type DetectionStrategy = { chess: ChessStrategyConfig };
+/** 3-point subpixel fit of the Radon response-map peak. */
+export type PeakFitMode = "parabolic" | "gaussian";
+
+/**
+ * Final subpixel position of a Radon corner: the response-map peak fit alone
+ * (`"peak_fit"`, the default), or saddle-point refinement of each peak on the
+ * input image.
+ */
+export type RadonRefiner = "peak_fit" | { saddle_point: SaddlePointConfig };
+
+/** Whole-image Radon detector payload nested under {@link ChessConfig.strategy}. */
+export interface RadonConfig {
+  ray_radius: number;
+  image_upsample: number;
+  response_blur_radius: number;
+  peak_fit: PeakFitMode;
+  refiner: RadonRefiner;
+}
+
+export type DetectionStrategy = { chess: ChessStrategyConfig } | { radon: RadonConfig };
 
 /** Shared NMS / peak-clustering thresholds, honoured by every strategy. */
 export interface DetectionParams {
@@ -449,6 +499,14 @@ export interface ChessConfig {
   /** `null` skips the per-corner axis fit; descriptors then carry no axes. */
   orientation_method: OrientationMethod | null;
   merge_radius: number;
+  /**
+   * Pixel-noise standard deviation in gray levels (`>= 0`) used to express
+   * each corner's position covariance in px². `null` / omitted estimates it
+   * from each image; set it when the sensor noise is known.
+   */
+  noise_sigma?: number | null;
+  /** Which position uncertainty to compute. Default `"propagated"`. */
+  uncertainty?: Uncertainty;
 }
 
 // ---------------------------------------------------------------------------
@@ -718,10 +776,10 @@ export type PuzzleBoardSymmetryMode =
   | { kind: "rotations_and_reflections" };
 
 /**
- * Opt-in, **unstable** PuzzleBoard soft-log-likelihood tuning knobs (Rust
+ * Opt-in, **unstable** PuzzleBoard decode tuning knobs (Rust
  * `PuzzleBoardAdvancedTuning`). Nested under
- * {@link PuzzleBoardDecodeConfig.advanced}. Only used under the
- * `soft_log_likelihood` scoring mode. NOT covered by semver — leave unset
+ * {@link PuzzleBoardDecodeConfig.advanced}. All but `edge_consensus` are only
+ * used under the `soft_log_likelihood` scoring mode. NOT covered by semver — leave unset
  * unless tuning against a specific dataset with measured evidence. Every field
  * is optional: an omitted knob falls back to its Rust default.
  */
@@ -732,6 +790,11 @@ export interface PuzzleBoardAdvancedTuning {
   per_bit_floor?: number;
   /** Minimum winner-vs-runner-up score gap required to accept a decode. */
   alignment_min_margin?: number;
+  /**
+   * Collapse the period-3 replicas to one entry per distinct master bit before
+   * the accept/reject gates (both scoring modes). Default `true`.
+   */
+  edge_consensus?: boolean;
 }
 
 export interface PuzzleBoardDecodeConfig {

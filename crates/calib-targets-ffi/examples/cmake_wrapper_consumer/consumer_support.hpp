@@ -182,6 +182,10 @@ inline ct_chess_config_t default_shared_chess_config() {
   config.multiscale.merge_radius = 3.0f;
   config.upscale.mode = CT_UPSCALE_MODE_DISABLED;
   config.upscale.factor = 2;
+  // ABI 6.0.0: estimate the pixel noise per image, propagated covariance.
+  // Both are the value-initialised values; spelled out for the reader.
+  config.noise_sigma.has_value = CT_FALSE;
+  config.uncertainty = CT_UNCERTAINTY_PROPAGATED;
   return config;
 }
 

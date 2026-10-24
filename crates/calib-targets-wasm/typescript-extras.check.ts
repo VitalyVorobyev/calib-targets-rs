@@ -14,12 +14,18 @@
 
 import type {
   CharucoBoardSpec,
+  ChessConfig,
+  ChessRefiner,
+  DetectionStrategy,
+  ForstnerConfig,
   MarkerBoardSpec,
   MarkerCircleSpec,
   PageSpec,
   PrintableMarkerCircleSpec,
   PrintableTargetDocument,
+  RefinerConfig,
   RenderOptions,
+  SaddlePointConfig,
 } from "./typescript-extras";
 
 // The printable document the WASM `render_target_bundle_json` accepts, in the
@@ -148,3 +154,77 @@ export const detectorCharucoBoard: CharucoBoardSpec = {
   dictionary: "DICT_4X4_50",
   border_bits: 2,
 };
+
+// The workspace default ChESS config, key for key as `default_chess_config()`
+// returns it (`noise_sigma: null` = estimate it per image).
+export const defaultChessConfig: ChessConfig = {
+  strategy: { chess: { ring: "canonical", refiner: { center_of_mass: { radius: 2 } } } },
+  threshold: 15.0,
+  detection: { nms_radius: 2, min_cluster_size: 2 },
+  multiscale: "single_scale",
+  upscale: "disabled",
+  orientation_method: "ring_fit",
+  merge_radius: 3.0,
+  noise_sigma: null,
+  uncertainty: "propagated",
+};
+
+// The uncertainty knobs are optional, so a config written before they existed
+// still type-checks; it also exercises the payload-carrying variants.
+export const legacyChessConfig: ChessConfig = {
+  strategy: { chess: { ring: "broad", refiner: { forstner: forstnerTuning() } } },
+  threshold: 8.0,
+  detection: { nms_radius: 3, min_cluster_size: 2 },
+  multiscale: { pyramid: { levels: 3, min_size: 128, refinement_radius: 3 } },
+  upscale: { fixed: 2 },
+  orientation_method: null,
+  merge_radius: 3.0,
+};
+
+export const quietChessConfig: ChessConfig = {
+  ...defaultChessConfig,
+  noise_sigma: 2.0,
+  uncertainty: "off",
+};
+
+const saddle: SaddlePointConfig = {
+  radius: 2,
+  det_margin: 1e-3,
+  max_offset: 1.5,
+  min_abs_det: 1e-4,
+};
+
+function forstnerTuning(): ForstnerConfig {
+  return { radius: 2, min_trace: 25.0, min_det: 1e-3, max_condition_number: 50.0, max_offset: 1.5 };
+}
+
+// Every refiner variant is a single-key tagged object; the deprecated
+// `RefinerConfig` name accepts the same values.
+export const refiners: ChessRefiner[] = [
+  { center_of_mass: { radius: 2 } },
+  { forstner: forstnerTuning() },
+  { saddle_point: saddle },
+];
+export const legacyRefinerName: RefinerConfig = { saddle_point: saddle };
+
+// The Radon strategy, with both final-position refiners.
+export const radonStrategies: DetectionStrategy[] = [
+  {
+    radon: {
+      ray_radius: 4,
+      image_upsample: 2,
+      response_blur_radius: 1,
+      peak_fit: "gaussian",
+      refiner: "peak_fit",
+    },
+  },
+  {
+    radon: {
+      ray_radius: 4,
+      image_upsample: 2,
+      response_blur_radius: 1,
+      peak_fit: "parabolic",
+      refiner: { saddle_point: saddle },
+    },
+  },
+];

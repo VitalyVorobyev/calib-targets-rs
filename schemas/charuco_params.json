@@ -464,7 +464,7 @@
       ]
     },
     "DetectorConfig": {
-      "description": "High-level detection configuration.\n\nBuild one with `DetectorConfig::chess`,\n`DetectorConfig::chess_multiscale`, `DetectorConfig::radon`, or\n`DetectorConfig::radon_multiscale` and tweak only the fields you need.\nThe detector translates this into the low-level `ChessParams` /\n`RadonDetectorParams` consumed by `chess-corners-core` at the detection\nboundary.\n\n# Common knobs\n\nThese fields are the primary surface for most callers:\n\n- `strategy` — choose ChESS or Radon and\n  configure its parameters.\n- `threshold` — control how many corners are\n  returned: lower → more candidates, higher → fewer and stronger. ChESS\n  reads it as an absolute response floor; Radon as a fraction of the\n  per-frame maximum.\n- `multiscale` — enable coarse-to-fine\n  pyramid detection (`Pyramid`) or keep it off (`SingleScale`).\n- `upscale` — pre-pipeline integer bilinear\n  upscaling for low-resolution inputs where corners have fewer than 5 px\n  of ring support. `Disabled` by default.\n- `orientation_method` — how corner\n  axis orientations are estimated when building descriptors.\n\n# Advanced tuning\n\n- `detection` — shared NMS / clustering\n  thresholds applied by both strategies. See `DetectionParams`.\n- `merge_radius` — duplicate-suppression\n  radius across pyramid levels. See the field docs below.",
+      "description": "High-level detection configuration.\n\nBuild one with `DetectorConfig::chess`,\n`DetectorConfig::chess_multiscale`, `DetectorConfig::radon`, or\n`DetectorConfig::radon_multiscale` and tweak only the fields you need.\nThe detector translates this into the low-level `ChessParams` /\n`RadonDetectorParams` consumed by `chess-corners-core` at the detection\nboundary.\n\n# Common knobs\n\nThese fields are the primary surface for most callers:\n\n- `strategy` — choose ChESS or Radon and\n  configure its parameters.\n- `threshold` — control how many corners are\n  returned: lower → more candidates, higher → fewer and stronger. ChESS\n  reads it as an absolute response floor; Radon as a fraction of the\n  per-frame maximum.\n- `multiscale` — enable coarse-to-fine\n  pyramid detection (`Pyramid`) or keep it off (`SingleScale`).\n- `upscale` — pre-pipeline integer bilinear\n  upscaling for low-resolution inputs where corners have fewer than 5 px\n  of ring support. `Disabled` by default.\n- `orientation_method` — how corner\n  axis orientations are estimated when building descriptors.\n- `uncertainty` — whether each corner\n  reports a position covariance.\n\n# Advanced tuning\n\n- `detection` — shared NMS / clustering\n  thresholds applied by both strategies. See `DetectionParams`.\n- `merge_radius` — duplicate-suppression\n  radius across pyramid levels. See the field docs below.\n- `noise_sigma` — image noise level used\n  to express each corner's position covariance in px².",
       "properties": {
         "detection": {
           "$ref": "#/$defs/DetectionParams",
@@ -486,6 +486,17 @@
           "$ref": "#/$defs/MultiscaleConfig",
           "default": "single_scale",
           "description": "Coarse-to-fine multiscale configuration. `SingleScale` skips\nthe pyramid entirely; `Pyramid` detects seeds on a coarse level and\nrefines them into the base image. Honoured by both strategies."
+        },
+        "noise_sigma": {
+          "default": null,
+          "description": "Standard deviation of the image's pixel noise, in gray levels\n(`>= 0`), used to express each corner's\n`position_covariance`\nin px². `None` (the default) estimates it from each image with\n`estimate_noise_sigma_u8`; set it\nwhen the sensor noise is known, for example from a flat-field\nmeasurement.\nIt is the noise as it appears in the 8-bit image, rounding included\n(rounding adds `1/12` gray level², which matters only below about\n1 gray level). The covariance never uses a variance below that\n`1/12`.\n\nIgnored, and no estimate is made, when\n`uncertainty` is `Uncertainty::Off`, when no\ncorner carries a covariance, and when `upscale` is\nactive (no covariance is reported there: interpolation correlates the\nnoise of neighbouring pixels).",
+          "format": "float",
+          "minimum": 0.0,
+          "type": [
+            "number",
+            "null"
+          ],
+          "x-unit": "gray level"
         },
         "orientation_method": {
           "anyOf": [
@@ -515,10 +526,15 @@
         },
         "threshold": {
           "default": 30.0,
-          "description": "Detector acceptance threshold (`>= 0`).\n\nChESS reads it as an absolute floor on the raw response\n`R = SR − DR − 16·MR`: a candidate is kept when `R` exceeds it.\nUseful floors run roughly `30..=300` depending on image contrast;\nthe default is `30`, which suppresses texture noise while keeping\nwell-formed corners.\nRadon reads it as a fraction in `[0.0, 1.0]` of the per-frame\nmaximum response, because Radon's `(max − min)²` score scales\nwith image size and has no portable absolute scale.",
+          "description": "Detector acceptance threshold (`>= 0`).\n\nChESS reads it as an absolute floor on the raw response\n`R = SR − DR − 16·MR`: a candidate is kept when `R` exceeds it.\nUseful floors run roughly `30..=300` depending on image contrast;\nthe default is `30`, which suppresses texture noise while keeping\nwell-formed corners.\nRadon reads it as a fraction in `[0.0, 1.0]` of the per-frame\nmaximum response, because Radon's `(max − min)²` score scales\nwith image size and has no portable absolute scale. On the\ncoarse-to-fine path the maximum is that of the strongest corner\nfound across the refinement windows.",
           "format": "float",
           "minimum": 0.0,
           "type": "number"
+        },
+        "uncertainty": {
+          "$ref": "#/$defs/Uncertainty",
+          "default": "propagated",
+          "description": "Which position uncertainty each corner reports in\n`position_covariance`.\n`Uncertainty::Propagated` (the default) gives every localizer —\neach `ChessRefiner` except the ML refiner, the Radon peak fit, and\nsaddle-point refinement of Radon peaks — a covariance: image noise\npropagated through the localizer plus its systematic-error model.\n`Uncertainty::Off` skips that work and the noise estimate; corner\npositions are the same under every tier."
         },
         "upscale": {
           "$ref": "#/$defs/UpscaleConfig",
@@ -741,7 +757,7 @@
       "type": "string"
     },
     "RadonConfig": {
-      "description": "Configuration for the whole-image Radon detector branch of\n`DetectionStrategy`.\n\nAll radii and counts are in **working-resolution** pixels (i.e.\nafter `image_upsample`). The shared NMS / clustering thresholds\n(`DetectionParams`), multiscale, and upscale live at the top level\nof `DetectorConfig` and apply to both strategies.\n\n# Common knobs\n\n- `image_upsample` — `2` (the default)\n  reproduces the paper's 2× supersampled detection; `1` is faster but\n  less accurate on low-resolution inputs.\n\n# Advanced tuning\n\nThe remaining fields control low-level detection behaviour. The\ndefaults reproduce the paper's recommended settings and work well\nfor typical camera images. Adjust them only when you have a specific\nreason (e.g. a non-standard image resolution or SNR budget).",
+      "description": "Configuration for the whole-image Radon detector branch of\n`DetectionStrategy`.\n\nAll radii and counts are in **working-resolution** pixels (i.e.\nafter `image_upsample`). The shared NMS / clustering thresholds\n(`DetectionParams`), multiscale, and upscale live at the top level\nof `DetectorConfig` and apply to both strategies.\n\n# Common knobs\n\n- `image_upsample` — `2` (the default)\n  reproduces the paper's 2× supersampled detection; `1` is faster but\n  less accurate on low-resolution inputs.\n- `refiner` — the response-map peak fit alone\n  (the default) or saddle-point refinement on the input image.\n\n# Advanced tuning\n\nThe remaining fields control low-level detection behaviour. The\ndefaults reproduce the paper's recommended settings and work well\nfor typical camera images. Adjust them only when you have a specific\nreason (e.g. a non-standard image resolution or SNR budget).",
       "properties": {
         "image_upsample": {
           "default": 2,
@@ -764,6 +780,11 @@
           "type": "integer",
           "x-unit": "px"
         },
+        "refiner": {
+          "$ref": "#/$defs/RadonRefiner",
+          "default": "peak_fit",
+          "description": "Final subpixel position: the peak fit alone (the default), or\nsaddle-point refinement of each peak on the input image. See\n`RadonRefiner`."
+        },
         "response_blur_radius": {
           "default": 1,
           "description": "Advanced tuning. Half-size of the box blur applied to the Radon\nresponse map after integration, in working-resolution pixels\n(integer `>= 0`). `0` disables blurring; the default `1` yields a\n3×3 box that smooths quantisation noise.",
@@ -774,6 +795,29 @@
         }
       },
       "type": "object"
+    },
+    "RadonRefiner": {
+      "description": "Final subpixel position of a Radon corner.\n\nThe Radon detector always locates its peaks with a 3-point fit on the\nresponse map (`RadonConfig::peak_fit`); this selects whether that\nposition is final or seeds a saddle-point refinement on the input\nimage. Either reports a\n`position_covariance`\nunder the default `Uncertainty` tier.",
+      "oneOf": [
+        {
+          "const": "peak_fit",
+          "description": "Keep the response-map peak fit (the default).",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Refine each peak with the saddle-point fit on the input image. A\ncorner whose saddle-point refinement does not converge keeps its\npeak-fit position and covariance. On synthetic boards it is several\ntimes more accurate\nthan the peak fit under lens blur and board rotation, except on\ncells of about 4 px, where the fit window spans the neighbouring\ncorners.",
+          "properties": {
+            "saddle_point": {
+              "$ref": "#/$defs/SaddlePointConfig"
+            }
+          },
+          "required": [
+            "saddle_point"
+          ],
+          "type": "object"
+        }
+      ]
     },
     "SaddlePointConfig": {
       "description": "Configuration for the `SaddlePointRefiner`.\n\nAll thresholds below are advanced tuning knobs. The defaults are\nappropriate for most scenes; adjust only if you observe excessive\nrejection or acceptance of clearly-wrong refinements.",
@@ -939,6 +983,26 @@
       ],
       "type": "object"
     },
+    "Uncertainty": {
+      "description": "Which position uncertainty the detector reports for each corner.\n\nDetector-independent: it applies to every localizer (the ChESS\nrefiners and the Radon peak fit) the same way.",
+      "enum": [
+        "off",
+        "propagated"
+      ],
+      "oneOf": [
+        {
+          "const": "off",
+          "description": "No position covariance. Localizers skip the noise propagation and\nthe systematic model, and the detector makes no noise estimate.\nPositions are the same as under every other tier.",
+          "type": "string"
+        },
+        {
+          "const": "propagated",
+          "description": "Image noise propagated through the localizer to first order, plus\nthe localizer's systematic-error model (from the corner's offset to\nthe localizer's fit window and the width of its edges). The\ndefault.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
     "UpscaleConfig": {
       "description": "Optional pre-pipeline integer-factor upscaling.\n\nJSON shape mirrors the other enum-with-payload knobs\n(`MultiscaleConfig`):\n\n- `\"disabled\"` — no upscaling (default).\n- `{ \"fixed\": 2 }` — upscale by an integer factor before detection.\n  Allowed factors: `{2, 3, 4}`. Output corner coordinates are\n  rescaled back to the original input-pixel frame by the facade.",
       "oneOf": [
@@ -994,6 +1058,7 @@
         },
         "merge_radius": 3.0,
         "multiscale": "single_scale",
+        "noise_sigma": null,
         "orientation_method": "ring_fit",
         "strategy": {
           "chess": {
@@ -1006,6 +1071,7 @@
           }
         },
         "threshold": 15.0,
+        "uncertainty": "propagated",
         "upscale": "disabled"
       },
       "description": "ChESS corner front-end configuration for the main detection pass.\n\nDefaults to `default_chess_config`. Override it to run the corner\npass coarse-to-fine (`MultiscaleConfig::Pyramid`) on large frames, or\nto pre-upscale low-resolution board crops (`UpscaleConfig::Fixed`)\nwhose corners would otherwise fall inside the ChESS ring margin —\nthe common failure mode on small ChArUco cutouts. Corner positions are\nalways reported in input-image pixels regardless.\n\nThis is the *main* detection pass; the local re-detection of individual\nsuspicious corners runs on separate, internal fixed defaults.\n\nEvery whole-image entry point runs this front-end over the input image\nto produce the corner cloud:\n`CharucoDetector::detect`,\n`CharucoDetector::detect_corners`,\nand the facade's `detect_charuco` / `detect_charuco_best`. The\n`*_with_corners` entry points consume an already-detected\n`&[ChessCorner]` and never read this field."

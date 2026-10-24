@@ -101,6 +101,8 @@ fn default_shared_chess_config() -> ct_chess_config_t {
             mode: CT_UPSCALE_MODE_DISABLED,
             factor: 2,
         },
+        noise_sigma: ct_optional_f32_t::none(),
+        uncertainty: CT_UNCERTAINTY_PROPAGATED,
     }
 }
 
@@ -246,6 +248,46 @@ fn shared_chess_config_rejects_invalid_upscale_factor() {
     };
 
     assert!(convert::convert_chess_config(&config).is_err());
+}
+
+#[test]
+fn shared_chess_config_zero_initialised_uncertainty_is_the_default() {
+    // A C caller that `memset`s the struct gets the workspace defaults: the
+    // noise level estimated per image and the propagated covariance.
+    let converted = convert::convert_chess_config(&default_shared_chess_config()).unwrap();
+    assert_eq!(converted.noise_sigma, None);
+    assert_eq!(
+        converted.uncertainty,
+        chess_corners::Uncertainty::Propagated
+    );
+    assert_eq!(converted, calib_targets::detect::default_chess_config());
+}
+
+#[test]
+fn shared_chess_config_converts_uncertainty_settings() {
+    let mut config = default_shared_chess_config();
+    config.noise_sigma = ct_optional_f32_t::some(2.5);
+    config.uncertainty = CT_UNCERTAINTY_OFF;
+
+    let converted = convert::convert_chess_config(&config).unwrap();
+    assert_eq!(converted.noise_sigma, Some(2.5));
+    assert_eq!(converted.uncertainty, chess_corners::Uncertainty::Off);
+}
+
+#[test]
+fn shared_chess_config_rejects_invalid_uncertainty_settings() {
+    let mut config = default_shared_chess_config();
+    config.uncertainty = 7;
+    assert!(convert::convert_chess_config(&config).is_err());
+
+    for sigma in [-1.0, f32::NAN, f32::INFINITY] {
+        let mut config = default_shared_chess_config();
+        config.noise_sigma = ct_optional_f32_t::some(sigma);
+        assert!(
+            convert::convert_chess_config(&config).is_err(),
+            "noise_sigma {sigma} must be rejected"
+        );
+    }
 }
 
 #[test]
