@@ -58,12 +58,9 @@ export function imageUrl(label: string): string {
 
 export const api = {
   dataset: () => getJson<DatasetResponse>("/api/dataset"),
-  baseline: (label: string) =>
-    getJson<BaselineImage>(`/api/baseline/${encodeLabel(label)}`),
-  detect: (req: DetectRequest) =>
-    postJson<DetectResponse>("/api/detect", req),
-  diagnose: (req: DiagnoseRequest) =>
-    postJson<DiagnoseResponse>("/api/diagnose", req),
+  baseline: (label: string) => getJson<BaselineImage>(`/api/baseline/${encodeLabel(label)}`),
+  detect: (req: DetectRequest) => postJson<DetectResponse>("/api/detect", req),
+  diagnose: (req: DiagnoseRequest) => postJson<DiagnoseResponse>("/api/diagnose", req),
   presets: () => getJson<Preset[]>("/api/presets"),
   /** Advanced-param UI metadata (sections, labels, tooltips, gating). */
   paramSchema: () => getJson<ParamSchema>("/api/params/schema"),
@@ -74,14 +71,10 @@ export const api = {
    * switching family shows the genuine defaults.
    */
   effectiveDefaults: (family: string) =>
-    getJson<DetectorParamsOverride>(
-      `/api/configs/_defaults?family=${encodeURIComponent(family)}`,
-    ),
+    getJson<DetectorParamsOverride>(`/api/configs/_defaults?family=${encodeURIComponent(family)}`),
   configs: () => getJson<ConfigSummary[]>("/api/configs"),
-  config: (name: string) =>
-    getJson<DetectorParamsOverride>(`/api/configs/${name}`),
+  config: (name: string) => getJson<DetectorParamsOverride>(`/api/configs/${name}`),
   runs: () => getJson<RunRecord[]>("/api/runs"),
   run: (id: string) => getJson<RunRecord>(`/api/runs/${id}`),
-  startRun: (req: RunRequest) =>
-    postJson<{ run_id: string }>("/api/runs", req),
+  startRun: (req: RunRequest) => postJson<{ run_id: string }>("/api/runs", req),
 };

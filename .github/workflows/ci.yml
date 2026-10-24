@@ -267,6 +267,7 @@ jobs:
           bun install --frozen-lockfile
           bunx tsc -b
           bun run lint
+          bun run fmt:check
           bunx vite build
 
   python-bindings:

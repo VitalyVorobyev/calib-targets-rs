@@ -1,10 +1,13 @@
 @import "tailwindcss";
-/* The vitavision design system (@vitavision/ui): IBM Plex, the semantic colour tokens
-   (ground/surface/raised/overlay, line, canvas, fg, signal, the verdicts), the radii and the
-   `.dark` variant. Both stylesheets declare their own `@source`, so the package's class names
-   are found without one here. */
+/* The vitavision design system, in the order the lab-ui READMEs give: @vitavision/ui (IBM Plex,
+   the semantic colour tokens, the radii, the `.dark` variant), then each package's own layer:
+   stage2d (the image stage and the overlay role colours), overlays, forms. Every stylesheet
+   declares its own `@source`, so the packages' class names are found without one here. */
 @import "@vitavision/ui/fonts.css";
 @import "@vitavision/ui/styles.css";
+@import "@vitavision/stage2d/styles.css";
+@import "@vitavision/overlays/styles.css";
+@import "@vitavision/forms/styles.css";
 
 @layer base {
   html,

@@ -26,16 +26,17 @@ cd studio && bun run dev       # UI on the Vite port
 
 - **Dataset browser** — every `datasets.toml` entry (public + private,
   stitched `#k` snaps, upscale) with availability badges and thumbnails.
-- **Image workspace** — interactive overlay canvas (zoom/pan, pixel-crisp
-  magnification, hover tooltips with `(i, j)` / id / score), engine and
+- **Image workspace** — the image stage (zoom/pan, pixel-crisp magnification, a
+  layers menu, hover readout with `(i, j)` / id / score, press a corner to
+  inspect it, σ max when the server reports covariance), engine and
   algorithm switches with live re-detect, baseline diff highlights.
-- **Config editor** — stable `ChessboardParams` + the full advanced-tuning
-  tree rendered from server defaults; named configs saved to the
+- **Config editor** — `ChessboardParams` as a form over its JSON Schema, with the
+  advanced-tuning catalogue's sections and tooltips, seeded from server defaults; named configs saved to the
   gitignored `studio_configs/` in the exact `--chessboard-config` format
   (interchangeable with the bench CLI).
-- **Diagnose** — the GUI twin of `bench diagnose`: per-stage corner
-  markers, prefilter survival funnel, and the labelled/unlabelled split of the
-  topological grid builder.
+- **Diagnose** — the GUI twin of `bench diagnose`: the prefilter survival
+  funnel and the labelled/dropped split of the topological grid builder, as
+  togglable layers.
 - **Compare** — two configs side-by-side with synced viewports, or a
   position-matched A/B diff overlay with metric deltas.
 - **Runs** — bench-style dataset runs with live progress and the
@@ -51,5 +52,5 @@ bench convention (`path` or `path#k`, percent-encoded in URLs).
 
 Detection coordinates are always in the **fed image** frame (post-crop,
 post-upscale — exactly what the detector saw), which is also what
-`/api/image/{label}` serves, so the canvas needs no coordinate
-transforms.
+`/api/image/{label}` serves, so the stage needs no coordinate
+transforms (both put the centre of pixel `i` at `i`).

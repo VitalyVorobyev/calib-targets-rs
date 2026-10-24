@@ -3,8 +3,9 @@
   // verbatimModuleSyntax, bundler resolution) come from @vitavision/config-ts.
   "extends": "@vitavision/config-ts/tsconfig.json",
   "compilerOptions": {
+    "resolveJsonModule": true,
     "noUncheckedSideEffectImports": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
+  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts"]
 }

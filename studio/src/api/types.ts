@@ -38,6 +38,13 @@ export interface DatasetResponse {
 
 // --- detection -------------------------------------------------------------
 
+/** A corner's position covariance, image pixels squared (calib-targets' `position_covariance`). */
+export interface PositionCovariance {
+  xx: number;
+  xy: number;
+  yy: number;
+}
+
 export interface BaselineCorner {
   i: number;
   j: number;
@@ -45,6 +52,8 @@ export interface BaselineCorner {
   y: number;
   id?: number;
   score: number;
+  /** Present once the server reports per-corner covariance; absent (or null) before. */
+  position_covariance?: PositionCovariance | null;
 }
 
 export interface BaselineImage {

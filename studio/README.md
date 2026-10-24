@@ -8,21 +8,45 @@ for the full picture.
 bun install
 bun run dev      # against `cargo studio -- --dev` (proxies /api to :8930)
 bun run build    # emit dist/ for production serving by the Rust server
-bun run check    # tsc type-check only
-bun run lint     # eslint (@vitavision/config-eslint)
-bun run test:screens  # screenshots vs. a local baseline (see docs/development/commands.md)
+bun run check    # tsc -b (TypeScript 7)
+bun run lint     # oxlint --max-warnings 0, with the design-token gate on src/
+bun run fmt:check  # oxfmt --check
+bun run test:screens  # Playwright against the real server: contract tests + screenshots vs. a local baseline
 ```
 
 Conventions:
 
 - `src/api/types.ts` hand-mirrors the Rust wire types — update it when a
   route's request/response shape changes.
-- Overlay colors are locked to the bench CLI's PNG conventions
-  (`crates/calib-targets-bench/src/overlay.rs`); the palette lives in
-  `src/components/{overlays,diagnoseOverlays}.ts`. They are data colour, the
-  same in both themes, and never change with the design system.
+- The image, the detection and the studio's own layers are drawn by
+  `@vitavision/stage2d` (`ImageStage`, `PointSet`, `PolylineSet`) and
+  `@vitavision/overlays` (`TargetOverlay`, fed by `fromCalibTargets`), in the lab-ui
+  overlay roles; the bench CLI's PNG overlays keep their own palette
+  (`crates/calib-targets-bench/src/overlay.rs`) and no longer match the studio's colours.
+- `src/viewer/` holds the stage wrapper (`StudioStage`), the studio's layers and layer menus
+  (`layers.tsx`) and the result-to-overlay mapping (`detection.ts`). Coordinates need no
+  transform: the server reports them in the fed-image frame (post-crop, post-upscale), which is
+  the frame of `/api/image`, and both calib-targets and the stage put the centre of pixel `i` at `i`.
+- The detector parameters are a `SchemaValueForm` over the repository's
+  `schemas/chessboard_params.json`, with the server's advanced-knob catalogue
+  (`GET /api/params/schema`) laid over it as sections, labels and tooltips
+  (`src/lib/schemas.ts`, `src/components/ParamsForm.tsx`). The draft stays a partial override and
+  goes to the server as the user left it, unknown keys included (`e2e/contract.spec.ts`).
 - `dist/` and `node_modules/` are gitignored; the Rust quality gates do
   not build the frontend.
+
+## Dependencies
+
+`@vitavision/overlays` `^0.3.0` carries `fromCalibTargets` and the `uncertainty` ellipses
+(lab-ui#137). Until it is published, link a local build without committing it: build it in the
+lab-ui checkout (`bun run build` in `packages/overlays`), `bun pm pack` it, and point a temporary
+`"@vitavision/overlays": "file:/path/to/vitavision-overlays-<version>.tgz"` at the tarball. Do not
+commit that edit to `package.json` or the resulting `bun.lock`; regenerate `bun.lock` once the
+package is published (`bun install --frozen-lockfile`, which CI runs, fails until then).
+
+Per-corner `position_covariance`, when the server reports it, draws as uncertainty ellipses, adds
+σ max to the corner inspector (press a corner), and enables the "Uncertainty ellipses" layer; without
+it the layer is listed as disabled.
 
 ## Design system
 
@@ -31,8 +55,7 @@ the design system shared by the vitavision lab apps: one visual language, no
 app-local component kit.
 
 - **Components.** Use the package's primitives: `Button`, `Select`,
-  `Input` / `NumberInput`, `Field`, `Switch` / `Checkbox`, `ToggleChip` (overlay
-  layers, with the layer's colour as the swatch), `Tabs`, `SegmentedControl`,
+  `Input` / `NumberInput`, `Field`, `Switch` / `Checkbox`, `Tabs`, `SegmentedControl`,
   `Badge`, `Table`, `Panel`, `PageHeader`, `Disclosure`, `InfoHint`,
   `ErrorBox` / `Empty`, `ProgressBar`, `ThemeToggle`. The image workspace's side
   panel sits in `DensityProvider value="compact"`. Read the props in the
@@ -58,7 +81,7 @@ app-local component kit.
   following the OS, and wraps the app in `TooltipProvider` (`ThemeToggle`,
   `Tooltip` and `InfoHint` throw without it). The `ThemeToggle` in the nav
   header cycles system → light → dark.
-- **Lint (gate G5.1).** `eslint.config.js` applies `tokensOnly(["src/**"])`
-  from `@vitavision/config-eslint`: no raw Tailwind palette classes
-  (`bg-slate-500`) and no hex literals in `src/`. No file is exempt: the
-  overlay palette is written as `rgb()`, which the rule does not flag.
+- **Lint (gate G5.1).** `.oxlintrc.json` extends `@vitavision/config-oxlint` and
+  turns on `vitavision/tokens-only` for `src/`: no raw Tailwind palette classes
+  (`bg-slate-500`) and no hex literals. Layer colours are stage2d overlay roles
+  (`var(--stage-feature)`) or verdict tokens (`var(--defect)`). Formatting is `oxfmt`.
