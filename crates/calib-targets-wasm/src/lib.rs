@@ -39,10 +39,12 @@ fn from_js<T: serde::de::DeserializeOwned>(val: JsValue) -> Result<T, JsError> {
 /// which is how the `diagnose_*` functions build their `{ result,
 /// diagnostics }` payloads — into a `Map`, whose fields `obj.result` /
 /// `obj["diagnostics"]` cannot reach. Every map this crate returns has string
-/// keys, which is what the object form requires.
+/// keys, which is what the object form requires. An absent value (`None`)
+/// becomes `null`, as the typings declare, not `undefined`.
 fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsError> {
-    const SERIALIZER: serde_wasm_bindgen::Serializer =
-        serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+    const SERIALIZER: serde_wasm_bindgen::Serializer = serde_wasm_bindgen::Serializer::new()
+        .serialize_maps_as_objects(true)
+        .serialize_missing_as_null(true);
     val.serialize(&SERIALIZER)
         .map_err(|e| JsError::new(&e.to_string()))
 }

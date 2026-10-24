@@ -73,6 +73,10 @@ result. Corner positions, labels and ids are unchanged. The C ABI moves to
   their typings declare: `result.result` / `result.diagnostics` were
   unreachable without `.get(...)`. Every WASM function now returns plain
   objects for maps.
+- **WASM absent values were `undefined`**, though the typings declare
+  `T | null` (e.g. `LabeledCorner.id`, `position_covariance`). Every absent
+  value is now `null`, as in the JSON and Python outputs; code that tested
+  `=== undefined` must test `== null`.
 - WASM typings: `ChessRefiner` (and its deprecated alias `RefinerConfig`) and
   `UpscaleConfig` now describe the externally tagged JSON the entry points
   actually accept (`{ saddle_point: {...} }`, `"disabled"` / `{ fixed: k }`),
