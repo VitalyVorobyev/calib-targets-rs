@@ -57,7 +57,6 @@ The best entry point when onboarding or auditing the detector crates.
 | [`algorithmic_gaps.md`](algorithms/algorithmic_gaps.md) | Ledger of open algorithmic gaps and known limits. |
 | [`puzzle_detection_spec.md`](algorithms/puzzle_detection_spec.md) | PuzzleBoard soft-edge-decode + global-inference design. |
 | [`puzzlepole_construction.md`](algorithms/puzzlepole_construction.md) | PuzzlePole cylindrical construction, decoder cost, coordinate conventions. |
-| [`diskfit-antipodal-sector.md`](algorithms/diskfit-antipodal-sector.md) | Upstream `chess-corners` DiskFit axis-slot inversion defect note. |
 
 ## `ffi/` — C / C++ consumer docs
 

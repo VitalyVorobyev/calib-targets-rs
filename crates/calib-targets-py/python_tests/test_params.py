@@ -105,9 +105,25 @@ def test_chess_config_default_matches_rust_shape() -> None:
         "upscale": "disabled",
         "orientation_method": "ring_fit",
         "merge_radius": 3.0,
+        "noise_sigma": None,
+        "uncertainty": "propagated",
     }
     assert cfg.to_dict() == expected
     assert calib_targets.ChessConfig.from_dict(expected).to_dict() == expected
+
+
+def test_chess_config_uncertainty_knobs_round_trip() -> None:
+    cfg = calib_targets.ChessConfig(
+        noise_sigma=2.5, uncertainty=calib_targets.Uncertainty.OFF
+    )
+    data = cfg.to_dict()
+    assert data["noise_sigma"] == 2.5
+    assert data["uncertainty"] == "off"
+    assert calib_targets.ChessConfig.from_dict(data) == cfg
+    # Both keys are optional on the wire (Rust `#[serde(default)]`).
+    partial = calib_targets.ChessConfig.from_dict({"threshold": 15.0})
+    assert partial.noise_sigma is None
+    assert partial.uncertainty == calib_targets.Uncertainty.PROPAGATED
 
 
 def test_chess_config_threshold_is_a_bare_number() -> None:

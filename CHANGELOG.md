@@ -9,6 +9,44 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+Moves to `chess-corners` 1.6 and exposes its new corner-detector knobs on
+every binding. Detection results are unchanged in shape. The C ABI moves to
+6.0.0 (`ct_chess_config_t` grows).
+
+### Added
+
+- **`noise_sigma` and `uncertainty` on the ChESS config** (`DetectorConfig`
+  upstream) in Python (`ChessConfig.noise_sigma`, `ChessConfig.uncertainty`,
+  `Uncertainty`), WASM (`ChessConfig.noise_sigma` / `uncertainty`), the C ABI
+  (`ct_chess_config_t::noise_sigma` / `uncertainty`, `CT_UNCERTAINTY_*`) and
+  the JSON Schemas. They select how each corner's position covariance is
+  computed; reporting that covariance on detection results comes later.
+- WASM typings declare the Radon strategy (`RadonConfig`, `RadonRefiner`,
+  `PeakFitMode`) and `PuzzleBoardAdvancedTuning.edge_consensus`.
+
+### Changed
+
+- **Corner detection costs more by default.** `chess-corners` 1.6 computes a
+  position covariance for every corner (`uncertainty: "propagated"`), which
+  includes a per-image noise estimate. Set `uncertainty` to `"off"` to skip
+  both; positions are identical either way. ChArUco's internal corner
+  re-detection runs with it off.
+- ChArUco corners re-detected near a marker can move by a fraction of a pixel:
+  `chess-corners` 1.5 re-centres its saddle-point refiner. Labels and ids are
+  unchanged.
+- **C ABI 6.0.0**: `ct_chess_config_t` appends `noise_sigma`
+  (`ct_optional_f32_t`) and `uncertainty` (`ct_uncertainty_t`). Both are safe to
+  zero-initialise.
+
+### Fixed
+
+- WASM typings: `ChessRefiner` (and its deprecated alias `RefinerConfig`) and
+  `UpscaleConfig` now describe the externally tagged JSON the entry points
+  actually accept (`{ saddle_point: {...} }`, `"disabled"` / `{ fixed: k }`),
+  not a `{ kind, ... }` / `{ mode, ... }` shape they rejected. The schema
+  cross-check now compares referenced type names and tagged-union variants and
+  requires every schema property to be declared.
+
 ## 0.15.5
 
 A patch: ChArUco and marker-board corners are labelled correctly when the
