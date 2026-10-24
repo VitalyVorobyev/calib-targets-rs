@@ -240,11 +240,14 @@ fn default_cell_weight_border_threshold() -> f32 {
 /// skipped ([`without_orientation`](DetectorConfig::without_orientation)): the
 /// re-detection consumes only the refined corner position, so the per-corner
 /// axis fit would be wasted work — preserving the old hand-rolled path's cost.
-/// The position covariance is skipped for the same reason
-/// ([`Uncertainty::Off`]); positions are identical under every uncertainty
-/// tier. It matters more than the axis fit: with the covariance on, every ROI
-/// call estimates the pixel noise over the *whole* image, a full-frame pass
-/// per re-detected corner.
+///
+/// The position covariance keeps the upstream default
+/// ([`Uncertainty::Propagated`]): a re-detected corner replaces a rejected
+/// one in the output, so it must carry its own covariance. The detector never
+/// runs this config as-is — the re-detection engine first fills in the frame's
+/// noise level (or switches the covariance off when the front end reports
+/// none), because with `noise_sigma` unset every ROI call would estimate the
+/// noise over the *whole* image.
 pub(crate) fn default_redetect_params() -> DetectorConfig {
     DetectorConfig::chess()
         .with_threshold(0.0)
@@ -254,7 +257,7 @@ pub(crate) fn default_redetect_params() -> DetectorConfig {
         })
         .with_chess(|c| c.refiner = ChessRefiner::SaddlePoint(SaddlePointConfig::default()))
         .without_orientation()
-        .with_uncertainty(Uncertainty::Off)
+        .with_uncertainty(Uncertainty::Propagated)
 }
 
 impl CharucoParams {
@@ -396,9 +399,10 @@ mod tests {
         // Orientation is skipped: the re-detection uses only the refined
         // position, so the per-corner axis fit would be wasted cost.
         assert!(cfg.orientation_method.is_none());
-        // Covariance is skipped for the same reason (and to avoid a
-        // whole-image noise estimate per ROI call).
-        assert_eq!(cfg.uncertainty, Uncertainty::Off);
+        // A re-detected corner is an output measurement, so it reports a
+        // covariance; the engine supplies the frame's noise level before use.
+        assert_eq!(cfg.uncertainty, Uncertainty::Propagated);
+        assert_eq!(cfg.noise_sigma, None);
         let chess_corners::DetectionStrategy::Chess(chess) = cfg.strategy else {
             panic!("expected the ChESS strategy, got {:?}", cfg.strategy);
         };

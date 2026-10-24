@@ -66,7 +66,9 @@ pub use calib_targets_print as printable;
 pub use calib_targets_puzzleboard as puzzleboard;
 
 pub use calib_targets_chessboard::ChessCorner;
-pub use calib_targets_core::{Coord, LabeledCorner, TargetDetection, TargetKind};
+pub use calib_targets_core::{
+    Coord, LabeledCorner, PositionCovariance, TargetDetection, TargetKind,
+};
 
 /// The chessboard detector's introspection entry points, re-exported so a
 /// facade-only caller can reach chessboard diagnostics without naming

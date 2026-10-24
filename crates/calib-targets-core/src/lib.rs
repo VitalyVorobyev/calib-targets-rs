@@ -27,6 +27,7 @@ mod bit_likelihood;
 mod chess;
 mod corner;
 mod corner_map;
+mod covariance;
 mod grid_alignment;
 mod grid_smoothness;
 mod homography;
@@ -54,6 +55,7 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 pub use chess::{default_chess_config, DetectorConfig, OrientationMethod};
 pub use corner::{axis_estimate_to_next, AxisEstimate, LabeledCorner, TargetDetection, TargetKind};
 pub use corner_map::{complete_cell_corners, corner_map_bounds, CornerMap};
+pub use covariance::PositionCovariance;
 pub use grid_alignment::{
     cell_rect_corners_at, cell_to_corner_alignment, GridAlignment, GridTransform,
     GRID_TRANSFORMS_C4, GRID_TRANSFORMS_D4,

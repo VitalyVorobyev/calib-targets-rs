@@ -188,6 +188,7 @@ mod tests {
         let sigma = sigma_deg.to_radians();
         let c = ChessCorner {
             position: Point2::new(x, y),
+            position_covariance: None,
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(a0),
@@ -360,6 +361,7 @@ mod plateau_peak_regression {
                 };
                 let c = ChessCorner {
                     position: Point2::new(i as f32 * 100.0 + 50.0, j as f32 * 100.0 + 50.0),
+                    position_covariance: None,
                     axes: [
                         AxisEstimate {
                             angle: a0,

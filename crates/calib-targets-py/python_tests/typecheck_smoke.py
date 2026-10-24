@@ -14,6 +14,9 @@ if chess is not None:
     _corners: list[ct.ChessboardCorner] = chess.corners
     if _corners:
         _grid: ct.Coord = _corners[0].grid
+        _cov: ct.PositionCovariance | None = _corners[0].position_covariance
+        if _cov is not None:
+            _sigma: float = _cov.sigma_max_px()
 
 board = ct.CharucoBoardSpec(
     rows=3,

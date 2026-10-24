@@ -43,8 +43,9 @@ differently per target type:
 
 ```rust,no_run
 pub struct LabeledCorner {
-    pub position:        [f32; 2],
-    pub grid:            Option<[i32; 2]>,
+    pub position:            [f32; 2],
+    pub position_covariance: Option<PositionCovariance>, // { xx, xy, yy }, px²
+    pub grid:                Option<[i32; 2]>,
     pub id:              Option<u32>,
     pub target_position: Option<[f32; 2]>,
     pub score:           f32,
@@ -58,6 +59,34 @@ Pixel coordinates of the detected corner in the input image.
 - Origin: **top-left**.
 - X axis: right; Y axis: down.
 - Sub-pixel accuracy; values are not rounded to integer pixels.
+
+### `position_covariance`
+
+Covariance of `position` in px², in the input image frame: the symmetric
+matrix `[[xx, xy], [xy, yy]]` that the corner detector reports for the
+refined position — image noise propagated through the localizer plus the
+localizer's own systematic error
+([chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html)).
+Every target type carries it, and every typed corner
+(`ChessboardCorner`, `CharucoCorner`, `PuzzleBoardCorner`, `PuzzlePoleCorner`,
+`MarkerBoardCorner`) has the same field. Feed it to a calibration solver as a
+per-point weight, or gate residuals with
+`PositionCovariance::mahalanobis_sq`; `sigma_max_px()` gives a single
+"worst-direction" σ in px.
+
+It is `None` (`null` in JSON / Python / JS, `has_position_covariance == 0` in
+C) when no covariance was measured:
+
+| Cause | What to do |
+|---|---|
+| `uncertainty` is `Off` in the ChESS config, or the ML refiner | Leave the default `Propagated` tier and a classic refiner. |
+| `upscale` is active | Interpolated pixels carry correlated noise, so none is reported. |
+| The frame's noise estimate declined (typical of JPEG input) | Supply `noise_sigma`, measured on your camera's images. |
+| A saddle-point refinement did not converge for that corner | Give the corner a low weight or leave it out. |
+
+Positions are identical whether or not the covariance is computed. A ChArUco
+corner that the detector re-measures near its marker-predicted position
+carries the covariance of that re-measurement.
 
 ### `grid` — `(i, j)`
 

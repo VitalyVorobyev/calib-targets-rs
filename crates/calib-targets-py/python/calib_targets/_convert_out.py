@@ -32,6 +32,7 @@ from .results import (
     PuzzleBoardDecodeInfo,
     PuzzleBoardDetection,
     Point3,
+    PositionCovariance,
     PuzzlePoleCorner,
     PuzzlePoleDetection,
     TargetDetection,
@@ -188,6 +189,31 @@ def _optional_point2(value: Any, ctx: str) -> Point2 | None:
 # -------------------- basic structs --------------------
 
 
+def position_covariance_to_dict(value: PositionCovariance) -> dict[str, Any]:
+    return {"xx": float(value.xx), "xy": float(value.xy), "yy": float(value.yy)}
+
+
+def position_covariance_from_dict(data: Mapping[str, Any]) -> PositionCovariance:
+    obj = _ensure_mapping(data, "PositionCovariance")
+    keys = {"xx", "xy", "yy"}
+    _validate_keys(obj, allowed=keys, required=keys, ctx="PositionCovariance")
+    return PositionCovariance(
+        xx=_to_float(obj["xx"], "PositionCovariance.xx"),
+        xy=_to_float(obj["xy"], "PositionCovariance.xy"),
+        yy=_to_float(obj["yy"], "PositionCovariance.yy"),
+    )
+
+
+def _covariance_to_dict(value: PositionCovariance | None) -> dict[str, Any] | None:
+    return position_covariance_to_dict(value) if value is not None else None
+
+
+def _covariance_from(obj: Mapping[str, Any]) -> PositionCovariance | None:
+    # Optional on input: payloads written before the field existed omit it.
+    value = obj.get("position_covariance")
+    return position_covariance_from_dict(value) if value is not None else None
+
+
 def coord_to_dict(value: Coord) -> dict[str, Any]:
     return {"u": int(value.u), "v": int(value.v)}
 
@@ -288,6 +314,7 @@ def grid_alignment_from_dict(data: Mapping[str, Any]) -> GridAlignment:
 def labeled_corner_to_dict(value: LabeledCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
+        "position_covariance": _covariance_to_dict(value.position_covariance),
         "grid": coord_to_dict(value.grid) if value.grid is not None else None,
         "id": int(value.id) if value.id is not None else None,
         "target_position": _point2_to_list(value.target_position)
@@ -301,7 +328,7 @@ def labeled_corner_from_dict(data: Mapping[str, Any]) -> LabeledCorner:
     obj = _ensure_mapping(data, "LabeledCorner")
     _validate_keys(
         obj,
-        allowed={"position", "grid", "id", "target_position", "score"},
+        allowed={"position", "position_covariance", "grid", "id", "target_position", "score"},
         required={"position", "grid", "id", "target_position", "score"},
         ctx="LabeledCorner",
     )
@@ -315,6 +342,7 @@ def labeled_corner_from_dict(data: Mapping[str, Any]) -> LabeledCorner:
             obj["target_position"], "LabeledCorner.target_position"
         ),
         score=_to_float(obj["score"], "LabeledCorner.score"),
+        position_covariance=_covariance_from(obj),
     )
 
 
@@ -453,6 +481,7 @@ def chessboard_debug_from_dict(data: Mapping[str, Any]) -> ChessboardDebug:
 def chessboard_corner_to_dict(value: ChessboardCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
+        "position_covariance": _covariance_to_dict(value.position_covariance),
         "grid": coord_to_dict(value.grid),
         "input_index": int(value.input_index),
         "score": float(value.score),
@@ -460,12 +489,12 @@ def chessboard_corner_to_dict(value: ChessboardCorner) -> dict[str, Any]:
 
 
 def chessboard_corner_from_dict(data: Mapping[str, Any]) -> ChessboardCorner:
-    # Rust shape: `{ position, grid, input_index, score }`. Matches
-    # `serde_json::to_value(ChessboardCorner)` byte-for-byte.
+    # Rust shape: `{ position, position_covariance, grid, input_index, score }`.
+    # Matches `serde_json::to_value(ChessboardCorner)` byte-for-byte.
     obj = _ensure_mapping(data, "ChessboardCorner")
     _validate_keys(
         obj,
-        allowed={"position", "grid", "input_index", "score"},
+        allowed={"position", "position_covariance", "grid", "input_index", "score"},
         required={"position", "grid", "input_index", "score"},
         ctx="ChessboardCorner",
     )
@@ -474,6 +503,7 @@ def chessboard_corner_from_dict(data: Mapping[str, Any]) -> ChessboardCorner:
         grid=coord_from_dict(obj["grid"]),
         input_index=_to_int(obj["input_index"], "ChessboardCorner.input_index"),
         score=_to_float(obj["score"], "ChessboardCorner.score"),
+        position_covariance=_covariance_from(obj),
     )
 
 
@@ -663,6 +693,7 @@ def circle_match_from_dict(data: Mapping[str, Any]) -> CircleMatch:
 def charuco_corner_to_dict(value: CharucoCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
+        "position_covariance": _covariance_to_dict(value.position_covariance),
         "grid": coord_to_dict(value.grid),
         "id": int(value.id),
         "target_position": _point2_to_list(value.target_position),
@@ -674,7 +705,7 @@ def charuco_corner_from_dict(data: Mapping[str, Any]) -> CharucoCorner:
     obj = _ensure_mapping(data, "CharucoCorner")
     _validate_keys(
         obj,
-        allowed={"position", "grid", "id", "target_position", "score"},
+        allowed={"position", "position_covariance", "grid", "id", "target_position", "score"},
         required={"position", "grid", "id", "target_position", "score"},
         ctx="CharucoCorner",
     )
@@ -684,6 +715,7 @@ def charuco_corner_from_dict(data: Mapping[str, Any]) -> CharucoCorner:
         id=_to_int(obj["id"], "CharucoCorner.id"),
         target_position=_to_point2(obj["target_position"], "CharucoCorner.target_position"),
         score=_to_float(obj["score"], "CharucoCorner.score"),
+        position_covariance=_covariance_from(obj),
     )
 
 
@@ -719,6 +751,7 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
 def marker_board_corner_to_dict(value: MarkerBoardCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
+        "position_covariance": _covariance_to_dict(value.position_covariance),
         "grid": coord_to_dict(value.grid),
         "id": int(value.id) if value.id is not None else None,
         "target_position": _point2_to_list(value.target_position)
@@ -732,7 +765,7 @@ def marker_board_corner_from_dict(data: Mapping[str, Any]) -> MarkerBoardCorner:
     obj = _ensure_mapping(data, "MarkerBoardCorner")
     _validate_keys(
         obj,
-        allowed={"position", "grid", "id", "target_position", "score"},
+        allowed={"position", "position_covariance", "grid", "id", "target_position", "score"},
         required={"position", "grid", "id", "target_position", "score"},
         ctx="MarkerBoardCorner",
     )
@@ -746,6 +779,7 @@ def marker_board_corner_from_dict(data: Mapping[str, Any]) -> MarkerBoardCorner:
         if target_position is not None
         else None,
         score=_to_float(obj["score"], "MarkerBoardCorner.score"),
+        position_covariance=_covariance_from(obj),
     )
 
 
@@ -876,6 +910,7 @@ def puzzleboard_decode_info_from_dict(data: Mapping[str, Any]) -> PuzzleBoardDec
 def puzzleboard_corner_to_dict(value: PuzzleBoardCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
+        "position_covariance": _covariance_to_dict(value.position_covariance),
         "grid": coord_to_dict(value.grid),
         "id": int(value.id),
         "target_position": _point2_to_list(value.target_position),
@@ -887,7 +922,7 @@ def puzzleboard_corner_from_dict(data: Mapping[str, Any]) -> PuzzleBoardCorner:
     obj = _ensure_mapping(data, "PuzzleBoardCorner")
     _validate_keys(
         obj,
-        allowed={"position", "grid", "id", "target_position", "score"},
+        allowed={"position", "position_covariance", "grid", "id", "target_position", "score"},
         required={"position", "grid", "id", "target_position", "score"},
         ctx="PuzzleBoardCorner",
     )
@@ -897,6 +932,7 @@ def puzzleboard_corner_from_dict(data: Mapping[str, Any]) -> PuzzleBoardCorner:
         id=_to_int(obj["id"], "PuzzleBoardCorner.id"),
         target_position=_to_point2(obj["target_position"], "PuzzleBoardCorner.target_position"),
         score=_to_float(obj["score"], "PuzzleBoardCorner.score"),
+        position_covariance=_covariance_from(obj),
     )
 
 
@@ -934,6 +970,7 @@ def puzzleboard_detection_result_from_dict(
 def puzzlepole_corner_to_dict(value: PuzzlePoleCorner) -> dict[str, Any]:
     return {
         "position": _point2_to_list(value.position),
+        "position_covariance": _covariance_to_dict(value.position_covariance),
         "grid": coord_to_dict(value.grid),
         "id": int(value.id),
         "surface_position": _point2_to_list(value.surface_position),
@@ -945,7 +982,9 @@ def puzzlepole_corner_to_dict(value: PuzzlePoleCorner) -> dict[str, Any]:
 def puzzlepole_corner_from_dict(data: Mapping[str, Any]) -> PuzzlePoleCorner:
     obj = _ensure_mapping(data, "PuzzlePoleCorner")
     keys = {"position", "grid", "id", "surface_position", "object_position", "score"}
-    _validate_keys(obj, allowed=keys, required=keys, ctx="PuzzlePoleCorner")
+    _validate_keys(
+        obj, allowed=keys | {"position_covariance"}, required=keys, ctx="PuzzlePoleCorner"
+    )
     return PuzzlePoleCorner(
         position=_to_point2(obj["position"], "PuzzlePoleCorner.position"),
         grid=coord_from_dict(obj["grid"]),
@@ -957,6 +996,7 @@ def puzzlepole_corner_from_dict(data: Mapping[str, Any]) -> PuzzlePoleCorner:
             obj["object_position"], "PuzzlePoleCorner.object_position"
         ),
         score=_to_float(obj["score"], "PuzzlePoleCorner.score"),
+        position_covariance=_covariance_from(obj),
     )
 
 

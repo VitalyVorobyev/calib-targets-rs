@@ -370,6 +370,7 @@ def _sample_chessboard_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
+                "position_covariance": {"xx": 0.25, "xy": -0.125, "yy": 0.5},
                 "grid": {"u": 0, "v": 1},
                 "input_index": 0,
                 "score": 0.9,
@@ -384,6 +385,7 @@ def _sample_charuco_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
+                "position_covariance": {"xx": 0.0625, "xy": 0.0, "yy": 0.0625},
                 "grid": {"u": 0, "v": 1},
                 "id": 4,
                 "target_position": [1.0, 2.0],
@@ -417,6 +419,7 @@ def _sample_marker_board_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
+                "position_covariance": None,
                 "grid": {"u": 0, "v": 1},
                 "id": None,
                 "target_position": None,
@@ -436,6 +439,7 @@ def _sample_puzzleboard_result() -> dict:
         "corners": [
             {
                 "position": [10.0, 20.0],
+                "position_covariance": {"xx": 0.5, "xy": 0.25, "yy": 1.0},
                 "grid": {"u": 4, "v": 5},
                 "id": 2509,
                 "target_position": [4.0, 5.0],

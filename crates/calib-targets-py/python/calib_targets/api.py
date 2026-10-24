@@ -129,10 +129,11 @@ def detect_charuco_with_corners(
     """Detect a ChArUco board from a pre-detected corner cloud.
 
     ``corners`` is a list of ``ChessCorner``-shaped dicts —
-    ``{"position": [x, y], "axes": [...], "strength": ...}`` — e.g. the
-    ``"corners"`` field of :func:`trace_chessboard_topological`'s return
-    value, or a custom upstream. ``params.chess`` is not read: ``corners`` is
-    taken as given.
+    ``{"position": [x, y], "axes": [...], "strength": ...}``, optionally with
+    ``"position_covariance"`` — e.g. the ``"corners"`` field of
+    :func:`trace_chessboard_topological`'s return value, or a custom upstream.
+    ``corners`` is taken as given; of ``params.chess`` only the uncertainty
+    settings are read, for the corners the detector re-detects itself.
     """
     _check_type("params", params, CharucoDetectorParams)
 

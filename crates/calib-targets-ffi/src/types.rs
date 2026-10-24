@@ -231,7 +231,23 @@ pub struct ct_target_detection_t {
     pub corners_len: usize,
 }
 
+/// Covariance of a corner position in px², image frame: the symmetric
+/// matrix `[[xx, xy], [xy, yy]]`.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_position_covariance_t {
+    pub xx: f32,
+    pub xy: f32,
+    pub yy: f32,
+}
+
 /// One detected labeled corner.
+///
+/// `position_covariance` is valid when `has_position_covariance` is
+/// `CT_TRUE`: the corner detector measured the position's covariance. It is
+/// `CT_FALSE` when the uncertainty tier is off, an upscale stage is active,
+/// the refiner reports none, or the frame's noise estimate declined (e.g.
+/// JPEG input — supply `ct_chess_config_t::noise_sigma`).
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_labeled_corner_t {
@@ -242,6 +258,8 @@ pub struct ct_labeled_corner_t {
     pub has_target_position: u32,
     pub target_position: ct_point2f_t,
     pub score: f32,
+    pub has_position_covariance: u32,
+    pub position_covariance: ct_position_covariance_t,
 }
 
 /// One decoded marker detection.
@@ -286,6 +304,11 @@ pub struct ct_chessboard_corner_t {
     pub input_index: usize,
     /// Corner score.
     pub score: f32,
+    /// `CT_TRUE` when `position_covariance` is valid (see
+    /// `ct_labeled_corner_t`).
+    pub has_position_covariance: u32,
+    /// Covariance of `position` in px².
+    pub position_covariance: ct_position_covariance_t,
 }
 
 /// Chessboard detection header.

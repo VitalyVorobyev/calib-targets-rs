@@ -104,12 +104,54 @@ GridAlignment = GridTransform
 
 
 @dataclass(slots=True)
+class PositionCovariance:
+    """Covariance of a corner's image position, in px² (image frame).
+
+    The symmetric matrix ``[[xx, xy], [xy, yy]]`` the ``chess-corners``
+    localizer reports for a refined corner: image noise propagated through
+    the localizer plus its systematic error. Corners carry ``None`` instead
+    when none was measured — uncertainty off, an upscale stage, a refiner that
+    reports none, or a noise estimate that declined (e.g. JPEG input; supply
+    ``ChessConfig.noise_sigma``). Serializes as ``{"xx", "xy", "yy"}``.
+    """
+
+    xx: float
+    xy: float
+    yy: float
+
+    def as_matrix(self) -> tuple[tuple[float, float], tuple[float, float]]:
+        """The full 2×2 matrix ``((xx, xy), (xy, yy))``."""
+        return ((self.xx, self.xy), (self.xy, self.yy))
+
+    def sigma_max_px(self) -> float:
+        """Standard deviation along the least certain direction, in px."""
+        mean = 0.5 * (self.xx + self.yy)
+        half_diff = 0.5 * (self.xx - self.yy)
+        lambda_max = mean + (half_diff * half_diff + self.xy * self.xy) ** 0.5
+        return float(max(lambda_max, 0.0) ** 0.5)
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import position_covariance_to_dict
+
+        return position_covariance_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> PositionCovariance:
+        from ._convert_out import position_covariance_from_dict
+
+        return position_covariance_from_dict(data)
+
+
+@dataclass(slots=True)
 class LabeledCorner:
     position: Point2
     grid: Coord | None
     id: int | None
     target_position: Point2 | None
     score: float
+    #: Covariance of ``position`` in px², or ``None`` when none was measured
+    #: (see :class:`PositionCovariance`).
+    position_covariance: PositionCovariance | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import labeled_corner_to_dict
@@ -233,13 +275,18 @@ class ChessboardCorner:
     grid label — a chessboard corner is always labelled, so this is
     non-optional. `input_index` maps the corner back to its index in the
     caller's raw `Corner` array (useful for ChArUco alignment and similar
-    post-processing). `score` is the corner score.
+    post-processing). `score` is the corner score. `position_covariance` is
+    the covariance of `position` in px², carried from the raw corner
+    (`None` when it had none).
     """
 
     position: Point2
     grid: Coord
     input_index: int
     score: float
+    #: Covariance of ``position`` in px², or ``None`` when none was measured
+    #: (see :class:`PositionCovariance`).
+    position_covariance: PositionCovariance | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import chessboard_corner_to_dict
@@ -368,6 +415,9 @@ class CharucoCorner:
     id: int
     target_position: Point2
     score: float
+    #: Covariance of ``position`` in px², or ``None`` when none was measured
+    #: (see :class:`PositionCovariance`).
+    position_covariance: PositionCovariance | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import charuco_corner_to_dict
@@ -392,7 +442,14 @@ class CharucoDetection:
         return TargetDetection(
             TargetKind.CHARUCO,
             [
-                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                LabeledCorner(
+                    c.position,
+                    c.grid,
+                    c.id,
+                    c.target_position,
+                    c.score,
+                    position_covariance=c.position_covariance,
+                )
                 for c in self.corners
             ],
         )
@@ -416,6 +473,9 @@ class MarkerBoardCorner:
     id: int | None
     target_position: Point2 | None
     score: float
+    #: Covariance of ``position`` in px², or ``None`` when none was measured
+    #: (see :class:`PositionCovariance`).
+    position_covariance: PositionCovariance | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import marker_board_corner_to_dict
@@ -449,7 +509,14 @@ class MarkerBoardDetection:
         return TargetDetection(
             TargetKind.CHECKERBOARD_MARKER,
             [
-                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                LabeledCorner(
+                    c.position,
+                    c.grid,
+                    c.id,
+                    c.target_position,
+                    c.score,
+                    position_covariance=c.position_covariance,
+                )
                 for c in self.corners
             ],
         )
@@ -538,6 +605,9 @@ class PuzzleBoardCorner:
     id: int
     target_position: Point2
     score: float
+    #: Covariance of ``position`` in px², or ``None`` when none was measured
+    #: (see :class:`PositionCovariance`).
+    position_covariance: PositionCovariance | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import puzzleboard_corner_to_dict
@@ -562,7 +632,14 @@ class PuzzleBoardDetection:
         return TargetDetection(
             TargetKind.PUZZLE_BOARD,
             [
-                LabeledCorner(c.position, c.grid, c.id, c.target_position, c.score)
+                LabeledCorner(
+                    c.position,
+                    c.grid,
+                    c.id,
+                    c.target_position,
+                    c.score,
+                    position_covariance=c.position_covariance,
+                )
                 for c in self.corners
             ],
         )
@@ -599,6 +676,9 @@ class PuzzlePoleCorner:
     surface_position: Point2
     object_position: Point3
     score: float
+    #: Covariance of ``position`` in px², or ``None`` when none was measured
+    #: (see :class:`PositionCovariance`).
+    position_covariance: PositionCovariance | None = None
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import puzzlepole_corner_to_dict
@@ -633,7 +713,14 @@ class PuzzlePoleDetection:
         return TargetDetection(
             TargetKind.PUZZLE_POLE,
             [
-                LabeledCorner(c.position, c.grid, c.id, c.surface_position, c.score)
+                LabeledCorner(
+                    c.position,
+                    c.grid,
+                    c.id,
+                    c.surface_position,
+                    c.score,
+                    position_covariance=c.position_covariance,
+                )
                 for c in self.corners
             ],
         )

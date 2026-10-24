@@ -8,9 +8,8 @@
 //! neighbors via midpoint averaging.  Corners that deviate significantly from
 //! the prediction are re-detected locally or snapped to the predicted position.
 
-use super::corner_refit::redetect_corner_in_roi;
+use super::corner_refit::Redetector;
 use calib_targets_core::{square_predict_grid_position, Coord, CornerMap, GrayImageView};
-use chess_corners::Detector;
 use log::debug;
 use nalgebra::Point2;
 
@@ -22,14 +21,14 @@ use nalgebra::Point2;
 ///
 /// If the deviation from the average prediction exceeds
 /// `threshold_rel * px_per_square`, the corner is re-detected near the
-/// predicted position using `redetect_corner_in_roi`.  If re-detection
+/// predicted position using [`Redetector::locate`].  If re-detection
 /// fails, the corner is snapped to the predicted position (never removed).
 pub(crate) fn smooth_grid_corners(
     corner_map: &mut CornerMap,
     image: &GrayImageView<'_>,
     px_per_square: f32,
     threshold_rel: f32,
-    detector: &mut Detector,
+    redetector: &mut Redetector<'_>,
 ) {
     if threshold_rel.is_infinite() || corner_map.len() < 3 {
         return;
@@ -68,7 +67,9 @@ pub(crate) fn smooth_grid_corners(
     }
 
     for (gc, predicted) in flagged {
-        match redetect_corner_in_roi(image, predicted, roi_half_px, detector) {
+        // Only the position feeds the corner map (marker sampling); output
+        // corners keep their measured position, so no covariance is needed.
+        match redetector.locate(image, predicted, roi_half_px) {
             Some(new_pos) => {
                 debug!(
                     "grid smoothness: re-detected corner ({},{}) at ({:.1},{:.1}) -> ({:.1},{:.1})",
@@ -120,8 +121,12 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
-            .expect("valid redetect config");
+        let front_end = calib_targets_core::default_chess_config();
+        let mut detector = Redetector::new(
+            crate::detector::params::default_redetect_params(),
+            &front_end,
+            None,
+        );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -144,8 +149,12 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
-            .expect("valid redetect config");
+        let front_end = calib_targets_core::default_chess_config();
+        let mut detector = Redetector::new(
+            crate::detector::params::default_redetect_params(),
+            &front_end,
+            None,
+        );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -177,8 +186,12 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
-            .expect("valid redetect config");
+        let front_end = calib_targets_core::default_chess_config();
+        let mut detector = Redetector::new(
+            crate::detector::params::default_redetect_params(),
+            &front_end,
+            None,
+        );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -199,8 +212,12 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
-            .expect("valid redetect config");
+        let front_end = calib_targets_core::default_chess_config();
+        let mut detector = Redetector::new(
+            crate::detector::params::default_redetect_params(),
+            &front_end,
+            None,
+        );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -224,8 +241,12 @@ mod tests {
             width: 1,
             height: 1,
         };
-        let mut detector = Detector::new(crate::detector::params::default_redetect_params())
-            .expect("valid redetect config");
+        let front_end = calib_targets_core::default_chess_config();
+        let mut detector = Redetector::new(
+            crate::detector::params::default_redetect_params(),
+            &front_end,
+            None,
+        );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 

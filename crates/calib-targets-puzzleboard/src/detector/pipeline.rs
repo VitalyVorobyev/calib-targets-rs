@@ -3,7 +3,9 @@
 use std::cmp::Ordering;
 
 use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector as ChessDetector};
+use calib_targets_chessboard::{
+    ChessboardCorner, ChessboardDetection, ChessboardDetector as ChessDetector,
+};
 use calib_targets_core::{Coord, GrayImageView, LabeledCorner, TargetDetection, TargetKind};
 use nalgebra::Point2;
 
@@ -288,7 +290,7 @@ impl PuzzleBoardDetector {
         let labeled: Vec<LabeledCorner> = chess
             .corners
             .iter()
-            .map(|c| LabeledCorner::new(c.position, c.score).with_grid(c.grid))
+            .map(ChessboardCorner::to_labeled)
             .collect();
         let labeled: &[LabeledCorner] = &labeled;
         let inliers: Vec<usize> = (0..labeled.len()).collect();
@@ -448,6 +450,7 @@ impl PuzzleBoardDetector {
             let target = master_target_position(master_i, master_j, self.params.board.cell_size);
             out_corners.push(
                 LabeledCorner::new(lc.position, lc.score)
+                    .with_position_covariance(lc.position_covariance)
                     .with_grid(Coord::new(master_i, master_j))
                     .with_id(id)
                     .with_target_position(target),

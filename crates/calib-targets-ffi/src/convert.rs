@@ -16,24 +16,24 @@ use crate::types::{
     ct_grid_alignment_t, ct_grid_coords_t, ct_grid_transform_t, ct_labeled_corner_t,
     ct_marker_board_layout_t, ct_marker_board_params_t, ct_marker_circle_spec_t,
     ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t, ct_optional_u32_t, ct_point2f_t,
-    ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t,
-    ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t, ct_puzzleboard_symmetry_mode_t,
-    ct_scan_decode_config_t, ct_uncertainty_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK,
-    CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000,
-    CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100,
-    CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50,
-    CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250,
-    CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000,
-    CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5,
-    CT_DICTIONARY_DICT_APRILTAG_25H9, CT_DICTIONARY_DICT_APRILTAG_36H10,
-    CT_DICTIONARY_DICT_APRILTAG_36H11, CT_DICTIONARY_DICT_ARUCO_MIP_36H12,
-    CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE, CT_MARKER_LAYOUT_OPENCV_CHARUCO,
-    CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED, CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD,
-    CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD, CT_PUZZLEBOARD_SEARCH_MODE_FULL,
-    CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS, CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS,
-    CT_REFINER_KIND_CENTER_OF_MASS, CT_REFINER_KIND_FORSTNER, CT_REFINER_KIND_SADDLE_POINT,
-    CT_TRUE, CT_UNCERTAINTY_OFF, CT_UNCERTAINTY_PROPAGATED, CT_UPSCALE_MODE_DISABLED,
-    CT_UPSCALE_MODE_FIXED,
+    ct_position_covariance_t, ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t,
+    ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t,
+    ct_puzzleboard_symmetry_mode_t, ct_scan_decode_config_t, ct_uncertainty_t, ct_upscale_config_t,
+    CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100,
+    CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50,
+    CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250,
+    CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000,
+    CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100,
+    CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50,
+    CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
+    CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
+    CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
+    CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
+    CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD, CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
+    CT_PUZZLEBOARD_SEARCH_MODE_FULL, CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS,
+    CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS, CT_REFINER_KIND_CENTER_OF_MASS,
+    CT_REFINER_KIND_FORSTNER, CT_REFINER_KIND_SADDLE_POINT, CT_TRUE, CT_UNCERTAINTY_OFF,
+    CT_UNCERTAINTY_PROPAGATED, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
 };
 use crate::validate::{
     flag_to_bool, require_finite, require_fraction, require_nonnegative, require_positive,
@@ -44,7 +44,7 @@ use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::chessboard::{
     ChessboardAdvancedTuning, ChessboardCorner, ChessboardParams as ChessboardDetectorParams,
 };
-use calib_targets::core::{Coord, GridAlignment, LabeledCorner};
+use calib_targets::core::{Coord, GridAlignment, LabeledCorner, PositionCovariance};
 use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::{
     CellCoords, CircleMatchParams, CirclePolarity, CircleScoreParams, MarkerBoardDetectError,
@@ -861,6 +861,9 @@ pub(crate) fn labeled_corner_to_ffi(corner: &LabeledCorner) -> ct_labeled_corner
         None => (CT_FALSE, ct_point2f_t::default()),
     };
 
+    let (has_position_covariance, position_covariance) =
+        position_covariance_to_ffi(corner.position_covariance);
+
     ct_labeled_corner_t {
         position: point_to_ffi_xy(corner.position.x, corner.position.y),
         has_grid,
@@ -869,15 +872,39 @@ pub(crate) fn labeled_corner_to_ffi(corner: &LabeledCorner) -> ct_labeled_corner
         has_target_position,
         target_position,
         score: corner.score,
+        has_position_covariance,
+        position_covariance,
     }
 }
 
 pub(crate) fn chessboard_corner_to_ffi(corner: &ChessboardCorner) -> ct_chessboard_corner_t {
+    let (has_position_covariance, position_covariance) =
+        position_covariance_to_ffi(corner.position_covariance);
     ct_chessboard_corner_t {
         position: point_to_ffi_xy(corner.position.x, corner.position.y),
         grid: grid_coords_to_ffi(corner.grid),
         input_index: corner.input_index,
         score: corner.score,
+        has_position_covariance,
+        position_covariance,
+    }
+}
+
+/// Map an optional position covariance onto the `has_*` flag + value pair
+/// the corner structs carry (zeroed when absent).
+fn position_covariance_to_ffi(
+    value: Option<PositionCovariance>,
+) -> (u32, ct_position_covariance_t) {
+    match value {
+        Some(c) => (
+            CT_TRUE,
+            ct_position_covariance_t {
+                xx: c.xx,
+                xy: c.xy,
+                yy: c.yy,
+            },
+        ),
+        None => (CT_FALSE, ct_position_covariance_t::default()),
     }
 }
 

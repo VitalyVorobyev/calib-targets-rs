@@ -95,6 +95,7 @@ mod tests {
         let _ = idx;
         ChessCorner {
             position: Point2::new(x, y),
+            position_covariance: None,
             axes: [
                 AxisEstimate {
                     angle: a0,

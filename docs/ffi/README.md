@@ -52,6 +52,13 @@ Per-family outputs:
 | Marker board | `ct_marker_board_result_t` (detection, optional alignment) | `ct_labeled_corner_t` |
 | PuzzleBoard | `ct_puzzleboard_result_t` (alignment, edge/bit statistics, master origin) | `ct_labeled_corner_t` (master-board `(I, J)` labels) |
 
+Both corner structs end with `has_position_covariance` and
+`position_covariance` (`ct_position_covariance_t { xx, xy, yy }`, px², image
+frame): the covariance of `position`, valid when the flag is `CT_TRUE`. It is
+`CT_FALSE` under `CT_UNCERTAINTY_OFF`, with an upscale stage, or when the
+frame's noise estimate declined (typical of JPEG input — set
+`ct_chess_config_t::noise_sigma`).
+
 PuzzleBoard decode knobs live in `ct_puzzleboard_decode_config_t`:
 `search_mode` (`CT_PUZZLEBOARD_SEARCH_MODE_{FULL,FIXED_BOARD}`), `scoring_mode`
 (`CT_PUZZLEBOARD_SCORING_MODE_{HARD_WEIGHTED,SOFT_LOG_LIKELIHOOD}`), and

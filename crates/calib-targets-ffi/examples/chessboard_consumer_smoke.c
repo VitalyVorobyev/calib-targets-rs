@@ -152,6 +152,15 @@ int main(int argc, char **argv) {
             result.corners_len);
     goto cleanup;
   }
+  /* The default config reports a position covariance for (nearly) every
+   * labelled corner of this lossless frame. */
+  {
+    size_t with_cov = ct_native_count_valid_covariances(corners, corners_len);
+    if (with_cov == (size_t)-1 || with_cov * 10 < corners_len * 9) {
+      fprintf(stderr, "unexpected position covariances: valid=%zu of %zu\n", with_cov, corners_len);
+      goto cleanup;
+    }
+  }
 
   exit_code = 0;
 

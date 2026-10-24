@@ -575,6 +575,7 @@ mod tests {
         };
         let c = ChessCorner {
             position: Point2::new(x, y),
+            position_covariance: None,
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(axes[0]),

@@ -23,6 +23,17 @@ Each detected corner carries:
   neighbourhood. Each `AxisEstimate` is an `angle ∈ [0, π)` plus a 1σ
   angular uncertainty (`sigma`).
 - **A quality scalar** — `strength`, the ChESS response magnitude.
+- **A position covariance** — `position_covariance:
+  Option<PositionCovariance>`, `{ xx, xy, yy }` in px²: how far the
+  sub-pixel position is likely to be from the true corner. The detectors do
+  not read it; they carry it onto every labelled corner they return. It is
+  `None` under `uncertainty: Off`, with an `upscale` stage, with the ML
+  refiner, and when the frame's noise estimate declines (JPEG input — supply
+  `noise_sigma`). The front end estimates the noise once per frame, before the
+  corner pass, and switches the covariance off for that frame when the
+  estimate declines, so no work is spent on covariances that cannot be
+  reported. See
+  [chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
 Together these are exactly what the prefilter reads. A corner's axes are
 admitted into grid construction when `strength ≥ min_corner_strength`

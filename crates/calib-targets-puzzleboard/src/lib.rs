@@ -105,5 +105,6 @@ pub use pole::{
 // sufficient (no direct calib-targets-chessboard / -core dependency needed).
 pub use calib_targets_chessboard::ChessCorner;
 pub use calib_targets_core::{
-    GrayImageView, GridAlignment, GridTransform, GRID_TRANSFORMS_C4, GRID_TRANSFORMS_D4,
+    GrayImageView, GridAlignment, GridTransform, PositionCovariance, GRID_TRANSFORMS_C4,
+    GRID_TRANSFORMS_D4,
 };
