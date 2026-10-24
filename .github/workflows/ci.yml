@@ -188,16 +188,10 @@ jobs:
         run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
       - name: Build WASM package
-        run: wasm-pack build crates/calib-targets-wasm --target web --release --out-dir ../../demo/pkg --out-name calib_targets_wasm
-
-      - name: Append object-shape TypeScript declarations
-        run: |
-          cat crates/calib-targets-wasm/typescript-extras.d.ts \
-            >> demo/pkg/calib_targets_wasm.d.ts
-
-      - name: Set scoped npm package name
-        working-directory: demo/pkg
-        run: npm pkg set name=@vitavision/calib-targets
+        # One recipe for CI, the docs workflow and local builds: wasm-pack into
+        # demo/pkg, the hand-written TypeScript shapes appended, the scoped npm
+        # name set and the config schemas shipped in the package.
+        run: scripts/build-wasm.sh
 
       - name: Verify WASM output
         run: |
@@ -205,12 +199,6 @@ jobs:
           test -f demo/pkg/calib_targets_wasm_bg.wasm
           test -f demo/pkg/calib_targets_wasm.d.ts
           ls -lh demo/pkg/calib_targets_wasm_bg.wasm
-
-      - name: Ship the config schemas in the package
-        # Mirrors release-npm.yml: copies schemas/*.json into the package,
-        # appends `schemas` to `files` (no `exports` field) and asserts via
-        # `npm pack --dry-run` that the tarball would contain every schema.
-        run: scripts/package-npm-schemas.sh demo/pkg
 
       - name: Hand-written TypeScript shapes agree with the schemas
         run: node crates/calib-targets-wasm/tests/check-schema-keys.mjs
@@ -226,7 +214,19 @@ jobs:
           bun install --frozen-lockfile
           bunx tsc -b
           bun run lint
+          bun run fmt:check
           bunx vite build
+
+      # Functional smoke suite (chromium only) against the production build just made:
+      # every bundled sample detected, every printable target generated and detected
+      # again. The screenshot suite (`test:screens`) stays local.
+      - name: Install Playwright chromium
+        working-directory: demo
+        run: npx playwright install --with-deps chromium
+
+      - name: Demo functional smoke tests
+        working-directory: demo
+        run: bun run test:e2e
 
       # Two checks, and the second is the one that bites. Type-checking the
       # `.d.ts` proves it *parses*; it cannot see a declaration that is
@@ -236,7 +236,7 @@ jobs:
       # leaving a merged interface requiring the fields of both, so neither
       # marker-board type could be constructed. `typescript-extras.check.ts`
       # builds a value of each exported shape, which is what catches that.
-      # `--ignoreConfig`: TypeScript 6 refuses a file list while demo/tsconfig.json is
+      # `--ignoreConfig`: TypeScript 6 and 7 refuse a file list while demo/tsconfig.json is
       # present (TS5112). These two checks want the bare file, not the app's config.
       - name: Type-check hand-written WASM TypeScript declarations
         working-directory: demo

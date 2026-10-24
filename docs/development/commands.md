@@ -97,11 +97,21 @@ cd demo && bun install && bun run dev
 ## Frontends (`demo/`, `studio/`)
 
 Both follow the vitavision toolchain baseline: compiler options from
-`@vitavision/config-ts`, lint from `@vitavision/config-eslint`, bun pinned in
-`packageManager`. The studio's UI is built on `@vitavision/ui` with Tailwind 4
-(see `studio/README.md`, "Design system").
+`@vitavision/config-ts`, bun pinned in `packageManager`, and UI built on
+`@vitavision/ui` with Tailwind 4. The demo is on the current baseline
+(TypeScript 7, `oxlint` with `@vitavision/config-oxlint`, `oxfmt`) and also uses
+`@vitavision/stage2d`, `overlays`, `workbench` and `forms`; see `demo/README.md`.
+The studio still lints with ESLint (see `studio/README.md`, "Design system").
 
 ```bash
+# demo/
+bun run check          # tsc -b
+bun run lint           # oxlint --max-warnings 0
+bun run fmt:check      # oxfmt --check
+bun run build && bun run test:e2e   # functional Playwright smoke suite (what CI runs)
+bun run test:screens   # local Playwright screenshots against an uncommitted baseline
+
+# studio/
 bun run check          # tsc -b
 bun run lint           # eslint, 0 errors (React Compiler rules are warnings for now)
 bun run test:screens   # Playwright screenshots against a local, uncommitted baseline
