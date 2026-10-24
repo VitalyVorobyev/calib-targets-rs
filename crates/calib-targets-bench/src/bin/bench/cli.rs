@@ -50,7 +50,7 @@ pub(crate) struct AblateArgs {
     #[arg(long)]
     pub(crate) image: Option<String>,
     /// Restrict to one `datasets.toml` group (the parent-directory name, e.g.
-    /// `130x130_puzzle`). The key tractability lever for the private campaign.
+    /// `02-topo-grid`).
     #[arg(long)]
     pub(crate) group: Option<String>,
     /// Detection engine. `pipeline` runs the full chessboard detector.

@@ -27,11 +27,11 @@ product that no in-workspace detector uses — see
 | Doc | What it answers |
 |---|---|
 | [`algorithm-atlas.md`](algorithm-atlas.md) | **What** — every atomic algorithm (home, signature, one-liner, used-by) + the algorithm×pipeline matrix. |
-| [`pipeline-maps.md`](pipeline-maps.md) | **How they compose** — each detector stage-by-stage; which algorithm runs, local vs delegated. |
+| [`pipeline-maps.md`](pipeline-maps.md) | **How they compose** — the shared grid spine plus an index of each crate's `docs/PIPELINE.md` stage map. |
 | [`dependency-and-layering.md`](dependency-and-layering.md) | **Who depends on whom** — the crate DAG, the layering, why the big crate is big, the library-only surface. |
 
-**Suggested reading order for onboarding:** this page → `pipeline-maps.md` (trace one
-detector end-to-end) → `algorithm-atlas.md` (look up any stage's algorithm) →
+**Suggested reading order for onboarding:** this page → `pipeline-maps.md` and one
+crate `docs/PIPELINE.md` (trace one detector end-to-end) → `algorithm-atlas.md` (look up any stage's algorithm) →
 `dependency-and-layering.md`.
 
 ## <a id="keeping-this-current"></a>Keeping this current
@@ -42,7 +42,7 @@ moves, so it carries a lightweight refresh rule (wired into
 
 > **When a PR adds, removes, renames, or relocates an atomic algorithm, or changes a
 > detector's pipeline stages, update [`algorithm-atlas.md`](algorithm-atlas.md) and
-> [`pipeline-maps.md`](pipeline-maps.md) in the same PR.** When it changes a crate's
+> the owning crate's `docs/PIPELINE.md` in the same PR.** When it changes a crate's
 > internal dependencies or public tiers, update
 > [`dependency-and-layering.md`](dependency-and-layering.md).
 

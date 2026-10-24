@@ -118,7 +118,7 @@ let result = detect::detect_puzzleboard_best(&img, &configs);
 - `diagnostics` (off): forwards to the `diagnostics` feature of the
   chessboard, ChArUco, puzzleboard, and marker subcrates, gating their
   serializable trace surfaces (the chessboard `trace_topological` /
-  `GeometryCheckTrace`, the ChArUco / puzzleboard per-component decode
+  `trace_topological_detection`, the ChArUco / puzzleboard per-component decode
   diagnostics, and the marker-board circle-hypothesis diagnostics). The
   detectors build no per-stage trace on the hot `detect_*` paths unless
   this is enabled (the `dataset` feature on `calib-targets-chessboard`

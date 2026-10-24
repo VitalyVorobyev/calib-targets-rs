@@ -11,37 +11,16 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
-## ABI 5.0.0 — unchanged in workspace 0.15.5
+## Current ABI: 5.0.0 (workspace 0.15.5)
 
-Workspace 0.15.5 fixes ChArUco and marker-board corner labels for boards seen
-turned by more than 45° (they were one square off). The C API returns the
-corrected ids and positions; no type, function or field changes, so the ABI
-stays at 5.0.0.
-
-## ABI 5.0.0 — unchanged in workspace 0.15.4
-
-Workspace 0.15.4 adds JSON Schemas for the npm package's configs (an optional
-`schemars` feature on the config-owning crates, and `schemas/` in the package).
-It does not reach the C API; the ABI stays at 5.0.0.
-
-## ABI 5.0.0 — unchanged in workspace 0.15.3
-
-Workspace 0.15.3 widens the nalgebra requirement to `>=0.34, <0.36`. It does not
-reach the C API; the ABI stays at 5.0.0.
-
-## ABI 5.0.0 — unchanged in workspace 0.15.2
-
-Workspace 0.15.2 makes the printable pattern public as board-space primitives
-(`calib_targets_print::board_primitives`). It does not reach the C API; the ABI
-stays at 5.0.0.
-
-## ABI 5.0.0 — unchanged in workspace 0.15.1
-
-Workspace 0.15.1 adds the PuzzlePole target but does not reach the C API: no
-symbol, struct or enum here changes, and the ABI stays at 5.0.0. A consumer
-already linked against 5.0.0 needs to do nothing. The notes below are the 5.0.0
-release notes, retained because the archive filename is the ABI version and this
-is still the ABI being shipped.
+The ABI has been 5.0.0 since workspace 0.15.0 and is unchanged through the
+0.15.x patch releases: none of them touches a symbol, struct or enum in the C
+API, so a consumer already linked against 5.0.0 needs to do nothing. The latest
+patch, 0.15.5, fixes ChArUco and marker-board corner labels for boards seen
+turned by more than 45° (they were one square off); the C API simply returns the
+corrected ids and positions. The notes below are the 5.0.0 release notes,
+retained because the archive filename is the ABI version and this is still the
+ABI being shipped.
 
 ## ABI 5.0.0 — breaking
 

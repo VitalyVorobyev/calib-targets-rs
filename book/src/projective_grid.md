@@ -163,11 +163,10 @@ see `detect_grid_all` below.
 There is only one square grid builder, so the request carries **no algorithm
 choice**: what to detect is selected by the `LatticeKind` (`Square` / `Hex`)
 and the `Evidence` shape on the `DetectionRequest`, not by an algorithm enum.
-The historical single-variant `SquareAlgorithm` / `GraphBuildAlgorithm` seams
-were removed once seed-and-grow was retired.
 
 The algorithm shares the post-detection validation and projective fit across
-all target types, recovering the full pattern with zero wrong labels. The
+all target types; that validation is precision-first — it drops a doubtful
+corner rather than label it wrongly. The
 deep-dive — the axis-classification test, the triangle-to-cell merge, and the
 line between the generic machinery here and the chessboard-specific wrapper —
 is on the [Topological grid finder](algo_topological_grid.md) algorithm page,

@@ -35,18 +35,13 @@ cargo run --release -p calib-targets --example detect_chessboard_best -- testdat
 
 ## Instrumentation
 
-The chessboard crate's diagnostic entry point is
-`calib_targets_chessboard::trace_topological(corners, params)`,
-which returns a serializable `TopologicalTrace` layered over the
-*production* `detect_grid_all` path (so the trace matches what `detect()`
-actually does). It records every input corner with its `usable` flag, the
-labelled connected components (`(u, v) -> source_index`), and summary
-counters; the final-check drop accounting lives in the pipeline's
-`GeometryCheckTrace`. See
-[The Chessboard Detector §7](chessboard.md#7-debugging-via-the-topological-trace)
-for the field-by-field walkthrough. Both `trace_topological` and the
-`TopologicalTrace` type are gated behind the chessboard crate's
-off-by-default `diagnostics` feature.
+The chessboard crate's diagnostic entry points,
+`calib_targets_chessboard::trace_topological` and
+`trace_topological_detection`, replay the production path and return a
+serializable trace (per-corner usability, every grid stage, recovery
+additions and final-check drops). They are gated behind the crate's
+off-by-default `diagnostics` feature; see
+[The Chessboard Detector §6](chessboard.md#6-debugging-via-the-topological-trace).
 
 The `crates/calib-targets-py/examples/overlay_chessboard.py` script draws
 labelled corners in gold with their `(i, j)` text, grid edges,

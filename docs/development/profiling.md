@@ -1,8 +1,7 @@
 # Profiling the detection pipeline
 
-How to capture flamegraphs and per-span timing for the topological grid-build
-pipeline (`GraphBuildAlgorithm::Topological`), the shared
-`merge_components_local` post-stage, and the marker-decode sweeps.
+How to capture flamegraphs and per-span timing for the topological grid build,
+the shared `merge_components_local` post-stage, and the marker-decode sweeps.
 
 For the *ranked* output of these tools — the current bottleneck list and the
 optimization backlog — see [`performance.md`](performance.md).
@@ -69,10 +68,11 @@ run --image testdata/large.png` (uses `dtrace`; may be blocked by SIP).
 ## Per-span timing — `topo_stage_timing`
 
 The bench crate compiles the `tracing` feature in unconditionally, so
-`topo_stage_timing` produces a 14-stage breakdown (corner-detect → input-adapt →
-axis-filter → triangulate → classify → merge → 3 quad filters → walk →
-component-merge → clustering → recovery → ordering) with p50/p95/mean/max and
-git/rustc/CPU metadata — no feature flag needed:
+`topo_stage_timing` produces a per-stage breakdown (corner detect → input
+adaptation → axis filter → triangulation → edge classification → triangle merge
+→ three quad filters → walk → component merge → validation → projective fit →
+assembly → clustering → recovery → final geometry gate → output assembly) with
+p50/p95/mean/max and git/rustc/CPU metadata — no feature flag needed:
 
 ```bash
 cargo run --release -p calib-targets-bench --bin topo_stage_timing -- \
@@ -82,26 +82,20 @@ cargo run --release -p calib-targets-bench --bin topo_stage_timing -- \
     --out bench_results/topo-stage.ring_fit.json
 ```
 
-The instrumented functions (kept in sync manually — update this table and the
-crate's `tracing` wiring together when adding a span):
+The spans it reads (`crates/calib-targets-bench/src/bin/topo_stage_timing.rs`
+maps span name → report field; update both when adding or renaming a span):
 
-| Crate | Function | Level | Fields |
-|---|---|---|---|
-| `projective-grid` | `build_grid_topological` | info | `num_corners` |
-| `projective-grid` | `merge_components_local` | info | `num_components` |
-| `projective-grid` | `shared::validate::validate` | info | `num_labelled`, `cell_size` |
-| `projective-grid` | `topological::classify::classify_all_edges` | debug | `num_edges` |
-| `projective-grid` | `topological::quads::merge_triangle_pairs` | debug | `num_triangles` |
-| `projective-grid` | `topological::topo_filter::filter_quads` | debug | `num_quads_in` |
-| `projective-grid` | `topological::walk::label_components` | debug | `num_quads` |
-| `projective-grid` | `global_step::estimate_global_cell_size` | debug | `num_points` |
-| `projective-grid` | `local_step::estimate_local_steps` | debug | `num_points` |
-| `calib-targets-chessboard` | `ChessboardDetector::detect_*` and inner stages | info / debug | (existing) |
-| `calib-targets-charuco` | `board_match::match_board` (decode total) | info | — |
-| `calib-targets-charuco` | `board_match::sample_cells` | info | — |
-| `calib-targets-charuco` | `board_match::build_score_matrix` | info | — |
-| `calib-targets-charuco` | `board_match::enumerate_hypotheses` | info | — |
-| `calib-targets-charuco` | `board_match::emit_markers` | info | — |
+| Crate | Span (function, or `name =`) | Level |
+|---|---|---|
+| `calib-targets` | `detect_corners` | info |
+| `calib-targets-chessboard` | `detect_all_topological` (grid total), `trace_topological` | info |
+| `calib-targets-chessboard` | `topological_inputs`, `topological_clustered_augs`, `recover_topological_components`, `topological_post_recovery_component_merge`, `chessboard_geometry_only_recovery`, `chessboard_final_geometry_gate`, `build_topological_detections` | debug |
+| `projective-grid` | `merge_components_local` (`num_components`), `validate` (`num_labelled`, `cell_size`), `extend_from_labelled`, `extend_via_local_homography`, `extend_via_global_homography` | info |
+| `projective-grid` | `topological/square_detector.rs`: `usable_mask`, `topological_component_merge`, `topological_validation`, `topological_projective_fit`, `topological_assembly` | debug |
+| `projective-grid` | `delaunay_triangulate`, `classify_all_edges`, `merge_triangle_pairs`, `label_components` (`walk.rs`) | debug |
+| `projective-grid` | `topological/filter.rs::filter_quads`: `topological_quad_filter`, `geometry_quad_filter`, `cell_size_quad_filter` | debug |
+| `calib-targets-charuco` | `board_match::{match_board (decode total), sample_cells, build_score_matrix, enumerate_hypotheses, emit_markers}`, `detect_with_corners` | info |
+| `calib-targets-puzzleboard` | `detect_inner`, `decode_component`, `sample_all_edges`, `decode_edges`, `build` / `fill` / `class_credit` (`decode/tables.rs`), `origin_scan` | info |
 
 To stream raw span events instead (one enter/exit per call, `time.busy`
 wall-clock per span), enable `tracing` on the facade and set `RUST_LOG`:

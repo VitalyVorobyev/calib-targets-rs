@@ -20,20 +20,15 @@
   detector crates (e.g. `calib_targets_chessboard::ChessCorner`), not in
   `calib-targets-core`.
 - `TargetDetection`: a collection of labeled corners for one board instance.
-- `TargetKind`: enum for `Chessboard`, `Charuco`, or `CheckerboardMarker`.
+- `TargetKind`: `Chessboard`, `Charuco`, `CheckerboardMarker`,
+  `PuzzleBoard`, or `PuzzlePole`.
 
 These types are shared across all detectors so downstream code can be target-agnostic.
 
-## Orientation clustering
-
-ChESS corner orientations are only defined modulo `pi`. The clustering utilities help recover two dominant grid directions:
-
-- `cluster_orientations`: histogram-based peak finding followed by 2-means refinement.
-- `OrientationClusteringParams`: histogram size, separation thresholds, outlier rejection.
-- `compute_orientation_histogram`: debug visualization helper.
-- `estimate_grid_axes_from_orientations`: a lightweight fallback when clustering fails.
-
-Chessboard detection uses these helpers to label corners by axis and to reject outliers.
+Axis clustering (recovering the two global grid directions from per-corner
+axes) is not part of core: it lives in `projective-grid`
+(`projective_grid::expert::orientation::cluster_axes`); see
+[Axis clustering](algo_axis_clustering.md).
 
 ## Homography and rectification
 

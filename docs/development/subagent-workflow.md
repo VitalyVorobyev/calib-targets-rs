@@ -17,9 +17,9 @@ fully (see the checklist).
 
 ## The two named agents
 
-- [`quick-implementer`](../.claude/agents/quick-implementer.md) — **Sonnet**,
+- [`quick-implementer`](../../.claude/agents/quick-implementer.md) — **Sonnet**,
   the default for dispatched work.
-- [`deep-implementer`](../.claude/agents/deep-implementer.md) — **Opus**,
+- [`deep-implementer`](../../.claude/agents/deep-implementer.md) — **Opus**,
   reserved for non-trivial implementation.
 
 They share one tool surface (Read, Edit, Write, Bash, Glob, Grep, MCP) and
@@ -106,7 +106,7 @@ hand-wavier prompts — that's the failure mode this workflow prevents.
 
 - Full pre-release audit → the `/rust-workspace-review` skill.
 - Vision-specific design / debugging / review →
-  [`calibration-target-detector`](../.claude/agents/calibration-target-detector.md);
+  [`calibration-target-detector`](../../.claude/agents/calibration-target-detector.md);
   its persistent memory carries pipeline context across sessions.
 - Algorithm-specific reviews → the `/algo-review`, `/calibration-review`,
   `/perf-architect`, `/hotpath-rust`, `/criterion-bench`, `/algo-design`

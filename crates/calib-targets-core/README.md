@@ -25,7 +25,7 @@ nalgebra = "0.34"
 | [`AxisEstimate`] | One local grid-axis direction: an angle in `[0, π)` plus a 1σ uncertainty. Corners carry two. |
 | [`LabeledCorner`] | A detected corner with grid label: `position`, `grid: Option<(i, j)>`, `id`, `target_position`, `score`. The common detector output. |
 | [`TargetDetection`] | `{ kind: TargetKind, corners: Vec<LabeledCorner> }`. Uniform wrapper across all detector types. |
-| [`TargetKind`] | `Chessboard`, `ChArUco`, `PuzzleBoard`, `CheckerboardMarker`. Non-exhaustive. |
+| [`TargetKind`] | `Chessboard`, `Charuco`, `CheckerboardMarker`, `PuzzleBoard`, `PuzzlePole`. Non-exhaustive. |
 | [`Coord`] | Integer lattice index `{ u, v }` (`u` right = grid column `i`, `v` down = grid row `j`). Labels are always rebased so that the bounding-box minimum sits at `(0, 0)`. |
 | [`GridTransform`] | Canonical affine integer-grid mapping owned by `projective-grid`: lattice kind + 2×2 matrix + translation. |
 | [`GridAlignment`] | Semantic alias for `GridTransform` used by detector result fields; not a second structure. |
@@ -37,8 +37,6 @@ nalgebra = "0.34"
 - [`warp_perspective_gray`] — grayscale perspective warp.
 - [`sample_bilinear`] / [`sample_bilinear_fast`] / [`sample_bilinear_u8`] —
   subpixel sampling helpers on a [`GrayImageView`].
-- [`cluster_orientations`] + [`OrientationClusteringParams`] — axis-angle
-  histogram clustering used by the chessboard detector.
 - [`ChessConfig`] + friends — shared ChESS corner-detector configuration
   struct, consumed by every higher-level detector through
   `ChessboardParams::chess`.
@@ -87,5 +85,5 @@ println!(
 - [Book: understanding detection output][output]
 
 [calib-targets]: https://docs.rs/calib-targets
-[conv]: https://vitalyvorobyev.github.io/calib-targets-rs/conventions.html
-[output]: https://vitalyvorobyev.github.io/calib-targets-rs/output.html
+[conv]: https://vitalyvorobyev.github.io/calib-targets-rs/book/conventions.html
+[output]: https://vitalyvorobyev.github.io/calib-targets-rs/book/output.html

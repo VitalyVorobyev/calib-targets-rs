@@ -6,23 +6,28 @@ commands for the workspace.
 
 ## Core gate
 
+The everyday gate (`cargo fmt --all --check`, clippy with `-D warnings`,
+`cargo test --workspace`, zero-warning `cargo doc --workspace --no-deps`) is
+defined once, in the "Everyday gate" section of `.claude/CLAUDE.md`; the full
+pre-release checklist is [release-gates.md](release-gates.md). Extras:
+
 ```bash
-# Format
-cargo fmt --all
-
-# Lint (treat warnings as errors)
-cargo clippy --workspace --all-targets -- -D warnings
-
-# Test
-cargo test --workspace
 cargo test --workspace --all-features
-
-# Docs — MUST produce zero warnings; run before every commit
-cargo doc --workspace --no-deps
-
-# Build book
 mdbook build book
 ```
+
+## Cargo aliases
+
+Defined in `.cargo/config.toml`:
+
+| Alias | Expands to |
+|---|---|
+| `cargo bench-run` | `cargo run --release -p calib-targets-bench --bin bench --` (any bench subcommand) |
+| `cargo bench-check` | `... bench -- check` — regression check against the pinned baselines |
+| `cargo bench-bless` | `... bench -- bless` — re-bless baselines |
+| `cargo bench-preview` | `... bench -- preview` — render overlays |
+| `cargo studio` | `cargo run --release -p calib-targets-studio --` — launch the detection studio |
+| `cargo xtask` | `cargo run --package xtask --` |
 
 ## Run a single example
 
@@ -54,9 +59,6 @@ cargo bench --workspace
 
 # Criterion: PuzzleBoard detection timing across board sizes (Full vs KnownOrigin fast path)
 cargo bench -p calib-targets --bench puzzleboard_sizes
-
-# Per-size success/failure/per-stage-timing table — useful for diagnosing which stage fails
-cargo run --release -p calib-targets --example puzzleboard_size_sweep
 ```
 
 The grid bench harness (`calib-targets-bench`) selector is documented in

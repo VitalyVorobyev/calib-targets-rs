@@ -17,7 +17,7 @@ coordinates.
 
 | # | Stage | In → Out | What it does |
 |---|---|---|---|
-| 0 | chessboard grid detect | ChESS corners → `Vec<ChessDetection>` | The full [chessboard pipeline](pipeline_chessboard.md) (multi-component). Wrong `(i, j)` labels here become wrong absolute master labels — same precision-unrecoverable property as ChArUco. |
+| 0 | chessboard grid detect | ChESS corners → `Vec<ChessboardDetection>` | The full [chessboard pipeline](pipeline_chessboard.md) (multi-component). Wrong `(i, j)` labels here become wrong absolute master labels — same precision-unrecoverable property as ChArUco. |
 | 1 | edge sampling | labelled corners + image → observed edges | Per interior edge: sample a disk of radius `sample_radius_rel × edge_len` at the midpoint, derive bright/dark references from the adjacent cells, classify into `bit ∈ {0,1}` with a confidence `∈ [0,1]`. |
 | 2 | bit-confidence filter | observed edges → high-confidence edges | Drop bits below `min_bit_confidence`; low-confidence bits become unknown. |
 | 3 | minimum-window gate | filtered edges → pass / fail | Require the fragment to span `min_window` **corners** on **both** axes (default 7). That span carries 30 distinct code bits — the same information the paper's 4 × 4 fragment carries — and is unique at every master position under the rotations-only search. |
@@ -32,8 +32,7 @@ The full chessboard topological pipeline runs on the input ChESS corners —
 prefilter, [axis clustering](algo_axis_clustering.md), the
 [topological grid walk](algo_topological_grid.md), booster-driven
 [component recovery, and the mandatory final geometry
-check](algo_recovery_validation.md). PuzzleBoard already defaulted to the
-topological builder, which is the only builder and has no selector field.
+check](algo_recovery_validation.md).
 
 ## The partial-view guarantee
 
@@ -49,7 +48,7 @@ than the full master.
 
 | Symptom | Likely stage | What it means / knob to try |
 |---|---|---|
-| No grid components | Stage 0 (chessboard) | Sparse / empty corner cloud — see the [chessboard failure modes](pipeline_chessboard.md#failure-modes). Try `--upscale` on small boards. |
+| No grid components | Stage 0 (chessboard) | Sparse / empty corner cloud — see the [chessboard failure modes](pipeline_chessboard.md#failure-modes). On small, low-resolution boards set the corner front-end's `chess.upscale` (`UpscaleConfig::Fixed`). |
 | `NotEnoughEdges` | Stage 2–3 | Too few high-confidence edge bits survived. Lower `decode.min_bit_confidence`; check that interior dots are resolved at this image scale. |
 | Every hypothesis over BER | Stage 4 (`HardWeighted`) | Board too small or too noisy. Raise `decode.max_bit_error_rate`, or switch to `SoftLogLikelihood` (more robust on ambiguous fragments). |
 | Small / ambiguous decode margin | Stage 4 (`SoftLogLikelihood`) | Near-symmetric fragment or few high-confidence bits. Capture a larger fragment; the margin gate is *correctly* refusing a coin-flip. |

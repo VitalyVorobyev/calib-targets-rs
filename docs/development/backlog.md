@@ -6,9 +6,6 @@
 > [`../algorithms/algorithmic_gaps.md`](../algorithms/algorithmic_gaps.md);
 > measured optimization work belongs in the
 > [performance backlog](performance.md#optimization-backlog).
->
-> This file replaces `architecture/chore-backlog.md`, which was deleted with the
-> consolidation effort it tracked and left these findings homeless.
 
 Legend — **Sev:** P1 (blocks a consumer) · P2 (real friction) · P3 (hygiene).
 **Effort:** S (<½ day) · M (1–3 days) · L (multi-PR). **API:** `additive` ·

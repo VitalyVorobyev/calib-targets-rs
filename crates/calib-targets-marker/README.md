@@ -238,6 +238,6 @@ Ready-made specs live under
 ## Related
 
 - [Book: marker board detector][book-chapter]
-- [Book: printable targets](https://vitalyvorobyev.github.io/calib-targets-rs/printable.html)
+- [Book: printable targets](https://vitalyvorobyev.github.io/calib-targets-rs/book/printable.html)
 
-[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/marker.html
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/marker.html

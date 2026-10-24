@@ -293,7 +293,7 @@ documented as "`+inf` disables" takes a very large number such as `1e30`.
   in the Rust facade.
 
 [facade]: https://docs.rs/calib-targets
-[tune]: https://vitalyvorobyev.github.io/calib-targets-rs/tuning.html
+[tune]: https://vitalyvorobyev.github.io/calib-targets-rs/book/tuning.html
 
 ## Limitations
 

@@ -257,10 +257,12 @@ Verify against the printed board or the JSON spec used to generate it.
    the chessboard crate's off-by-default `diagnostics` feature) —
    few `usable` corners means the prefilter / clustering is too tight (try
    lowering `min_corner_strength` or the advanced
-   `min_peak_weight_fraction`), `Err(NoComponents)` means the topological
-   builder assembled no grid (try `detect_chessboard_best`), and components
-   found but a refused detection points at the final geometry check
-   (inspect `GeometryCheckTrace.dropped_*`; try a wider config). See
+   `min_peak_weight_fraction`), empty `final_components` (or
+   `Err(DetectionFailed)`) means the topological builder assembled no grid
+   (try `detect_chessboard_best`), and components found but a refused
+   detection points at the final geometry check (inspect
+   `trace_topological_detection`'s `chessboard.final_drops`; try a wider
+   config). See
    [Troubleshooting](troubleshooting.md) for the full chain.
 4. If **grid found but no ChArUco markers**: enable `multi_threshold`,
    lower `min_border_score`.

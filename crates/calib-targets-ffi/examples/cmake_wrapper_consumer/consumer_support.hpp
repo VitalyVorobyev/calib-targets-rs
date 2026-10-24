@@ -188,7 +188,7 @@ inline ct_chess_config_t default_shared_chess_config() {
 inline ct_chessboard_detector_config_t default_chessboard_detector_config() {
   ct_chessboard_detector_config_t config{};
   config.chess = default_shared_chess_config();
-  // C ABI: the chessboard detector's 30-field `ct_chessboard_params_t`
+  // C ABI: the chessboard detector's `ct_chessboard_params_t`
   // mirrors `DetectorParams`. The `init_default` helper populates a
   // valid default-configured value; callers override individual fields
   // as needed (here: raise `min_corner_strength` from 0 → 0.5).

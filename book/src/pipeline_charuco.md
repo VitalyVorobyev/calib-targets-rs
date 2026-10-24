@@ -17,7 +17,7 @@ about orientation.
 
 | # | Stage | In → Out | What it does |
 |---|---|---|---|
-| 0 | chessboard grid detect | ChESS corners → `Vec<ChessDetection>` | `ChessDetector::detect_all` on the [topological builder](pipeline_chessboard.md). The `min_corner_strength` floor keeps marker-bit saddles out of the grid (below). |
+| 0 | chessboard grid detect | ChESS corners → `Vec<ChessboardDetection>` | `ChessboardDetector::detect_all` (the [chessboard pipeline](pipeline_chessboard.md)). The `min_corner_strength` floor keeps marker-bit saddles out of the grid (below). |
 | 1 | grid smoothness pre-filter | grid corners + image → cleaned corners | Per-corner position vs midpoint-averaged neighbours; a deviation over `grid_smoothness_threshold_rel × px_per_square` triggers a local ChESS redetection or a drop. |
 | 2 | marker cell enumeration | corner map → `Vec<MarkerCell>` | Per cell, require all four corners `{(i,j),(i+1,j),(i+1,j+1),(i,j+1)}`; skip incomplete cells. |
 | 3 | marker decode + alignment | cells + image → markers + alignment | Score each cell's soft bits ([ArUco bit decode](algo_aruco_decode.md)) against every `(D4 rotation, integer translation)` board hypothesis, pick the maximum-likelihood placement, and accept it through a margin gate. See [alignment](algo_charuco_alignment.md). |
@@ -43,17 +43,12 @@ detector to marker scenes:
   grid grows. Those corners are grid-consistent but lie inside the marker
   interior; cutting them early keeps the topological per-cell axis test
   from being poisoned by marker-internal X-corners. This floor — not marker
-  presence — is the precision lever here. (It is the concern the historical
-  ChArUco builder pin used to guard; the topological builder is now safe on
-  marker scenes *because of* this floor.)
+  presence — is the precision lever here.
 - **the chessboard's final wrong-label geometry check stays enabled**, exactly
   as for the standalone chessboard detector. Marker decoding is not a
   substitute: the board alignment searches `D4 × integer translation`, a
   *rigid* relabelling of whatever lattice the chessboard produced, so it
   cannot see or repair a labelling that is wrong *within* a component.
-
-There is no chessboard grid-builder selector; legacy selector keys are rejected
-as unknown configuration fields.
 
 ## Failure modes
 

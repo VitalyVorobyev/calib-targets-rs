@@ -31,7 +31,7 @@ A Cargo workspace; all publishable crates live under `crates/`:
 |---|---|
 | `calib-targets` | Facade crate — `detect_*` and `detect_*_best` helpers, `default_chess_config()` |
 | `projective-grid` | Standalone grid graph construction, traversal, homography, and grid smoothness (no image types) |
-| `calib-targets-core` | Shared types: `Corner`, `GrayImageView`, `LabeledCorner`, `TargetDetection`; re-exports from `projective-grid` |
+| `calib-targets-core` | Shared types: `AxisEstimate`, `GrayImageView`, `LabeledCorner`, `TargetDetection`, `TargetKind`; re-exports `Coord` and the homography from `projective-grid` |
 | `calib-targets-chessboard` | Invariant-first chessboard detector on top of ChESS corners (precision-by-construction) |
 | `calib-targets-aruco` | ArUco/AprilTag dictionary, bit decoding, marker matching |
 | `calib-targets-charuco` | ChArUco fusion: grid-first alignment + ArUco anchoring + corner IDs |
@@ -41,6 +41,8 @@ A Cargo workspace; all publishable crates live under `crates/`:
 | `calib-targets-ffi` | C ABI bindings with generated header and CMake package (not published) |
 | `calib-targets-py` | PyO3/maturin Python bindings (not published to crates.io) |
 | `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (published to npm as `@vitavision/calib-targets`) |
+| `calib-targets-bench` | Bench / regression harness (`bench run`, `check`, `diagnose`, ...) and stage-timing binaries (not published) |
+| `calib-targets-studio` | axum + React detection studio GUI (not published) |
 
 **CLI**: the `calib-targets` binary lives in the facade crate behind the default
 `cli` feature (`cargo install calib-targets`); the Python package exposes the
@@ -67,7 +69,7 @@ No cyclic deps.
 **Multi-config sweep:** `detect_*_best` functions try multiple parameter configs
 and return the best result (most markers/corners). Presets:
 `ChessboardParams::sweep_default()`, `CharucoParams::sweep_for_board()`,
-`PuzzleBoardParams::sweep_for_board()`.
+`PuzzleBoardParams::sweep_for_board()`, `MarkerBoardParams::sweep_for_board()`.
 
 **`TargetDetection` / `LabeledCorner`** — the common output container. Fields:
 `position`, `grid` (i,j), `id`, `target_position` (board units / mm), `score`.
@@ -78,62 +80,29 @@ across the workspace.
 
 ## Detailed guides
 
-[`docs/README.md`](../docs/README.md) is the map of the whole internal docs
-tree (the public mdBook under `book/src/` is the *user-facing* docs — keep the
-two distinct). Read the relevant guide before touching that area:
+[`docs/README.md`](../docs/README.md) is the complete map of the internal docs
+(the mdBook under `book/src/` is the *user-facing* docs — keep the two
+distinct). Read before touching the relevant area — these three always:
 
-**Developer guides** ([`docs/development/`](../docs/development/)):
+- [`detection-pipeline.md`](../docs/development/detection-pipeline.md) — the
+  grid builder, component merge, axes-only orientation contract, cell-size
+  gotcha.
+- [`debugging.md`](../docs/development/debugging.md) — the **mandatory**
+  evidence-driven protocol for any detector failure.
+- [`conventions.md`](../docs/development/conventions.md) — public struct
+  conventions, binding/CLI/dict-key parity, local-only-artifact rules.
 
-- [`detection-pipeline.md`](../docs/development/detection-pipeline.md)
-  — the topological grid builder, component merge, orientation source, bench
-  harness selector, the axes-only corner-orientation contract, and the
-  cell-size-estimation gotcha.
-- [`debugging.md`](../docs/development/debugging.md)
-  — the **mandatory** evidence-driven protocol for any detector failure.
-- [`conventions.md`](../docs/development/conventions.md)
-  — public struct conventions (`#[non_exhaustive]` + named constructors),
-  binding/CLI/dict-key parity, and local-only-artifact rules.
-- [`private-dataset-policy.md`](../docs/development/private-dataset-policy.md)
-  — disclosure policy + the two regression datasets (3536119669, 130x130_puzzle).
-- [`release-gates.md`](../docs/development/release-gates.md)
-  — full pre-release quality-gate checklist.
-- [`refactor-gates.md`](../docs/development/refactor-gates.md)
-  — standing per-phase validation gate for in-flight refactors.
-- [`commands.md`](../docs/development/commands.md)
-  — complete command reference.
-- [`profiling.md`](../docs/development/profiling.md)
-  — flamegraph / per-span timing capture for the grid-build pipeline.
-- [`performance.md`](../docs/development/performance.md)
-  — benchmark methodology, current bottleneck ranking, and the prioritized
-  optimization backlog.
-- [`subagent-workflow.md`](../docs/development/subagent-workflow.md)
-  — how to dispatch quick-/deep-implementer subagents during feature work.
-
-**Algorithm references** ([`docs/algorithms/`](../docs/algorithms/)):
-
-- [`topological-grid-detection.md`](../docs/algorithms/topological-grid-detection.md)
-  — canonical stage-by-stage map for the sole grid builder.
-- [`algorithmic_gaps.md`](../docs/algorithms/algorithmic_gaps.md)
-  — workspace-wide ledger of open/closed algorithmic gaps and known limits.
-- [`puzzle_detection_spec.md`](../docs/algorithms/puzzle_detection_spec.md)
-  — PuzzleBoard soft-edge-decode + global-inference design.
-- [`charuco_concept.md`](../docs/algorithms/charuco_concept.md)
-  — ChArUco board-level hypothesis-scoring concept.
-- [`diskfit-antipodal-sector.md`](../docs/algorithms/diskfit-antipodal-sector.md)
-  — upstream `chess-corners` DiskFit axis-slot defect note.
-
-**Other:** FFI / C-API consumer docs in [`docs/ffi/`](../docs/ffi/); release
-history in [`docs/changelog/`](../docs/changelog/) (archive, indexed by the root
-`CHANGELOG.md`) and the live [`docs/migrations/0.15.0.md`](../docs/migrations/0.15.0.md)
-(with [`0.14.0.md`](../docs/migrations/0.14.0.md) retained for two-release hops).
+Changes that can move a label also take the regression gate + bless protocol in
+[`release-gates.md`](../docs/development/release-gates.md).
 
 ## Key conventions (always on)
 
 **Coordinate system:**
 - Image pixels: origin top-left, x right, y down.
 - Grid: `i` right, `j` down; indices are corner intersections.
-- Quad / homography corner order: **TL, TR, BR, BL** (clockwise). Never use
-  self-crossing order.
+- Quad / homography corner order: **TL, TR, BR, BL** (clockwise) in both
+  source and destination spaces. Never use self-crossing order; per-cell mesh
+  warps must keep the same winding in rect and image space.
 - Pixel sampling: use `x + 0.5`, `y + 0.5` for pixel centers consistently.
 
 **Grid labels are non-negative.** Every detector that returns
@@ -145,7 +114,7 @@ applies the same `min (i, j) → (0, 0)` shift.
 
 **Corner orientation is axes-only.** `Corner::orientation` has been removed
 workspace-wide — never reintroduce it. The only signal is
-`Corner.axes: [AxisEstimate; 2]`; any circular mean of axis angles MUST
+`ChessCorner.axes: [AxisEstimate; 2]`; any circular mean of axis angles MUST
 accumulate `(cos 2θ, sin 2θ)`. Full contract in the
 [detection-pipeline guide](../docs/development/detection-pipeline.md#corner-orientation-contract-axes-only).
 
@@ -197,12 +166,18 @@ is therefore *always* an algorithmic/structural problem (find the general
 geometric predicate that distinguishes the false attachment from a legitimate
 corner), and *never* a matter of tightening a threshold until the bad corner
 falls outside it. If you cannot articulate the general criterion, you have not
-fixed the bug. See the evidence-driven debugging rule below and
+fixed the bug. See the evidence-driven debugging rule above and
 [`docs/development/debugging.md`](../docs/development/debugging.md).
 
 **Marker decoding:** grid-aware scan in rectified space (not generic
 contour/quad detection). Keep bit packing order, polarity (black=1 or black=0),
-and `borderBits` explicit in code.
+and `borderBits` explicit in code. If bit order, polarity, `borderBits`, the
+marker layout, or grid indexing is unclear, stop and ask rather than guess.
+
+**Change hygiene:** keep diffs small and focused; preserve public APIs unless a
+breaking change is requested; add tests with every bug fix; behaviour must be
+deterministic (no unseeded randomness, no dependence on `HashMap` iteration
+order).
 
 **New warnings:** fix them; do not suppress.
 
@@ -232,5 +207,6 @@ generated data stay out of Git. Stage files individually; never `git add -A` in
 a directory that may contain them. Details in
 [`docs/development/conventions.md`](../docs/development/conventions.md#local-only-artifacts--never-commit).
 
-**MSRV:** workspace sets `rust-version = "1.91"`. Toolchain pinned to `stable`
-in `rust-toolchain.toml`.
+**MSRV:** workspace sets `rust-version = "1.91"`, enforced by the `msrv` CI job;
+`rust-toolchain.toml` stays on `stable`. Raising it touches several files in
+lockstep — see [`release-gates.md`](../docs/development/release-gates.md#releasing).

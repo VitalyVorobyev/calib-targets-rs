@@ -14,9 +14,7 @@ stage maps:
 
 > Status note. The structural target below is realized: the `shared/` back-half,
 > the sealed `Lattice` trait, and the `topological/` strategy directory all
-> exist. **Topological is the sole square-grid assembler** — the historical
-> `SeedAndGrow` strategy was retired (its geometry-only recovery schedule
-> survived and now powers the topological synthesized-axis path). **Hex
+> exist. **Topological is the sole square-grid assembler.** **Hex
 > detection is wired on the topological path** — `(Hex, Positions)`,
 > `(Hex, Oriented1)`, and `(Hex, Oriented3)` are supported;
 > see
@@ -74,16 +72,11 @@ mathematical zero-wrong guarantee for arbitrary input. Both membership and
 label correctness are measured properties of each evidence/domain campaign.
 
 Topological is the sole grid builder; there is no algorithm choice in the
-request. The historical **SeedAndGrow** strategy — a self-consistent 4-corner
-seed plus BFS predict-and-attach with fill / extend boosters — was retired once
-the topological builder matched or beat it on every shipping path, including the
-marker-bit-heavy ChArUco scenes it was once kept for. ChArUco's old marker-bit
-fragility (ChESS corners *inside* marker bits whose axes lock to the marker, not
-the grid) is now handled with a `min_corner_strength` floor that keeps the
-topological grid out of the marker interior; see
-`crates/calib-targets-charuco/docs/PIPELINE.md`. SeedAndGrow's geometry-only
-recovery schedule (`RecoverySchedule`) outlived the strategy and now powers the
-topological synthesized-axis path (see `ORIENTATION.md`).
+request (the earlier SeedAndGrow strategy was retired). ChArUco marker-bit
+corners are kept out of the grid by a `min_corner_strength` floor; see
+`crates/calib-targets-charuco/docs/PIPELINE.md`. The geometry-only recovery
+schedule (`RecoverySchedule`) powers the topological synthesized-axis path
+(see `ORIENTATION.md`).
 
 ### Axis 3 — input-feature kind
 
@@ -205,13 +198,10 @@ src/
 
 `shared/` holds the back-half (merge + validate + fit) **and** the
 pattern-agnostic grid-growth + recovery engine (grow / fill / extension /
-recovery). That engine was relocated from the retired `seed_and_grow/`
-directory: it is no longer a separate strategy but the geometry-only recovery
+recovery). It is not a separate strategy but the geometry-only recovery
 schedule the topological synthesized-axis path runs (and that the chessboard
 crate composes directly for its own recovery). `topological/` is the sole
-strategy directory. The flat layout is realized — the old
-`detect/advanced/square/*` nesting and the duplicate generic seed-and-grow
-implementation are gone.
+strategy directory.
 
 ### Two public tiers
 

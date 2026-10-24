@@ -86,14 +86,15 @@ physical boards in one frame.
 
 ## Failure modes
 
-Identify the stage from the serializable topological trace
-(`pipeline::trace_topological`, layered over the production path) and the
-final-check `GeometryCheckTrace` drop counters, then consult:
+Identify the stage from the serializable trace
+(`trace_topological_detection`, layered over the production path; see
+[The Chessboard Detector §6](chessboard.md#6-debugging-via-the-topological-trace)),
+then consult:
 
 | Symptom | Likely stage | Knob to try | Notes |
 |---|---|---|---|
 | No detection, no grid directions | Stage 2 (clustering) | `min_peak_weight_fraction`, `peak_min_separation_deg` | The two grid axes never separated — common on very-bad-light frames. |
-| No cell size / no seed | Stage 3 (topological) | `detect_chessboard_best` with `sweep_default()` | No quad assembled. Builder tolerances are internal. |
+| Usable corners, no component | Stage 3 (topological) | `detect_chessboard_best` with `sweep_default()` | No quad assembled. Builder tolerances are internal. |
 | Very few corners | Stage 4 (recover) | `attach_search_rel`, `attach_axis_tol_deg`, `step_tol`, `edge_axis_tol_deg` | Grid grew but couldn't extend — common on heavily distorted views. |
 | Many dropped corners | Stage 5 (geometry check) | `geometry_check_local_h_tol_rel` | Invariants found outliers; check the drop reasons. |
 | **Wrong `(i, j)` labels** | **never** | — | File a bug. The precision contract has been violated; do not tune around it. |

@@ -56,8 +56,8 @@ match trace_topological(&corners, &ChessboardParams::default()) {
         let usable = trace.corners.iter().filter(|c| c.usable).count();
         println!("corners_in: {}", trace.diagnostics.corners_in);
         println!("corners_used: {usable}");
-        println!("components: {}", trace.components.len());
-        println!("total labels: {}", trace.diagnostics.labels);
+        println!("components: {}", trace.final_components.len());
+        println!("total labels: {}", trace.diagnostics.final_labels);
     }
     Err(e) => println!("topological stage produced no grid: {e}"),
 }
@@ -90,8 +90,8 @@ match trace_topological(&corners, &ChessboardParams::default()) {
    rectilinear board with axes on the π-wrap boundary is handled by
    plateau-aware peak picking.
 
-3. **Usable corners but `Err(NoComponents)`?** The topological builder
-   assembled no quad mesh. Try `detect_chessboard_best` with
+3. **Usable corners but no `final_components` (or `Err(DetectionFailed)`)?**
+   The topological builder assembled no quad mesh. Try `detect_chessboard_best` with
    `ChessboardParams::sweep_default()` (widens the clustering and attachment
    tolerances).
 
@@ -172,7 +172,7 @@ specification in a geometrically consistent way.
 | Multiple same-board components | `detect_chessboard_all`; cap via `max_components` |
 | Very small ChArUco board in frame | Raise `CharucoParams.px_per_square` to match actual square size |
 | Specular reflections on board | Pre-process with local contrast normalisation (CLAHE); if pre-processing is off the table, lower `min_peak_weight_fraction` so clustering can cope with the reduced corner count |
-| Grid components found but detection returns `Err(NoDetection)` | Use `detect_chessboard_best`; inspect the `trace_topological` components and the final-check `GeometryCheckTrace.dropped_*` counters |
+| Grid components found but detection returns `Err(NoDetection)` | Use `detect_chessboard_best`; inspect `trace_topological_detection` (`final_components`, `chessboard.final_drops`) |
 
 ---
 
