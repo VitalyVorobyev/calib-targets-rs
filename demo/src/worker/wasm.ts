@@ -21,8 +21,6 @@ import type {
   PuzzleBoardParams,
 } from "@vitavision/calib-targets";
 
-import { plain } from "../lib/plain";
-
 type Gray = Uint8Array;
 
 export const load = (): Promise<unknown> => init();
@@ -103,7 +101,10 @@ export const diagnoseMarkerBoard = (
   chess: ChessConfig,
   params: MarkerBoardParams,
 ): DetectionWithDiagnostics<MarkerBoardDetection, MarkerBoardDiagnostics> =>
-  plain(raw.diagnose_marker_board(w, h, gray, chess, params));
+  raw.diagnose_marker_board(w, h, gray, chess, params) as DetectionWithDiagnostics<
+    MarkerBoardDetection,
+    MarkerBoardDiagnostics
+  >;
 
 /** Throws when every config misses. */
 export const detectPuzzleBoardBest = (
@@ -119,7 +120,10 @@ export const diagnosePuzzleBoard = (
   chess: ChessConfig,
   params: PuzzleBoardParams,
 ): DetectionWithDiagnostics<PuzzleBoardDetection, PuzzleBoardDiagnostics> =>
-  plain(raw.diagnose_puzzleboard(w, h, gray, chess, params));
+  raw.diagnose_puzzleboard(w, h, gray, chess, params) as DetectionWithDiagnostics<
+    PuzzleBoardDetection,
+    PuzzleBoardDiagnostics
+  >;
 
 // --- printable targets ----------------------------------------------------------------------
 

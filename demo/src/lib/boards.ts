@@ -61,8 +61,8 @@ export function boardOfTarget(target: PrintableTargetSpec): BoardSync {
         marker_size_rel: target.marker_size_rel,
         dictionary: target.dictionary,
       };
-      if (target.marker_layout !== undefined) board.marker_layout = target.marker_layout;
-      if (target.border_bits !== undefined) board.border_bits = target.border_bits;
+      if (target.marker_layout != null) board.marker_layout = target.marker_layout;
+      if (target.border_bits != null) board.border_bits = target.border_bits;
       return { mode: "charuco", board };
     }
     case "marker_board": {
