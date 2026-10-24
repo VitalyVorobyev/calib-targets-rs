@@ -152,31 +152,33 @@ fn target_label(target: &core::TargetKind) -> &'static str {
     }
 }
 
-/// Return the ChESS corners for `chess_cfg`, running the corner pass exactly
-/// once per distinct [`DetectorConfig`] within a single sweep.
+/// Return the corner pass for `chess_cfg`, running it exactly once per
+/// distinct [`DetectorConfig`] within a single sweep.
 ///
 /// The `detect_*_best` helpers honour each config's own `chess` front-end but
 /// must not pay for a corner pass per config when several configs share one.
 /// They iterate the configs in the caller's original order — reordering would
 /// change tie-break outcomes — and consult this memoized cache, so corner
 /// detection is deduplicated across configs that request the same front-end
-/// while every distinct front-end still gets its own pass.
+/// while every distinct front-end still gets its own pass. The cached frame
+/// also carries the pass's noise level, which the ChArUco sweep hands on to
+/// the corners it re-detects.
 ///
 /// [`DetectorConfig`] is `Copy + PartialEq` but not hashable (it carries `f32`
 /// fields), so a linear scan over the handful of entries a sweep produces is
 /// the right structure. The lookup is index-based (`position` then index) so
 /// the immutable borrow of a cached entry never overlaps the `push` of a new
 /// one.
-fn cached_corners<'cache>(
+fn cached_frame<'cache>(
     img: &::image::GrayImage,
     chess_cfg: &DetectorConfig,
-    cache: &'cache mut Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)>,
-) -> &'cache [chessboard::ChessCorner] {
+    cache: &'cache mut Vec<(DetectorConfig, chessboard::CornerFrame)>,
+) -> &'cache chessboard::CornerFrame {
     let idx = match cache.iter().position(|(cfg, _)| cfg == chess_cfg) {
         Some(idx) => idx,
         None => {
-            let corners = detect_corners(img, chess_cfg);
-            cache.push((*chess_cfg, corners));
+            let frame = chessboard::detect_corner_frame(&gray_view(img), chess_cfg);
+            cache.push((*chess_cfg, frame));
             cache.len() - 1
         }
     };
@@ -327,8 +329,9 @@ pub fn detect_charuco(
 
 /// Run the ChArUco detector on a pre-detected corner cloud.
 ///
-/// [`params.chess`](charuco::CharucoParams::chess) is not read: `corners` is
-/// taken as given.
+/// `corners` is taken as given; of [`params.chess`](charuco::CharucoParams::chess)
+/// only the uncertainty settings are read, for the few corners the detector
+/// re-detects itself (see [`charuco::CharucoDetector::detect_with_corners`]).
 pub fn detect_charuco_with_corners(
     img: &::image::GrayImage,
     corners: &[chessboard::ChessCorner],
@@ -457,7 +460,7 @@ pub fn detect_charuco_best(
 ) -> Result<charuco::CharucoDetection, DetectError> {
     let mut best: Option<charuco::CharucoDetection> = None;
     let mut last_err = None;
-    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
+    let mut corner_cache: Vec<(DetectorConfig, chessboard::CornerFrame)> = Vec::new();
 
     for params in configs {
         let detector = match charuco::CharucoDetector::new(params.clone()) {
@@ -467,8 +470,8 @@ pub fn detect_charuco_best(
                 continue;
             }
         };
-        let corners = cached_corners(img, &params.chess, &mut corner_cache);
-        match detector.detect_with_corners(&gray_view(img), corners) {
+        let frame = cached_frame(img, &params.chess, &mut corner_cache);
+        match detector.detect_with_corner_frame(&gray_view(img), frame) {
             Ok(result) => {
                 let dominated = best
                     .as_ref()
@@ -509,9 +512,9 @@ pub fn detect_puzzleboard_best(
 ) -> Result<puzzleboard::PuzzleBoardDetection, DetectError> {
     let mut best: Option<puzzleboard::PuzzleBoardDetection> = None;
     let mut last_err: Option<DetectError> = None;
-    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
+    let mut corner_cache: Vec<(DetectorConfig, chessboard::CornerFrame)> = Vec::new();
     for params in configs {
-        let corners = cached_corners(img, &params.chess, &mut corner_cache);
+        let corners = &cached_frame(img, &params.chess, &mut corner_cache).corners;
         match detect_puzzleboard_with_corners(img, corners, params) {
             Ok(r) => {
                 let better = match &best {
@@ -575,9 +578,9 @@ pub fn detect_puzzlepole_best(
 ) -> Result<puzzleboard::PuzzlePoleDetection, DetectError> {
     let mut best: Option<puzzleboard::PuzzlePoleDetection> = None;
     let mut last_err: Option<DetectError> = None;
-    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
+    let mut corner_cache: Vec<(DetectorConfig, chessboard::CornerFrame)> = Vec::new();
     for params in configs {
-        let corners = cached_corners(img, &params.chess, &mut corner_cache);
+        let corners = &cached_frame(img, &params.chess, &mut corner_cache).corners;
         match detect_puzzlepole_with_corners(img, corners, params) {
             Ok(r) => {
                 let better = match &best {
@@ -632,12 +635,12 @@ pub fn detect_marker_board_best(
 ) -> Result<marker::MarkerBoardDetection, DetectError> {
     let mut best: Option<marker::MarkerBoardDetection> = None;
     let mut last_err: Option<DetectError> = None;
-    let mut corner_cache: Vec<(DetectorConfig, Vec<chessboard::ChessCorner>)> = Vec::new();
+    let mut corner_cache: Vec<(DetectorConfig, chessboard::CornerFrame)> = Vec::new();
     for params in configs {
         let Ok(detector) = marker::MarkerBoardDetector::new(params.clone()) else {
             continue;
         };
-        let corners = cached_corners(img, &params.chess, &mut corner_cache);
+        let corners = &cached_frame(img, &params.chess, &mut corner_cache).corners;
         let result = match detector.detect_with_corners(&gray_view(img), corners) {
             Ok(result) => result,
             Err(err) => {
@@ -704,8 +707,8 @@ pub fn diagnose_charuco(
 
 /// [`detect_charuco_with_corners`] + per-component diagnostics.
 ///
-/// [`params.chess`](charuco::CharucoParams::chess) is not read: `corners` is
-/// taken as given. `None` diagnostics means detector construction failed, so
+/// `corners` is taken as given; of [`params.chess`](charuco::CharucoParams::chess)
+/// only the uncertainty settings are read (see [`detect_charuco_with_corners`]). `None` diagnostics means detector construction failed, so
 /// the pipeline never ran — see [`diagnose_charuco`].
 #[cfg(feature = "diagnostics")]
 pub fn diagnose_charuco_with_corners(

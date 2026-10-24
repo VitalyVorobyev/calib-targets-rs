@@ -46,6 +46,7 @@ pub(crate) fn build_detection(
         let c = &corners[e.source_index];
         chessboard_corners.push(ChessboardCorner {
             position: e.image_position,
+            position_covariance: c.position_covariance,
             grid: e.coord,
             input_index: c.input_index,
             score: c.strength,

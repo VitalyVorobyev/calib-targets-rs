@@ -217,4 +217,24 @@ static ct_chessboard_detector_config_t ct_native_default_chessboard_detector_con
   return config;
 }
 
+/* Number of corners whose `position_covariance` is set and positive
+ * definite. Any set covariance that is not positive definite counts as a
+ * failure: the function returns `(size_t)-1`. */
+static size_t ct_native_count_valid_covariances(const ct_chessboard_corner_t *corners,
+                                                size_t corners_len) {
+  size_t valid = 0;
+  size_t i = 0;
+  for (i = 0; i < corners_len; ++i) {
+    const ct_position_covariance_t *c = &corners[i].position_covariance;
+    if (corners[i].has_position_covariance != CT_TRUE) {
+      continue;
+    }
+    if (!(c->xx > 0.0f && c->yy > 0.0f && c->xx * c->yy - c->xy * c->xy > 0.0f)) {
+      return (size_t)-1;
+    }
+    ++valid;
+  }
+  return valid;
+}
+
 #endif

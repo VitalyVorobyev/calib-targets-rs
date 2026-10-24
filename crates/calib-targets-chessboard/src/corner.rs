@@ -9,8 +9,8 @@
 //! through it, so there is exactly one place where ChESS output becomes a
 //! corner cloud.
 
-use calib_targets_core::{AxisEstimate, DetectorConfig, GrayImageView};
-use chess_corners::Detector as ChessDetector;
+use calib_targets_core::{AxisEstimate, DetectorConfig, GrayImageView, PositionCovariance};
+use chess_corners::{Detector as ChessDetector, Uncertainty};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
@@ -19,7 +19,8 @@ use serde::{Deserialize, Serialize};
 ///
 /// Operates on the image as supplied — no pre-blur, no upscale beyond what
 /// `cfg` itself requests. Corner positions are returned in the input image
-/// frame.
+/// frame, each with its [`position_covariance`](ChessCorner::position_covariance)
+/// when `cfg` asks for one (the default).
 ///
 /// Returns an empty vector rather than an error in both failure modes: when
 /// `cfg` is one `chess_corners::Detector::new` rejects, and when the corner
@@ -28,15 +29,128 @@ use serde::{Deserialize, Serialize};
 /// case — every detector treats an empty cloud as "no board here" — so the
 /// front-end has no error channel of its own.
 pub fn detect_corners(image: &GrayImageView<'_>, cfg: &DetectorConfig) -> Vec<ChessCorner> {
-    let Ok(mut detector) = ChessDetector::new(*cfg) else {
-        return Vec::new();
+    detect_corner_frame(image, cfg).corners
+}
+
+/// [`detect_corners`] plus the frame's pixel-noise level.
+///
+/// Workspace-internal: the composite detectors reuse the noise level for the
+/// corners they re-detect themselves, so each frame is estimated once. Not
+/// part of the semver contract.
+///
+/// The noise estimate is made here, before the corner pass, rather than
+/// inside `chess-corners`: when it declines (JPEG-compressed or edge-saturated
+/// frames), no corner can carry a covariance, so the pass then runs with
+/// [`Uncertainty::Off`] instead of propagating noise through every corner for
+/// nothing. Corner positions do not depend on the uncertainty tier, so they
+/// are identical either way.
+#[doc(hidden)]
+pub fn detect_corner_frame(image: &GrayImageView<'_>, cfg: &DetectorConfig) -> CornerFrame {
+    let noise = FrameNoise::resolve(image, cfg);
+    let corners = match ChessDetector::new(noise.lower(*cfg)) {
+        Ok(mut detector) => detector
+            .detect_u8(image.data, image.width as u32, image.height as u32)
+            .unwrap_or_default()
+            .iter()
+            .map(adapt_chess_corner)
+            .collect(),
+        Err(_) => Vec::new(),
     };
-    detector
-        .detect_u8(image.data, image.width as u32, image.height as u32)
-        .unwrap_or_default()
-        .iter()
-        .map(adapt_chess_corner)
-        .collect()
+    CornerFrame { corners, noise }
+}
+
+/// One frame's corner cloud together with the noise level its covariances
+/// were computed with. Returned by [`detect_corner_frame`].
+///
+/// Workspace-internal; not part of the semver contract.
+#[doc(hidden)]
+#[non_exhaustive]
+#[derive(Clone, Debug)]
+pub struct CornerFrame {
+    /// The adapted corner cloud, exactly as [`detect_corners`] returns it.
+    pub corners: Vec<ChessCorner>,
+    /// How the frame's pixel-noise level was obtained.
+    pub noise: FrameNoise,
+}
+
+/// How the corner front-end obtained a frame's pixel-noise level — the σ
+/// (gray levels) that turns each corner's propagated covariance into px².
+///
+/// Workspace-internal; not part of the semver contract.
+#[doc(hidden)]
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum FrameNoise {
+    /// No covariance was requested: the config's
+    /// [`uncertainty`](DetectorConfig::uncertainty) is `Off`, an upscale stage
+    /// is active (its interpolated pixels carry correlated noise, so no
+    /// covariance is reported), or the refiner reports none (ML).
+    NotRequested,
+    /// The caller supplied [`noise_sigma`](DetectorConfig::noise_sigma).
+    Supplied(f32),
+    /// Estimated from this frame with [`chess_corners::estimate_noise_sigma_u8`].
+    Estimated(f32),
+    /// A covariance was requested but the estimator declined (too few
+    /// structure-free areas, typical of JPEG input): no corner carries one.
+    Declined,
+}
+
+impl FrameNoise {
+    /// Decide how `cfg` gets its noise level on `image`, estimating it when
+    /// that is needed.
+    pub fn resolve(image: &GrayImageView<'_>, cfg: &DetectorConfig) -> Self {
+        if !requests_covariance(cfg) {
+            return Self::NotRequested;
+        }
+        if let Some(sigma) = cfg.noise_sigma {
+            return Self::Supplied(sigma);
+        }
+        match chess_corners::estimate_noise_sigma_u8(
+            image.data,
+            image.width as u32,
+            image.height as u32,
+        ) {
+            Ok(Some(sigma)) => Self::Estimated(sigma),
+            // A buffer whose length disagrees with its dimensions fails the
+            // corner pass too; no covariance either way.
+            Ok(None) | Err(_) => Self::Declined,
+        }
+    }
+
+    /// The noise level, when one is known.
+    pub fn sigma(self) -> Option<f32> {
+        match self {
+            Self::Supplied(sigma) | Self::Estimated(sigma) => Some(sigma),
+            Self::NotRequested | Self::Declined => None,
+        }
+    }
+
+    /// `cfg` as `chess-corners` should run it for this frame: the known noise
+    /// level filled in, so the detector makes no estimate of its own, or the
+    /// covariance switched off when there is no noise level to scale it with.
+    /// Positions are unaffected.
+    pub fn lower(self, mut cfg: DetectorConfig) -> DetectorConfig {
+        match self.sigma() {
+            Some(sigma) => cfg.noise_sigma = Some(sigma),
+            None => cfg.uncertainty = Uncertainty::Off,
+        }
+        cfg
+    }
+}
+
+/// Whether running `cfg` on the input image reports a position covariance
+/// for its corners (given a noise level).
+fn requests_covariance(cfg: &DetectorConfig) -> bool {
+    if cfg.uncertainty == Uncertainty::Off || cfg.upscale.effective_factor() > 1 {
+        return false;
+    }
+    #[cfg(feature = "ml-refiner")]
+    if let chess_corners::DetectionStrategy::Chess(chess) = &cfg.strategy {
+        if matches!(chess.refiner, chess_corners::ChessRefiner::Ml) {
+            return false;
+        }
+    }
+    true
 }
 
 /// Adapt one upstream [`chess_corners::CornerDescriptor`] into a
@@ -67,6 +181,7 @@ fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> ChessCorner {
         },
     );
     ChessCorner::new(Point2::new(c.x, c.y), axes, c.response)
+        .with_position_covariance(c.position_covariance.map(PositionCovariance::from))
 }
 
 /// Canonical 2D corner consumed by the chessboard detector.
@@ -78,7 +193,9 @@ fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> ChessCorner {
 /// Carries the per-corner data the pipeline needs to admit or reject the
 /// corner during clustering, seed selection, grow, and post-grow validation:
 /// pixel position, the two local grid-axis directions with per-axis 1σ
-/// uncertainty, and the ChESS detector's response (`strength`).
+/// uncertainty, and the ChESS detector's response (`strength`) — plus the
+/// position's covariance, which the detectors do not read but carry onto the
+/// labelled corners they return.
 ///
 /// Callers running the ChESS front-end go through [`detect_corners`], which
 /// adapts `chess_corners::CornerDescriptor` into this type; callers handing the
@@ -100,6 +217,13 @@ fn adapt_chess_corner(c: &chess_corners::CornerDescriptor) -> ChessCorner {
 pub struct ChessCorner {
     /// Corner position in pixel coordinates.
     pub position: Point2<f32>,
+    /// Covariance of [`Self::position`] in px², as `chess-corners` reported
+    /// it. `None` when the uncertainty tier is off, an upscale stage is
+    /// active, the refiner reports none, or the frame's noise level is
+    /// unknown (the estimate declined — supply `noise_sigma`); see
+    /// [`PositionCovariance`].
+    #[serde(default)]
+    pub position_covariance: Option<PositionCovariance>,
     /// Two local grid-axis directions with per-axis 1σ angular uncertainty.
     /// Default-constructed axes carry `sigma = π` ("no information") and
     /// cause the corner to be skipped by every axis-aware stage.
@@ -116,12 +240,27 @@ impl ChessCorner {
     /// This is the constructor a custom corner-cloud upstream uses;
     /// [`detect_corners`]' adapter for `chess_corners::CornerDescriptor` also
     /// routes through it.
+    ///
+    /// The covariance starts unset; attach it with
+    /// [`Self::with_position_covariance`].
     pub fn new(position: Point2<f32>, axes: [AxisEstimate; 2], strength: f32) -> Self {
         Self {
             position,
+            position_covariance: None,
             axes,
             strength,
         }
+    }
+
+    /// Set the covariance of [`Self::position`] (px²). Accepts a
+    /// [`PositionCovariance`] or an `Option` of one.
+    #[must_use]
+    pub fn with_position_covariance(
+        mut self,
+        position_covariance: impl Into<Option<PositionCovariance>>,
+    ) -> Self {
+        self.position_covariance = position_covariance.into();
+        self
     }
 
     /// Construct a [`ChessCorner`] from a position. All other fields default
@@ -224,6 +363,9 @@ pub struct CornerAug {
     pub input_index: usize,
     /// Pixel position (copied from `ChessCorner.position` at construction).
     pub position: Point2<f32>,
+    /// Position covariance (copied from `ChessCorner.position_covariance`).
+    /// Carried, never read, by the pipeline: it lands on the output corner.
+    pub position_covariance: Option<PositionCovariance>,
     /// Both grid axes with per-axis uncertainty.
     pub axes: [AxisEstimate; 2],
     /// ChESS strength (copied at construction).
@@ -241,6 +383,7 @@ impl CornerAug {
         Self {
             input_index,
             position: c.position,
+            position_covariance: c.position_covariance,
             axes: c.axes,
             strength: c.strength,
             stage: CornerStage::Raw,

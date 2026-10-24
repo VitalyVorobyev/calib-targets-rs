@@ -9,9 +9,10 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
-Moves to `chess-corners` 1.6 and exposes its new corner-detector knobs on
-every binding. Detection results are unchanged in shape. The C ABI moves to
-6.0.0 (`ct_chess_config_t` grows).
+Moves to `chess-corners` 1.6, exposes its new corner-detector knobs on every
+binding, and reports each corner's position covariance on every detection
+result. Corner positions, labels and ids are unchanged. The C ABI moves to
+6.0.0 (`ct_chess_config_t` and the two corner structs grow).
 
 ### Added
 
@@ -20,7 +21,25 @@ every binding. Detection results are unchanged in shape. The C ABI moves to
   `Uncertainty`), WASM (`ChessConfig.noise_sigma` / `uncertainty`), the C ABI
   (`ct_chess_config_t::noise_sigma` / `uncertainty`, `CT_UNCERTAINTY_*`) and
   the JSON Schemas. They select how each corner's position covariance is
-  computed; reporting that covariance on detection results comes later.
+  computed.
+- **Per-corner position covariance on every result.** `ChessCorner`,
+  `ChessboardCorner`, `LabeledCorner`, `CharucoCorner`, `PuzzleBoardCorner`,
+  `PuzzlePoleCorner` and `MarkerBoardCorner` gain
+  `position_covariance: Option<PositionCovariance>` — `{ xx, xy, yy }` in px²,
+  image frame, as `chess-corners` measured it (noise propagated through the
+  localizer plus its systematic error). New `calib_targets_core::PositionCovariance`
+  with `sigma_max_px`, `mahalanobis_sq` and `transformed` (`G Σ Gᵀ`). It is
+  `None` under `uncertainty: Off`, with an `upscale` stage or the ML refiner,
+  when the frame's noise estimate declines (typical of JPEG input — supply
+  `noise_sigma`), and when a saddle-point refinement does not converge. A
+  ChArUco corner re-detected near its marker-predicted position carries the
+  covariance of that re-detection. Serialized as `null` when absent; JSON
+  without the key (e.g. a corner cloud for `*_with_corners`) still reads.
+  Python: `PositionCovariance` and a `position_covariance` field (default
+  `None`) on every corner dataclass. WASM typings: `PositionCovariance` and the
+  field on every corner shape. C ABI: `ct_position_covariance_t`, and
+  `ct_labeled_corner_t` / `ct_chessboard_corner_t` append
+  `has_position_covariance` + `position_covariance`.
 - WASM typings declare the Radon strategy (`RadonConfig`, `RadonRefiner`,
   `PeakFitMode`) and `PuzzleBoardAdvancedTuning.edge_consensus`.
 
@@ -29,17 +48,31 @@ every binding. Detection results are unchanged in shape. The C ABI moves to
 - **Corner detection costs more by default.** `chess-corners` 1.6 computes a
   position covariance for every corner (`uncertainty: "propagated"`), which
   includes a per-image noise estimate. Set `uncertainty` to `"off"` to skip
-  both; positions are identical either way. ChArUco's internal corner
-  re-detection runs with it off.
+  both; positions are identical either way. The corner front end now makes
+  that noise estimate once per frame, before the corner pass: when it
+  declines, the pass runs without covariance instead of propagating noise
+  through every corner for nothing, and ChArUco reuses the frame's level for
+  the corners it re-detects (the `*_best` ChArUco sweep shares it across
+  configs). Corner sets, positions and labels are unchanged.
 - ChArUco corners re-detected near a marker can move by a fraction of a pixel:
   `chess-corners` 1.5 re-centres its saddle-point refiner. Labels and ids are
   unchanged.
 - **C ABI 6.0.0**: `ct_chess_config_t` appends `noise_sigma`
   (`ct_optional_f32_t`) and `uncertainty` (`ct_uncertainty_t`). Both are safe to
-  zero-initialise.
+  zero-initialise. `ct_labeled_corner_t` and `ct_chessboard_corner_t` append
+  `has_position_covariance` and `position_covariance`, so caller-allocated
+  corner arrays must be rebuilt against the new header.
+- ChArUco `detect_with_corners` reads the uncertainty settings of
+  `params.chess` for the corners it re-detects, and without a supplied
+  `noise_sigma` estimates the frame's noise once per call when it re-detects
+  one; `detect` reuses its own corner pass's estimate.
 
 ### Fixed
 
+- **WASM `diagnose_*` functions returned ES `Map`s**, not the plain objects
+  their typings declare: `result.result` / `result.diagnostics` were
+  unreachable without `.get(...)`. Every WASM function now returns plain
+  objects for maps.
 - WASM typings: `ChessRefiner` (and its deprecated alias `RefinerConfig`) and
   `UpscaleConfig` now describe the externally tagged JSON the entry points
   actually accept (`{ saddle_point: {...} }`, `"disabled"` / `{ fixed: k }`),

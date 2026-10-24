@@ -49,6 +49,13 @@ int main(int argc, char **argv) {
     ct_native_gray_image_buffer_reset(&image);
     return 1;
   }
+  const std::size_t with_cov = ct_native_count_valid_covariances(corners.data(), corners.size());
+  if (with_cov == static_cast<std::size_t>(-1) || with_cov * 10 < corners.size() * 9) {
+    std::cerr << "unexpected position covariances: valid=" << with_cov << " of "
+              << corners.size() << "\n";
+    ct_native_gray_image_buffer_reset(&image);
+    return 1;
+  }
 
   calib_targets::ffi::ChessboardDetector moved = std::move(detector);
   corners.clear();

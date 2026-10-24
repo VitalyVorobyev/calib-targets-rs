@@ -27,7 +27,7 @@ use crate::detector::consensus::EdgeConsensus;
 use crate::detector::decode::{decode_fixed_hard, decode_fixed_soft, BoardRect, CodeGeometry};
 use crate::detector::edge_sampling::sample_all_edges;
 use crate::detector::{PuzzleBoardDecodeInfo, PuzzleBoardScoringMode};
-use calib_targets_chessboard::{ChessCorner, ChessboardDetector};
+use calib_targets_chessboard::{ChessCorner, ChessboardCorner, ChessboardDetector};
 use calib_targets_core::{GrayImageView, LabeledCorner};
 
 /// Detects PuzzlePole targets.
@@ -86,7 +86,7 @@ impl PuzzlePoleDetector {
             let labelled: Vec<LabeledCorner> = component
                 .corners
                 .iter()
-                .map(|c| LabeledCorner::new(c.position, c.score).with_grid(c.grid))
+                .map(ChessboardCorner::to_labeled)
                 .collect();
             match self.decode_component(image, &labelled) {
                 Ok(found) => {
@@ -201,13 +201,10 @@ impl PuzzlePoleDetector {
             // where the two coordinates meet. Subtracting earlier would rotate
             // `map_a` by `start_row mod 3` and corrupt every vertical dot.
             let cyclic = (master.v - spec.start_row as i32).rem_euclid(period);
-            out.push(PuzzlePoleCorner::new(
-                spec,
-                lc.position,
-                axial as u32,
-                cyclic as u32,
-                lc.score,
-            ));
+            out.push(
+                PuzzlePoleCorner::new(spec, lc.position, axial as u32, cyclic as u32, lc.score)
+                    .with_position_covariance(lc.position_covariance),
+            );
         }
 
         // **Injectivity.** A wrapped pole cannot present a corner twice -- the

@@ -11,7 +11,9 @@ use serde::{Deserialize, Serialize};
 
 use super::PuzzlePoleSpec;
 use crate::detector::PuzzleBoardDecodeInfo;
-use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, TargetKind};
+use calib_targets_core::{
+    Coord, GridAlignment, LabeledCorner, PositionCovariance, TargetDetection, TargetKind,
+};
 
 /// One decoded corner on a PuzzlePole.
 #[non_exhaustive]
@@ -19,6 +21,10 @@ use calib_targets_core::{Coord, GridAlignment, LabeledCorner, TargetDetection, T
 pub struct PuzzlePoleCorner {
     /// Sub-pixel position in the image.
     pub position: Point2<f32>,
+    /// Covariance of [`Self::position`] in px², carried from the corner
+    /// detector; `None` when it measured none. See [`PositionCovariance`].
+    #[serde(default)]
+    pub position_covariance: Option<PositionCovariance>,
     /// Decoded pole coordinate: `u` is the axial index along +Z, `v` the cyclic
     /// index around the circumference from the seam.
     ///
@@ -57,12 +63,24 @@ impl PuzzlePoleCorner {
     ) -> Self {
         Self {
             position,
+            position_covariance: None,
             grid: Coord::new(axial as i32, cyclic as i32),
             id: spec.corner_id(axial, cyclic),
             surface_position: spec.surface_position(axial, cyclic),
             object_position: spec.object_position(axial, cyclic),
             score,
         }
+    }
+
+    /// Set the covariance of [`Self::position`] (px²). Accepts a
+    /// [`PositionCovariance`] or an `Option` of one.
+    #[must_use]
+    pub fn with_position_covariance(
+        mut self,
+        position_covariance: impl Into<Option<PositionCovariance>>,
+    ) -> Self {
+        self.position_covariance = position_covariance.into();
+        self
     }
 
     /// Project onto the generic carrier every target in this workspace shares.
@@ -76,6 +94,7 @@ impl PuzzlePoleCorner {
     #[must_use]
     pub fn to_labeled(&self) -> LabeledCorner {
         LabeledCorner::new(self.position, self.score)
+            .with_position_covariance(self.position_covariance)
             .with_grid(self.grid)
             .with_id(self.id)
             .with_target_position(self.surface_position)

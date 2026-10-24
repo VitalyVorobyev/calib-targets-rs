@@ -246,6 +246,7 @@ fn printable_document_from_py(
 ///
 /// `obj` must be a list of `ChessCorner`-shaped dicts:
 /// `{"position": [x, y], "axes": [{"angle": .., "sigma": ..}, {..}], "strength": ..}`
+/// plus an optional `"position_covariance": {"xx", "xy", "yy"} | None`
 /// — the same shape `serde_json` emits for `calib_targets_chessboard::ChessCorner`.
 /// A corner cloud obtained from `trace_chessboard_topological`'s `"corners"`
 /// field (which additionally carries an `"index"` key) is accepted as-is: the
@@ -264,6 +265,7 @@ pub(crate) fn chess_corners_from_py(
 struct TopologicalCornerPayload {
     index: usize,
     position: [f32; 2],
+    position_covariance: Option<::calib_targets::core::PositionCovariance>,
     axes: [::calib_targets::core::AxisEstimate; 2],
     strength: f32,
 }
@@ -431,6 +433,7 @@ fn trace_chessboard_topological(
             .map(|(index, c)| TopologicalCornerPayload {
                 index,
                 position: [c.position.x, c.position.y],
+                position_covariance: c.position_covariance,
                 axes: c.axes,
                 strength: c.strength,
             })

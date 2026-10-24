@@ -31,8 +31,20 @@ fn from_js<T: serde::de::DeserializeOwned>(val: JsValue) -> Result<T, JsError> {
     serde_wasm_bindgen::from_value(val).map_err(|e| JsError::new(&e.to_string()))
 }
 
+/// Serialize a Rust value into the plain JS shape `typescript-extras.d.ts`
+/// declares.
+///
+/// Maps become plain objects, not ES `Map`s: the default `serde_wasm_bindgen`
+/// serializer turns every map — including each `serde_json::Value::Object`,
+/// which is how the `diagnose_*` functions build their `{ result,
+/// diagnostics }` payloads — into a `Map`, whose fields `obj.result` /
+/// `obj["diagnostics"]` cannot reach. Every map this crate returns has string
+/// keys, which is what the object form requires.
 fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsError> {
-    serde_wasm_bindgen::to_value(val).map_err(|e| JsError::new(&e.to_string()))
+    const SERIALIZER: serde_wasm_bindgen::Serializer =
+        serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+    val.serialize(&SERIALIZER)
+        .map_err(|e| JsError::new(&e.to_string()))
 }
 
 fn validate_gray(pixels: &[u8], width: u32, height: u32) -> Result<(), JsError> {

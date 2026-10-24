@@ -77,4 +77,4 @@ pub use types::{
 // calib-targets-marker alone is sufficient (no direct calib-targets-chessboard
 // / -core dependency needed).
 pub use calib_targets_chessboard::ChessCorner;
-pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform};
+pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform, PositionCovariance};

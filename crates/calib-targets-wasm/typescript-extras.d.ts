@@ -232,8 +232,23 @@ export interface AxisEstimate {
   sigma: number;
 }
 
+/**
+ * Covariance of a corner position in px², image frame: the symmetric matrix
+ * `[[xx, xy], [xy, yy]]` (Rust `PositionCovariance`).
+ */
+export interface PositionCovariance {
+  xx: number;
+  xy: number;
+  yy: number;
+}
+
 export interface Corner {
   position: Point2;
+  /**
+   * Covariance of `position` in px², or `null` when none was measured.
+   * Optional on input: a corner cloud built by hand may omit it.
+   */
+  position_covariance?: PositionCovariance | null;
   /** Two orthogonal grid axes (`axes[1] − axes[0] ≈ π/2`). */
   axes: [AxisEstimate, AxisEstimate];
   strength: number;
@@ -247,6 +262,13 @@ export type TargetKind =
 
 export interface LabeledCorner {
   position: Point2;
+  /**
+   * Covariance of `position` in px² (image frame), or `null` when the corner
+   * detector measured none: uncertainty off, an upscale stage, a refiner that
+   * reports none, a noise estimate that declined (e.g. JPEG — supply
+   * `noise_sigma`).
+   */
+  position_covariance: PositionCovariance | null;
   /** Integer `(u, v)` grid label, rebased so the bounding-box minimum is `(0, 0)`. */
   grid: Coord | null;
   /** Logical target ID (ChArUco marker-referenced corner, PuzzleBoard master ID). */
@@ -270,6 +292,13 @@ export interface TargetDetection {
 export interface ChessboardCorner {
   /** Sub-pixel image position. */
   position: Point2;
+  /**
+   * Covariance of `position` in px² (image frame), or `null` when the corner
+   * detector measured none: uncertainty off, an upscale stage, a refiner that
+   * reports none, a noise estimate that declined (e.g. JPEG — supply
+   * `noise_sigma`).
+   */
+  position_covariance: PositionCovariance | null;
   /** Grid label `(u, v)` — always present for a chessboard corner. */
   grid: Coord;
   /** Index into the input `corners` slice that produced this corner. */
@@ -301,6 +330,13 @@ export interface MarkerDetection {
 
 export interface CharucoCorner {
   position: Point2;
+  /**
+   * Covariance of `position` in px² (image frame), or `null` when the corner
+   * detector measured none: uncertainty off, an upscale stage, a refiner that
+   * reports none, a noise estimate that declined (e.g. JPEG — supply
+   * `noise_sigma`).
+   */
+  position_covariance: PositionCovariance | null;
   grid: Coord;
   id: number;
   target_position: Point2;
@@ -316,6 +352,13 @@ export interface CharucoDetection {
 
 export interface MarkerBoardCorner {
   position: Point2;
+  /**
+   * Covariance of `position` in px² (image frame), or `null` when the corner
+   * detector measured none: uncertainty off, an upscale stage, a refiner that
+   * reports none, a noise estimate that declined (e.g. JPEG — supply
+   * `noise_sigma`).
+   */
+  position_covariance: PositionCovariance | null;
   grid: Coord;
   id: number | null;
   target_position: Point2 | null;
@@ -368,6 +411,13 @@ export interface PuzzleBoardDecodeInfo {
 
 export interface PuzzleBoardCorner {
   position: Point2;
+  /**
+   * Covariance of `position` in px² (image frame), or `null` when the corner
+   * detector measured none: uncertainty off, an upscale stage, a refiner that
+   * reports none, a noise estimate that declined (e.g. JPEG — supply
+   * `noise_sigma`).
+   */
+  position_covariance: PositionCovariance | null;
   grid: Coord;
   id: number;
   target_position: Point2;

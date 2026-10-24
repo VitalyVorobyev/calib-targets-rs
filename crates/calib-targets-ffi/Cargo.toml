@@ -24,7 +24,10 @@ name = "calib-targets-ffi"
 # hypothesis-and-verify frame search has no use for. Three struct-layout
 # breaking changes. v6.0.0 follows chess-corners 1.6: `ct_chess_config_t`
 # appends `noise_sigma` and `uncertainty` (struct-layout-breaking; both are
-# zero-initialisation safe).
+# zero-initialisation safe), and `ct_labeled_corner_t` /
+# `ct_chessboard_corner_t` append `has_position_covariance` +
+# `position_covariance` (`ct_position_covariance_t`), the per-corner position
+# covariance — struct-layout-breaking for the output arrays.
 version = "6.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true

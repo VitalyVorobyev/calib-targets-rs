@@ -12,8 +12,7 @@ use calib_targets_chessboard::{
     ChessboardDetection, ChessboardDetector as ChessDetector, ChessboardParamsError,
 };
 use calib_targets_core::{
-    cell_to_corner_alignment, CornerMap, GrayImageView, GridAlignment, LabeledCorner,
-    TargetDetection, TargetKind,
+    cell_to_corner_alignment, CornerMap, GrayImageView, GridAlignment, TargetDetection, TargetKind,
 };
 
 /// Marker board detector: chessboard + three circle markers.
@@ -327,7 +326,7 @@ fn chessboard_detection_to_target(chess: &ChessboardDetection) -> (TargetDetecti
     let mut corners = Vec::with_capacity(chess.corners.len());
     let mut inliers = Vec::with_capacity(chess.corners.len());
     for c in &chess.corners {
-        corners.push(LabeledCorner::new(c.position, c.score).with_grid(c.grid));
+        corners.push(c.to_labeled());
         inliers.push(c.input_index);
     }
     (

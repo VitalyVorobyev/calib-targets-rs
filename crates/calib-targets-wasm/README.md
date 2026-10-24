@@ -204,13 +204,21 @@ edges and soft-mode runner-up scoring evidence are returned by
 
 ```typescript
 {
-  position: { x: number, y: number },          // sub-pixel image location
+  position: [number, number],                  // sub-pixel image location [x, y]
+  position_covariance: { xx: number, xy: number, yy: number } | null,  // px²
   grid:     { u: number, v: number } | null,   // integer grid label, rebased to (0,0)
   id:       number | null,                     // ChArUco / PuzzleBoard ID
-  target_position: { x: number, y: number } | null,  // mm on the printed board
+  target_position: [number, number] | null,    // mm on the printed board
   score:    number,
 }
 ```
+
+`position_covariance` (on every corner type, and on `detect_corners`' raw
+corners) is the covariance of `position` in px², image frame. It is absent
+when none was measured: `uncertainty: "off"`, an upscale stage, a refiner
+that reports none, or a noise estimate that declined (typical of JPEG input —
+set `noise_sigma`). See
+[chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
 ## Functions
 

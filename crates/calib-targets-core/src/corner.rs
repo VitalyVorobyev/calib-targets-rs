@@ -1,3 +1,4 @@
+use crate::PositionCovariance;
 use nalgebra::Point2;
 use projective_grid::Coord;
 use projective_grid::LocalAxis as NextLocalAxis;
@@ -117,6 +118,12 @@ pub struct LabeledCorner {
     /// Pixel position.
     pub position: Point2<f32>,
 
+    /// Covariance of [`Self::position`] in px², when the corner detector
+    /// measured one. See [`PositionCovariance`] for when it is `None`.
+    /// Serialized as `null` when absent; JSON without the key reads as `None`.
+    #[serde(default)]
+    pub position_covariance: Option<PositionCovariance>,
+
     /// Optional integer grid coordinates `(u, v)`.
     pub grid: Option<Coord>,
 
@@ -137,17 +144,31 @@ pub struct LabeledCorner {
 impl LabeledCorner {
     /// Create a corner from its required fields (`position`, `score`).
     ///
-    /// `grid`, `id`, and `target_position` start unset; attach them with
+    /// `position_covariance`, `grid`, `id`, and `target_position` start unset;
+    /// attach them with [`Self::with_position_covariance`],
     /// [`Self::with_grid`], [`Self::with_id`], and
     /// [`Self::with_target_position`].
     pub fn new(position: Point2<f32>, score: f32) -> Self {
         Self {
             position,
+            position_covariance: None,
             grid: None,
             id: None,
             target_position: None,
             score,
         }
+    }
+
+    /// Set the covariance of [`Self::position`] (px²). Accepts a
+    /// [`PositionCovariance`] or an `Option` of one, so a corner can carry its
+    /// source's covariance — present or not — straight through.
+    #[must_use]
+    pub fn with_position_covariance(
+        mut self,
+        position_covariance: impl Into<Option<PositionCovariance>>,
+    ) -> Self {
+        self.position_covariance = position_covariance.into();
+        self
     }
 
     /// Attach integer grid coordinates `(u, v)`.
@@ -189,5 +210,42 @@ impl TargetDetection {
     /// Create a detection from its target kind and labelled corners.
     pub fn new(kind: TargetKind, corners: Vec<LabeledCorner>) -> Self {
         Self { kind, corners }
+    }
+}
+
+#[cfg(test)]
+mod labeled_corner_tests {
+    use super::*;
+
+    #[test]
+    fn json_without_covariance_still_deserializes() {
+        // A payload written before the field existed.
+        let old = serde_json::json!({
+            "position": [1.5, 2.5],
+            "grid": { "u": 1, "v": 2 },
+            "id": 7,
+            "target_position": null,
+            "score": 0.5,
+        });
+        let c: LabeledCorner = serde_json::from_value(old).unwrap();
+        assert_eq!(c.position_covariance, None);
+        assert_eq!(c.id, Some(7));
+    }
+
+    #[test]
+    fn covariance_round_trips_and_absent_is_null() {
+        let c = LabeledCorner::new(Point2::new(1.0, 2.0), 0.5)
+            .with_position_covariance(PositionCovariance::new(0.01, 0.002, 0.03));
+        let v = serde_json::to_value(&c).unwrap();
+        assert_eq!(
+            v["position_covariance"],
+            serde_json::json!({ "xx": 0.01f32, "xy": 0.002f32, "yy": 0.03f32 })
+        );
+        let back: LabeledCorner = serde_json::from_value(v).unwrap();
+        assert_eq!(back.position_covariance, c.position_covariance);
+
+        let bare = LabeledCorner::new(Point2::new(1.0, 2.0), 0.5).with_position_covariance(None);
+        let v = serde_json::to_value(&bare).unwrap();
+        assert!(v["position_covariance"].is_null());
     }
 }

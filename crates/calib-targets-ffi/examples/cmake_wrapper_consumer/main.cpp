@@ -61,6 +61,13 @@ int main(int argc, char **argv) {
     consumer_support::reset_gray_image_buffer(&image);
     return 1;
   }
+  const std::size_t with_cov = consumer_support::count_valid_covariances(corners);
+  if (with_cov == static_cast<std::size_t>(-1) || with_cov * 10 < corners.size() * 9) {
+    std::cerr << "unexpected position covariances: valid=" << with_cov << " of "
+              << corners.size() << "\n";
+    consumer_support::reset_gray_image_buffer(&image);
+    return 1;
+  }
 
   consumer_support::reset_gray_image_buffer(&image);
   return 0;

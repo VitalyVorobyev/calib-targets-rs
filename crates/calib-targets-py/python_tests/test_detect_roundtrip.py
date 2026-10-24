@@ -542,3 +542,85 @@ def test_diagnose_puzzleboard_with_corners_matches_diagnose_puzzleboard() -> Non
     direct = ct.diagnose_puzzleboard(image, params=params)
     via_corners = ct.diagnose_puzzleboard_with_corners(image, corners, params=params)
     assert via_corners == direct
+
+
+# ---------------------------------------------------------------------------
+# per-corner position covariance
+# ---------------------------------------------------------------------------
+
+
+def test_chessboard_corners_carry_position_covariance() -> None:
+    image = _load_gray("mid.png")
+    raw = _core.detect_chessboard(image, params=None)
+    assert raw is not None
+    raw_corners = raw["corners"]
+    assert raw_corners, "mid.png must detect"
+    # The key is always present (serde emits `null` when absent) and is a
+    # plain `{xx, xy, yy}` object when set.
+    with_cov = [c for c in raw_corners if c["position_covariance"] is not None]
+    assert len(with_cov) * 10 >= len(raw_corners) * 9
+    assert set(with_cov[0]["position_covariance"].keys()) == {"xx", "xy", "yy"}
+
+    result = ct.ChessboardDetectionResult.from_dict(raw)
+    # Byte-identical dict parity with the Rust payload, corner by corner.
+    assert result.to_dict()["corners"] == raw_corners
+    for corner in result.corners:
+        cov = corner.position_covariance
+        if cov is None:
+            continue
+        assert isinstance(cov, ct.PositionCovariance)
+        assert 0.0 < cov.sigma_max_px() < 0.5
+        (xx, xy), (yx, yy) = cov.as_matrix()
+        assert xy == yx and xx > 0 and yy > 0
+    _assert_roundtrip(result)
+
+
+def test_raw_trace_corners_carry_position_covariance() -> None:
+    image = _load_gray("mid.png")
+    traced = _core.trace_chessboard_topological(image)
+    corners = traced["corners"]
+    assert corners
+    assert all("position_covariance" in c for c in corners)
+    assert any(c["position_covariance"] is not None for c in corners)
+
+
+def test_corner_dicts_without_covariance_still_parse() -> None:
+    # Payloads written before the field existed omit the key.
+    old = {
+        "position": [1.0, 2.0],
+        "grid": {"u": 0, "v": 1},
+        "id": None,
+        "target_position": None,
+        "score": 0.5,
+    }
+    corner = ct.LabeledCorner.from_dict(old)
+    assert corner.position_covariance is None
+    assert corner.to_dict()["position_covariance"] is None
+    chess = ct.ChessboardCorner.from_dict(
+        {"position": [1.0, 2.0], "grid": {"u": 0, "v": 0}, "input_index": 3, "score": 0.5}
+    )
+    assert chess.position_covariance is None
+    # A cloud from the trace (with covariance) and a hand-built one (without)
+    # are both accepted by the `*_with_corners` entry points.
+    image = _load_gray("puzzleboard_small.png")
+    params = _puzzleboard_params()
+    traced = _core.trace_chessboard_topological(image)
+    full = ct.detect_puzzleboard_with_corners(image, traced["corners"], params=params)
+    stripped = [
+        {k: v for k, v in c.items() if k != "position_covariance"} for c in traced["corners"]
+    ]
+    bare = ct.detect_puzzleboard_with_corners(image, stripped, params=params)
+    assert len(full.corners) == len(bare.corners)
+    assert [c.position for c in full.corners] == [c.position for c in bare.corners]
+    assert all(c.position_covariance is None for c in bare.corners)
+
+
+def test_charuco_corners_carry_position_covariance() -> None:
+    image = _load_gray("small2.png")
+    result = ct.detect_charuco(image, params=_charuco_params_small2())
+    covs = [c.position_covariance for c in result.corners]
+    assert sum(c is not None for c in covs) * 10 >= len(covs) * 9
+    # The generic carrier keeps it.
+    labeled = result.detection.corners
+    assert [c.position_covariance for c in labeled] == covs
+    _assert_roundtrip(result)

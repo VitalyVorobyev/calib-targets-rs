@@ -294,7 +294,22 @@ result = ct.detect_charuco_with_corners(image, corners, params=params)
 ```
 
 `corners` is a list of `ChessCorner`-shaped dicts:
-`{"position": [x, y], "axes": [...], "strength": ...}`.
+`{"position": [x, y], "position_covariance": {...} | None, "axes": [...], "strength": ...}`
+(`position_covariance` may be omitted).
+
+### Per-corner position covariance
+
+Every corner type (`LabeledCorner`, `ChessboardCorner`, `CharucoCorner`,
+`PuzzleBoardCorner`, `PuzzlePoleCorner`, `MarkerBoardCorner`) carries
+`position_covariance: PositionCovariance | None` — the covariance of
+`position` in px², image frame (`xx`, `xy`, `yy`; `as_matrix()`,
+`sigma_max_px()`). Use it to weight corners in a calibration solver.
+
+It is `None` when none was measured: `ChessConfig.uncertainty` is `OFF`, an
+upscale stage is active, the refiner reports none, or the frame's noise
+estimate declined — typical of JPEG input; set `ChessConfig.noise_sigma` then.
+Positions do not depend on it. Model and caveats:
+[chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
 ## Implementation note
 

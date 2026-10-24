@@ -14,7 +14,14 @@
 
 import type {
   CharucoBoardSpec,
+  CharucoCorner,
+  ChessboardCorner,
   ChessConfig,
+  Corner,
+  LabeledCorner,
+  MarkerBoardCorner,
+  PositionCovariance,
+  PuzzleBoardCorner,
   ChessRefiner,
   DetectionStrategy,
   ForstnerConfig,
@@ -228,3 +235,57 @@ export const radonStrategies: DetectionStrategy[] = [
     },
   },
 ];
+
+// Corner shapes carry a per-corner position covariance (px²), `null` when the
+// detector measured none. A hand-built input corner may omit it.
+const cov: PositionCovariance = { xx: 0.01, xy: -0.002, yy: 0.012 };
+const axes: Corner["axes"] = [
+  { angle: 0.1, sigma: 0.01 },
+  { angle: 1.67, sigma: 0.01 },
+];
+export const measuredCorner: Corner = {
+  position: [10.5, 20.25],
+  position_covariance: cov,
+  axes,
+  strength: 120.0,
+};
+export const handBuiltCorner: Corner = { position: [1, 2], axes, strength: 30.0 };
+export const labeledCorner: LabeledCorner = {
+  position: [10.5, 20.25],
+  position_covariance: null,
+  grid: { u: 1, v: 2 },
+  id: null,
+  target_position: null,
+  score: 0.9,
+};
+export const chessboardCorner: ChessboardCorner = {
+  position: [10.5, 20.25],
+  position_covariance: cov,
+  grid: { u: 0, v: 0 },
+  input_index: 3,
+  score: 0.9,
+};
+export const charucoCorner: CharucoCorner = {
+  position: [10.5, 20.25],
+  position_covariance: cov,
+  grid: { u: 1, v: 1 },
+  id: 0,
+  target_position: [20, 20],
+  score: 0.9,
+};
+export const markerBoardCorner: MarkerBoardCorner = {
+  position: [10.5, 20.25],
+  position_covariance: null,
+  grid: { u: 1, v: 1 },
+  id: 4,
+  target_position: null,
+  score: 0.9,
+};
+export const puzzleBoardCorner: PuzzleBoardCorner = {
+  position: [10.5, 20.25],
+  position_covariance: cov,
+  grid: { u: 18, v: 219 },
+  id: 109737,
+  target_position: [90, 1095],
+  score: 0.9,
+};

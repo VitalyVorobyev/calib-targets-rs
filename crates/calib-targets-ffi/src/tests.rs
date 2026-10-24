@@ -406,8 +406,53 @@ fn chessboard_detect_supports_query_and_copy() {
     input_indices.sort_unstable();
     input_indices.dedup();
     assert_eq!(input_indices.len(), corners.len());
+    // The default config reports a positive-definite position covariance for
+    // every labelled corner of this lossless frame.
+    assert!(corners.iter().all(|corner| {
+        let c = corner.position_covariance;
+        corner.has_position_covariance == CT_TRUE
+            && c.xx > 0.0
+            && c.yy > 0.0
+            && c.xx * c.yy - c.xy * c.xy > 0.0
+    }));
 
     unsafe { ct_chessboard_detector_destroy(detector) };
+}
+
+#[test]
+fn corner_converters_carry_position_covariance() {
+    use calib_targets::chessboard::ChessboardCorner;
+    use calib_targets::core::{Coord, LabeledCorner, PositionCovariance};
+
+    let cov = PositionCovariance::new(0.0123, -0.0045, 0.0456);
+    let labeled = LabeledCorner::new([1.5, 2.5].into(), 0.7).with_position_covariance(cov);
+    let out = labeled_corner_to_ffi(&labeled);
+    assert_eq!(out.has_position_covariance, CT_TRUE);
+    assert_eq!(
+        (
+            out.position_covariance.xx.to_bits(),
+            out.position_covariance.xy.to_bits(),
+            out.position_covariance.yy.to_bits()
+        ),
+        (cov.xx.to_bits(), cov.xy.to_bits(), cov.yy.to_bits())
+    );
+    let bare = labeled_corner_to_ffi(&LabeledCorner::new([1.5, 2.5].into(), 0.7));
+    assert_eq!(bare.has_position_covariance, CT_FALSE);
+    assert_eq!(
+        bare.position_covariance,
+        ct_position_covariance_t::default()
+    );
+
+    let chess = ChessboardCorner::new([3.0, 4.0].into(), Coord::new(1, 2), 9, 0.5)
+        .with_position_covariance(cov);
+    let out = chessboard_corner_to_ffi(&chess);
+    assert_eq!(out.has_position_covariance, CT_TRUE);
+    assert_eq!(out.position_covariance.yy, cov.yy);
+    let chess = ChessboardCorner::new([3.0, 4.0].into(), Coord::new(1, 2), 9, 0.5);
+    assert_eq!(
+        chessboard_corner_to_ffi(&chess).has_position_covariance,
+        CT_FALSE
+    );
 }
 
 #[test]
@@ -508,6 +553,15 @@ fn charuco_detect_supports_query_and_copy() {
             && corner.id.has_value == CT_TRUE
             && corner.has_target_position == CT_TRUE
     }));
+    let with_cov = corners
+        .iter()
+        .filter(|corner| corner.has_position_covariance == CT_TRUE)
+        .count();
+    assert!(
+        with_cov * 10 >= corners.len() * 9,
+        "{with_cov} of {}",
+        corners.len()
+    );
     assert!(markers
         .iter()
         .all(|marker| marker.has_corners_img == CT_TRUE));

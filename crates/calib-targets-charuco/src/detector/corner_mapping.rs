@@ -26,6 +26,7 @@ pub(crate) fn map_charuco_corners(
             continue;
         };
         let candidate = LabeledCorner::new(corner.position, corner.score)
+            .with_position_covariance(corner.position_covariance)
             .with_grid(grid)
             .with_id(id)
             .with_target_position(target);

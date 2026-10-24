@@ -2,7 +2,7 @@ use super::board_match::{match_board, BoardMatchConfig};
 #[cfg(feature = "diagnostics")]
 use super::board_match::{match_board_diag, BoardMatchDiagnostics};
 use super::corner_mapping::map_charuco_corners;
-use super::corner_refit::{validate_and_fix_corners, CornerValidationConfig};
+use super::corner_refit::{validate_and_fix_corners, CornerValidationConfig, Redetector};
 use super::grid_smoothness::smooth_grid_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::merge::merge_charuco_results;
@@ -10,10 +10,11 @@ use super::{CharucoDetectError, CharucoDetection, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_chessboard::ChessCorner;
-use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector as ChessDetector};
-use calib_targets_core::{GrayImageView, LabeledCorner, TargetDetection, TargetKind};
-use chess_corners::Detector;
+use calib_targets_chessboard::{detect_corner_frame, ChessCorner, CornerFrame, FrameNoise};
+use calib_targets_chessboard::{
+    ChessboardCorner, ChessboardDetection, ChessboardDetector as ChessDetector,
+};
+use calib_targets_core::{GrayImageView, TargetDetection, TargetKind};
 use log::{debug, warn};
 
 /// Adapt a [`ChessboardDetection`] into the generic [`TargetDetection`]
@@ -24,7 +25,7 @@ fn chessboard_detection_to_target(chess: &ChessboardDetection) -> TargetDetectio
     let corners = chess
         .corners
         .iter()
-        .map(|c| LabeledCorner::new(c.position, c.score).with_grid(c.grid))
+        .map(ChessboardCorner::to_labeled)
         .collect();
     TargetDetection::new(TargetKind::Chessboard, corners)
 }
@@ -271,7 +272,33 @@ impl CharucoDetector {
         &self,
         image: &GrayImageView<'_>,
     ) -> Result<CharucoDetection, CharucoDetectError> {
-        self.detect_with_corners(image, &self.detect_corners(image))
+        // Same as `detect_with_corners(image, &detect_corners(image))`, but the
+        // front end's noise level is handed on so re-detected corners do not
+        // estimate it a second time.
+        self.detect_with_corner_frame(image, &detect_corner_frame(image, &self.params.chess))
+    }
+
+    /// [`Self::detect_with_corners`] over a front-end pass that also carries
+    /// the frame's noise level, so corners the detector re-detects reuse it
+    /// instead of estimating it again.
+    ///
+    /// `frame` must come from
+    /// [`detect_corner_frame`](calib_targets_chessboard::detect_corner_frame)
+    /// on `image` with [`CharucoParams::chess`](crate::CharucoParams::chess).
+    /// Workspace-internal (the facade's sweep shares one frame across
+    /// configs); not part of the semver contract.
+    #[doc(hidden)]
+    pub fn detect_with_corner_frame(
+        &self,
+        image: &GrayImageView<'_>,
+        frame: &CornerFrame,
+    ) -> Result<CharucoDetection, CharucoDetectError> {
+        self.detect_core(
+            image,
+            &frame.corners,
+            Some(frame.noise),
+            &mut NoPipelineDiag,
+        )
     }
 
     /// Detect a ChArUco board from an image and a pre-detected corner cloud.
@@ -281,6 +308,17 @@ impl CharucoDetector {
     /// consistent alignments are merged.
     ///
     /// This is the hot path: it computes and allocates **zero** diagnostics.
+    ///
+    /// Output corners keep the position and
+    /// [`position_covariance`](crate::CharucoCorner::position_covariance) of
+    /// the input corner they came from. A corner whose position contradicts
+    /// the marker-fitted board homography is re-detected near its predicted
+    /// position; the re-detection is a new measurement and carries its own
+    /// covariance, following the uncertainty settings of
+    /// [`CharucoParams::chess`](crate::CharucoParams::chess) (`uncertainty`,
+    /// `noise_sigma`, `upscale`). Without a supplied `noise_sigma` the frame's
+    /// noise level is then estimated once per call; [`Self::detect`] reuses the
+    /// one its own corner pass measured.
     // The link target exists only with the `diagnostics` feature; link it then,
     // and fall back to a plain mention otherwise so feature-off docs resolve.
     #[cfg_attr(
@@ -297,7 +335,7 @@ impl CharucoDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<CharucoDetection, CharucoDetectError> {
-        self.detect_core(image, corners, &mut NoPipelineDiag)
+        self.detect_core(image, corners, None, &mut NoPipelineDiag)
     }
 
     /// [`Self::detect`] + per-component diagnostics.
@@ -315,7 +353,10 @@ impl CharucoDetector {
         Result<CharucoDetection, CharucoDetectError>,
         CharucoDetectDiagnostics,
     ) {
-        self.diagnose_with_corners(image, &self.detect_corners(image))
+        let frame = detect_corner_frame(image, &self.params.chess);
+        let mut collector = DiagCollector::default();
+        let result = self.detect_core(image, &frame.corners, Some(frame.noise), &mut collector);
+        (result, collector.diagnostics)
     }
 
     /// Detect + return per-component diagnostics (matcher decisions, per-cell
@@ -334,7 +375,7 @@ impl CharucoDetector {
         CharucoDetectDiagnostics,
     ) {
         let mut collector = DiagCollector::default();
-        let result = self.detect_core(image, corners, &mut collector);
+        let result = self.detect_core(image, corners, None, &mut collector);
         (result, collector.diagnostics)
     }
 
@@ -344,10 +385,15 @@ impl CharucoDetector {
     /// through [`CharucoDetector::detect_component`], merges the consistent
     /// results, and routes all diagnostic capture through `sink`. The
     /// production path passes [`NoPipelineDiag`] (every hook inlines away).
+    ///
+    /// `noise` is the front end's noise level for this frame when the caller
+    /// ran the front end itself; `None` (caller-supplied corners) resolves it
+    /// from [`CharucoParams::chess`] the first time a corner is re-detected.
     fn detect_core<S: PipelineSink>(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
+        noise: Option<FrameNoise>,
         sink: &mut S,
     ) -> Result<CharucoDetection, CharucoDetectError> {
         debug!(
@@ -410,8 +456,11 @@ impl CharucoDetector {
         // reuse it across every component and both validation stages, so its
         // internal scratch buffers are allocated a single time. The config is
         // an internal constant (`default_redetect_params`) and always valid.
-        let mut redetector = Detector::new(self.params.corner_redetect_params)
-            .expect("internal corner-redetect config is always valid");
+        let mut redetector = Redetector::new(
+            self.params.corner_redetect_params,
+            &self.params.chess,
+            noise,
+        );
         let mut results: Vec<(CharucoDetection, RawMarkerCounts)> = Vec::new();
         for (i, chessboard) in components.iter().enumerate() {
             let min_inliers = if i == 0 {
@@ -464,7 +513,7 @@ impl CharucoDetector {
         chessboard: &ChessboardDetection,
         min_marker_inliers: usize,
         component_index: usize,
-        redetector: &mut Detector,
+        redetector: &mut Redetector<'_>,
         sink: &mut S,
     ) -> Result<(CharucoDetection, RawMarkerCounts), CharucoDetectError> {
         // Adapt the typed chessboard result into the generic
@@ -573,7 +622,7 @@ impl CharucoDetector {
             CornerValidationConfig {
                 px_per_square: self.params.px_per_square,
                 threshold_rel: tuning.corner_validation_threshold_rel,
-                detector: redetector,
+                redetector,
             },
         );
         debug!(

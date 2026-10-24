@@ -335,6 +335,16 @@ typedef struct ct_grid_coords_t {
 } ct_grid_coords_t;
 
 /**
+ * Covariance of a corner position in px², image frame: the symmetric
+ * matrix `[[xx, xy], [xy, yy]]`.
+ */
+typedef struct ct_position_covariance_t {
+  float xx;
+  float xy;
+  float yy;
+} ct_position_covariance_t;
+
+/**
  * One detected chessboard corner.
  *
  * A chessboard corner is always labelled, so `grid` is unconditional —
@@ -358,6 +368,15 @@ typedef struct ct_chessboard_corner_t {
    * Corner score.
    */
   float score;
+  /**
+   * `CT_TRUE` when `position_covariance` is valid (see
+   * `ct_labeled_corner_t`).
+   */
+  uint32_t has_position_covariance;
+  /**
+   * Covariance of `position` in px².
+   */
+  struct ct_position_covariance_t position_covariance;
 } ct_chessboard_corner_t;
 
 /**
@@ -551,6 +570,12 @@ typedef struct ct_optional_u32_t {
 
 /**
  * One detected labeled corner.
+ *
+ * `position_covariance` is valid when `has_position_covariance` is
+ * `CT_TRUE`: the corner detector measured the position's covariance. It is
+ * `CT_FALSE` when the uncertainty tier is off, an upscale stage is active,
+ * the refiner reports none, or the frame's noise estimate declined (e.g.
+ * JPEG input — supply `ct_chess_config_t::noise_sigma`).
  */
 typedef struct ct_labeled_corner_t {
   struct ct_point2f_t position;
@@ -560,6 +585,8 @@ typedef struct ct_labeled_corner_t {
   uint32_t has_target_position;
   struct ct_point2f_t target_position;
   float score;
+  uint32_t has_position_covariance;
+  struct ct_position_covariance_t position_covariance;
 } ct_labeled_corner_t;
 
 /**

@@ -5,7 +5,7 @@
 //! returned by the mandatory final geometry check. No pipeline logic lives
 //! here — see the sibling stage modules for the stage bodies.
 
-use calib_targets_core::Coord;
+use calib_targets_core::{Coord, LabeledCorner, PositionCovariance};
 
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -22,6 +22,11 @@ use serde::{Deserialize, Serialize};
 pub struct ChessboardCorner {
     /// Sub-pixel image position.
     pub position: Point2<f32>,
+    /// Covariance of [`Self::position`] in px², carried from the input
+    /// corner's [`ChessCorner::position_covariance`](crate::ChessCorner::position_covariance);
+    /// `None` when that corner had none.
+    #[serde(default)]
+    pub position_covariance: Option<PositionCovariance>,
     /// Grid label `(u, v)`. A chessboard corner is always labelled — non-optional.
     ///
     /// `u` runs along grid `i` (rightward), `v` along grid `j` (downward).
@@ -34,13 +39,37 @@ pub struct ChessboardCorner {
 
 impl ChessboardCorner {
     /// Create a corner from its position, grid label, input provenance, and score.
+    ///
+    /// The covariance starts unset; attach it with
+    /// [`Self::with_position_covariance`].
     pub fn new(position: Point2<f32>, grid: Coord, input_index: usize, score: f32) -> Self {
         Self {
             position,
+            position_covariance: None,
             grid,
             input_index,
             score,
         }
+    }
+
+    /// Set the covariance of [`Self::position`] (px²). Accepts a
+    /// [`PositionCovariance`] or an `Option` of one.
+    #[must_use]
+    pub fn with_position_covariance(
+        mut self,
+        position_covariance: impl Into<Option<PositionCovariance>>,
+    ) -> Self {
+        self.position_covariance = position_covariance.into();
+        self
+    }
+
+    /// This corner as the shared [`LabeledCorner`] carrier: position, its
+    /// covariance, grid label, and score (no id or target position — a plain
+    /// chessboard has neither).
+    pub fn to_labeled(&self) -> LabeledCorner {
+        LabeledCorner::new(self.position, self.score)
+            .with_position_covariance(self.position_covariance)
+            .with_grid(self.grid)
     }
 }
 

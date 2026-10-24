@@ -18,6 +18,7 @@ here.
 |---|---|---|---|---|
 | [B-2](#b-2) | `scan.marker_size_rel` repairs on a sentinel that is never set | P2 | S | semver |
 | [B-3](#b-3) | The soft ChArUco path reports a `hamming` it did not compute | P3 | S | none |
+| [B-4](#b-4) | Covariance cost: upstream `chess-corners` API asks | P3 | M | internal-safe |
 
 ---
 
@@ -62,3 +63,44 @@ here.
   the field `Option<u8>` / document it as legacy-matcher-only so a `0` cannot
   be mistaken for a verified decode. The second is cheaper and honest; the
   first is more useful for diagnostics.
+
+## <a id="b-4"></a>B-4 · Position-covariance cost: upstream `chess-corners` API asks
+**Sev P3 · Effort M (upstream) · API internal-safe**
+
+- **Where the cost is.** With the default `Uncertainty::Propagated`, corner
+  detection pays a per-frame noise estimate (≈50–60 µs on the public report
+  images) plus a per-corner Jacobian (≈0.5–0.7 µs per raw corner with the
+  default `CenterOfMass` refiner). Raw corner clouds on the public images are
+  86–589 corners, of which 31–94 % end up labelled, so covariances computed for
+  corners the grid builder discards cost ≈0.15 ms per frame at most (≈15 % of
+  corner detection on `small.png`, ≈3 % on `large.png`, noise on `mid.png`).
+- **What the workspace already does.** The front end (`detect_corner_frame`)
+  estimates the noise once per frame before the corner pass and hands it to
+  `chess-corners`; when the estimate declines (JPEG-like frames) the pass runs
+  at `Uncertainty::Off`, which removes the Jacobians that could never be
+  reported (≈−20 % corner detection on `oblique.png`). ChArUco re-detection
+  reuses the level. Estimating up front costs ≈30–40 µs more in-process than
+  letting `chess-corners` estimate after its response pass (same work; the
+  difference is allocation/page reuse order), ≈1–2 % of corner detection on the
+  frames where the estimate succeeds.
+- **Ask 1 — report the σ the detector used.** e.g.
+  `Detector::detect_u8_with_noise(&mut self, img, w, h) -> Result<(Vec<CornerDescriptor>, Option<f32>), ChessError>`
+  (or `Detector::last_noise_sigma()`). Lets the workspace drop its own up-front
+  estimate and recover the in-process ordering cost.
+- **Ask 2 — estimate before refining, skip Jacobians on decline.** Estimate σ
+  right after the response pass (image hot) and run the localizers at `Off`
+  for the frame when it declines. Gives every `chess-corners` user the
+  declined-frame saving the workspace now gets by estimating first.
+- **Ask 3 — covariance for selected corners after the fact.** e.g.
+  `Detector::detect_u8_deferred(..) -> DeferredDetection` exposing
+  `corners()` and `position_covariance(index, noise_sigma) -> Option<PositionCovariance>`,
+  bit-identical to what `detect_u8` at `Propagated` attaches (it must keep the
+  response map and each corner's integer seed). Not reproducible from the
+  current API: `CornerDescriptor` drops the seed, the `CenterOfMass` centroid
+  runs in absolute response-map coordinates (an ROI re-run is local, so it
+  rounds differently), and `RefineResult`'s systematic model is crate-private.
+  Measured alternative through the public ROI path (`detect_u8_roi` per
+  labelled corner) is ≈5 µs per corner — slower than the in-pass Jacobian it
+  would replace — so it was not adopted. Worth doing only if ≈0.15 ms/frame
+  matters to a consumer.
+
