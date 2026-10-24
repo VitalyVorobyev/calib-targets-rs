@@ -81,9 +81,10 @@ detected grid.
 
 | Target | Facade helpers | Dedicated crate |
 |---|---|---|
-| **Chessboard** | `detect_chessboard`, `detect_chessboard_all`, `detect_chessboard_best`, `detect_chessboard_with_diagnostics` | [`calib-targets-chessboard`] |
+| **Chessboard** | `detect_chessboard`, `detect_chessboard_all`, `detect_chessboard_best` | [`calib-targets-chessboard`] |
 | **ChArUco** | `detect_charuco`, `detect_charuco_with_corners`, `diagnose_charuco`*, `diagnose_charuco_with_corners`*, `detect_charuco_best` | [`calib-targets-charuco`] |
 | **PuzzleBoard** | `detect_puzzleboard`, `detect_puzzleboard_with_corners`, `diagnose_puzzleboard`*, `diagnose_puzzleboard_with_corners`*, `detect_puzzleboard_best` | [`calib-targets-puzzleboard`] |
+| **PuzzlePole** | `detect_puzzlepole`, `detect_puzzlepole_with_corners`, `detect_puzzlepole_best` | [`calib-targets-puzzleboard`] |
 | **Marker board** | `detect_marker_board`, `detect_marker_board_with_corners`, `diagnose_marker_board`*, `diagnose_marker_board_with_corners`*, `detect_marker_board_best` | [`calib-targets-marker`] |
 | **Printable targets** | `printable::{render_target_bundle, write_target_bundle}` | [`calib-targets-print`] |
 | **ArUco / AprilTag primitives** | `aruco::*` (dictionaries, matcher) | [`calib-targets-aruco`] |
@@ -126,7 +127,7 @@ Most callers never need to tune. When defaults fail:
 [charuco-tune]: https://docs.rs/calib-targets-charuco
 [puz-tune]: https://docs.rs/calib-targets-puzzleboard
 [marker-tune]: https://docs.rs/calib-targets-marker
-[book-tune]: https://vitalyvorobyev.github.io/calib-targets-rs/tuning.html
+[book-tune]: https://vitalyvorobyev.github.io/calib-targets-rs/book/tuning.html
 
 ## Limitations
 
@@ -182,18 +183,17 @@ consumers can disable it with `default-features = false`.
 
 Canonical guide: [printable-target book chapter][printable-book].
 
-[printable-book]: https://vitalyvorobyev.github.io/calib-targets-rs/printable.html
+[printable-book]: https://vitalyvorobyev.github.io/calib-targets-rs/book/printable.html
 
 ## Features
 
 - `image` (default) — enables the `calib_targets::detect` helpers that
   take `image::GrayImage` inputs and run `chess-corners` internally.
 - `tracing` — gates tracing spans across the workspace crates.
-- `diagnostics` (off) — forwards to
-  `calib-targets-chessboard/diagnostics` and gates
-  `detect_chessboard_with_diagnostics` (the `DebugFrame` channel) plus the
-  `diagnose_charuco`, `diagnose_puzzleboard`, and `diagnose_marker_board`
-  free functions (and their `_with_corners` counterparts). The hot
+- `diagnostics` (off) — forwards to the per-crate `diagnostics` features and
+  gates the `diagnose_charuco`, `diagnose_puzzleboard`, and
+  `diagnose_marker_board` free functions (and their `_with_corners`
+  counterparts) plus the chessboard `trace_topological*` re-exports. The hot
   `detect_*` paths build no trace when this is off.
 
 ## Migrating to the current release
@@ -211,7 +211,7 @@ silent behaviour change.
 See the [Migration Guide][migration] for before/after snippets covering Rust,
 the C ABI, Python and WebAssembly.
 
-[migration]: https://vitalyvorobyev.github.io/calib-targets-rs/migration.html
+[migration]: https://vitalyvorobyev.github.io/calib-targets-rs/book/migration.html
 
 ## Examples
 

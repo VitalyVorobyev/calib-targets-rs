@@ -1,175 +1,35 @@
 # Pipeline Maps
 
-> The **how-they-compose** view: each detector as an ordered stage list, every
-> stage naming the [atomic algorithm](algorithm-atlas.md) it runs and whether that
-> algorithm lives **locally** in the detector crate or is **delegated** to a lower
-> crate (`projective-grid` or `calib-targets-core`).
+Each detector's stage table — inputs, decisions, failure modes, knobs, and the
+function that implements each stage — lives with the crate that owns it. This
+page is only the index; read it alongside the [Algorithm Atlas](algorithm-atlas.md)
+(the *what*) and the [layering doc](dependency-and-layering.md) (the
+*who-depends-on-whom*).
 
-Read alongside the [Algorithm Atlas](algorithm-atlas.md) (the *what*) and the
-[layering doc](dependency-and-layering.md) (the *who-depends-on-whom*).
-
-**The shared spine.** All five detectors share one front-half — the grid build —
-and differ only in the back-half they bolt on top:
+**The shared spine.** Every detector shares one front-half — the grid build —
+and differs only in the back-half it bolts on:
 
 ```
-                     ┌─────────────────────── SHARED GRID SPINE ───────────────────────┐
-ChESS corners ──▶ prefilter ──▶ axis-cluster ──▶ topological square ──▶ merge ──▶ grow/fill ──▶ validate ──▶ labelled (i,j) grid
-                     └──────────────────────────────────────────────────────────────────┘
-                                                                                         │
-                          ┌──────────────────────────────────────────────┬──────────────┴───────────────┐
-                          ▼                                               ▼                              ▼
-                  chessboard: ship grid              charuco / marker: decode features        puzzle / pole: decode edge dots
-                                                     inside warped cells, assign IDs           on the master pattern (or, for a
-                                                                                               pole, on its cyclic stripe)
+ChESS corners ──▶ prefilter ──▶ axis-cluster ──▶ topological square ──▶ merge ──▶ recover ──▶ geometry check ──▶ labelled (i,j) grid
+                                                                                                                       │
+                     ┌──────────────────────────────────────────────┬───────────────────────────────────────────────┤
+                     ▼                                              ▼                                               ▼
+             chessboard: ship grid              charuco / marker: decode features inside          puzzle / pole: decode edge dots on the
+                                                warped cells, assign IDs                          master pattern (or the pole's cyclic stripe)
 ```
 
-Only **`chessboard`** owns that spine (it is the sole in-workspace consumer of
-`projective-grid`); **`charuco`, `puzzle`, `pole`, `marker` get the spine by
-embedding the `chessboard` detector**, then run their own decode back-half.
+Only `calib-targets-chessboard` owns that spine (it is the sole in-workspace
+consumer of `projective-grid`); ChArUco, PuzzleBoard / PuzzlePole and the marker
+board get it by embedding the chessboard detector. All delegation points down
+(`charuco / puzzle / marker → chessboard → projective-grid / core`).
 
----
+| Detector | Stage map |
+|---|---|
+| Chessboard | [`calib-targets-chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/PIPELINE.md) |
+| PuzzleBoard + PuzzlePole | [`calib-targets-puzzleboard/docs/PIPELINE.md`](../../crates/calib-targets-puzzleboard/docs/PIPELINE.md) |
+| ChArUco | [`calib-targets-charuco/docs/PIPELINE.md`](../../crates/calib-targets-charuco/docs/PIPELINE.md) |
+| Marker board | [`calib-targets-marker/docs/PIPELINE.md`](../../crates/calib-targets-marker/docs/PIPELINE.md) |
+| Generic grid builder | [`docs/algorithms/topological-grid-detection.md`](../algorithms/topological-grid-detection.md) |
+| Standalone `projective-grid` (evidence × lattice routes) | [`projective-grid/docs/DESIGN.md`](../../crates/projective-grid/docs/DESIGN.md) |
 
-## 1. Chessboard — `chess ChessboardDetector::detect` → `ChessboardDetection`
-
-The reference pipeline. Entry: `chess detector.rs::ChessboardDetector::detect` →
-`chess pipeline/mod.rs::detect_all_topological`. Canonical stage table:
-[`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/PIPELINE.md).
-
-| # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
-|---|---|---|---|---|
-| 1 | Prefilter | `chess pipeline/inputs.rs::topological_inputs` | ChESS strength/fit prefilter (§2) | **Local** |
-| 2 | Axis cluster | `chess pipeline/cluster.rs` | Global axis clustering (§3) | **Delegated** → `pg cluster_axes` |
-| 3 | Topological grid | `pg ...::detect_square_oriented2_all` via `pipeline/mod.rs:112` | Delaunay → classify → quads → filter → walk (§4) | **Delegated** → `pg` (sole grid builder; `RecoverySchedule::Off`) |
-| 4 | Merge + recover | `chess pipeline/recover.rs::recover_topological_components` | Geometric merge (§6) + shared-index merge (§6) + boosters fill (§7) | **Mixed**: `pg merge_components_local` + `pg fill_grid_holes`; merge-by-index + directional scale **local** |
-| 5 | Geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | Line collinearity + local-H + orientation parity + wrong-label drops + largest-component (§8) | **Delegated** → `pg shared::validate` |
-| 6 | Output | `chess pipeline/output.rs::build_detection` | Normalize + rebase to non-negative (§8) | **Delegated** → `pg LabelledGrid::normalize` |
-
-**Notes.** Stage 3 hands `pg` native dual axes (`Evidence::Oriented2`) and turns the
-facade's own validate/fit/recovery **off** — chessboard owns stages 4–6 itself.
-This is why `pg`'s recovery *schedule* (`run_schedule`) and `extension` modules are
-[library-only](algorithm-atlas.md): the shipped chessboard path never enters them.
-
-Auxiliary (not on the detection path, but public): `chess mesh_warp.rs` +
-`chess rectified_view.rs` produce rectified views for downstream calibration tooling.
-
-## 2. PuzzleBoard — `puzzle PuzzleBoardDetector::detect` → `PuzzleBoardDetection`
-
-Self-identifying chessboard: a binary dot at each interior edge midpoint encodes an
-absolute position on a 501×501 master. Entry:
-`puzzle detector/pipeline.rs::PuzzleBoardDetector::detect`. Zero direct dependency
-on `pg` — the grid arrives via the embedded `chess` detector.
-
-| # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
-|---|---|---|---|---|
-| 1 | Chessboard grid | `puzzle detector/pipeline.rs` → `chess ChessboardDetector::detect_all` | Full chess spine (§1) | **Delegated** → `chess` |
-| 2 | Edge sampling | `puzzle detector/pipeline.rs::sample_all_edges` | Edge-bit sampling + cell-reference estimation (§11) | **Local** |
-| 3 | Edge filter | `puzzle detector/pipeline.rs` (confidence gate) | min-confidence threshold | **Local** |
-| 4 | Decode select | `puzzle detector/pipeline.rs` | choose hard/soft × full/fixed-board | **Local** |
-| 5 | Decode | `puzzle detector/decode/hard.rs::decode` · `detector/decode/soft.rs::decode_soft` (+ fixed variants) | Hard-weighted / soft-LL decode + master-origin scan (§11) | **Local** |
-| 6 | CRT origin recovery | `puzzle detector/decode/mod.rs::crt_master_row` / `crt_master_col` | CRT master row/col (§11) | **Local** |
-| 7 | Corner-ID assignment | `puzzle detector/pipeline.rs::master_ij_to_id` / `wrap_master` | Master-ID encode + wrap (§11) | **Local** |
-| 8 | Component ranking | `puzzle detector/pipeline.rs::is_better_component_decode` | Component decode ranking (§11) | **Local** |
-
-**Notes.** Steps 5–8 are pure decode — no grid logic reimplemented. The four decode
-paths (hard/soft × full/fixed) are a *multiplex over one algorithm family*, not four
-algorithms. See the [decoder-precision note](algorithm-atlas.md) and the standing
-decision not to rewrite the decoder absent a precision gap.
-
-## 3. PuzzlePole — `puzzle PuzzlePoleDetector::detect` → `PuzzlePoleDetection`
-
-The same pattern on a cylinder. Stages 1–3 are §2's, unchanged; stages 4–8 are
-where a pole differs, and the difference is one fact: at a seamless period the
-master repeats exactly *two* piece rows, so a seam-crossing window matches no
-master position and the pole is decoded against its own `p`-periodic code
-stripe. Entry: `puzzle pole/pipeline.rs::PuzzlePoleDetector::detect`.
-
-| # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
-|---|---|---|---|---|
-| 1 | Chessboard grid | `puzzle pole/pipeline.rs` → `chess ChessboardDetector::detect_all` | Full chess spine (§1) | **Delegated** → `chess` |
-| 2 | Edge sampling | `puzzle detector/pipeline.rs::sample_all_edges` | Edge-bit sampling + cell-reference estimation (§11) | **Delegated** → §2's |
-| 3 | Period-3 consensus | `puzzle detector/consensus.rs` | class-key majority vote (§11) | **Delegated** → §2's |
-| 4 | Cyclic code stripe | `puzzle pole/code.rs::PoleCode::new` | Cyclic code stripe (§12) | **Local** |
-| 5 | Decode | `puzzle detector/decode/fixed.rs::decode_fixed_hard` / `decode_fixed_soft` over `BoardRect::pole` | Cyclic origin enumeration (§12) | **Local** |
-| 6 | Window floor | `puzzle pole/pipeline.rs` | Post-decode rectangular span floor (§12) | **Local** |
-| 7 | Corner-ID + 3-D lift | `puzzle pole/geometry.rs::object_position` · `pole/mod.rs::corner_id` | Pole coordinate + object point (§12) | **Local** |
-| 8 | Injectivity guard | `puzzle pole/pipeline.rs` | Repeated-id refusal (§12) | **Local** |
-
-**Notes.** Stage 5 routes through the *fixed*-board decoder, never `hard.rs` /
-`soft.rs`: those collapse the row axis by CRT, which needs `gcd(3, 167) = 1`,
-and a pole's row moduli are 3 and `p` with `3 | p`. Stage 6 is deliberately
-after the decode rather than before it — nothing beforehand can tell a 5×8
-fragment lying one way from the same fragment lying the other, and only one of
-the two decodes. Stage 7 is the only place in this workspace that produces a
-3-D object point.
-
-## 4. ChArUco — `charuco CharucoDetector::detect` → `CharucoDetection`
-
-Grid-first fusion: chessboard grid + per-cell ArUco decode + board-level alignment +
-corner IDs. Entry: `charuco detector/pipeline.rs::CharucoDetector::detect`.
-
-| # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
-|---|---|---|---|---|
-| 1 | Chessboard grid | `charuco pipeline.rs` → `chess ChessboardDetector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
-| 2 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | Per-corner ChESS refine (§10) | **Local** |
-| 3 | Cell enumeration | `charuco detector/marker_sampling.rs::build_marker_cells` | Marker-cell enumeration (§10) | **Local** |
-| 4 | **Decode + align** | `charuco detector/board_match/diagnostics.rs::match_board_diag` | Board-level soft-LL matcher (§10) — re-emits markers (its own inliers) under the chosen hypothesis | **Local** (decode bits via `aruco`) |
-| 6 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | Corner-ID assignment (§10) | **Local** |
-| 7 | Corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | Homography corner refit (§10) | **Mixed**: H fit **delegated** → `core estimate_homography_rect_to_img`; ROI re-detect local |
-| 8 | Output (+ merge) | `charuco detector/merge.rs::merge_charuco_results` | Multi-component merge (§10) | **Local** |
-
-**Public, off-path:** `charuco link_check.rs::validate_marker_corner_links` lets a
-caller validate a finished result against the board spec — distinct from the internal
-stage-7 `corner_refit`, which fixes corners rather than reporting on them.
-
-**Default matters:** stage **4a** is the default (`detector/params.rs:306`); 4b is a
-documented fallback.
-
-## 5. Marker board — `marker MarkerBoardDetector::detect` → `MarkerBoardDetection`
-
-Checkerboard + 3 circles; circles anchor the pose, chessboard corners are the grid
-truth. Entry: `marker detector.rs::MarkerBoardDetector`.
-
-| # | Stage | Entry | Algorithm (atlas §) | Local / Delegated |
-|---|---|---|---|---|
-| 1 | Chessboard grid | `marker detector.rs` → `chess ChessboardDetector::detect` | Full chess spine (§1) | **Delegated** → `chess` |
-| 2 | Corner map | `marker detector.rs::build_corner_map` | grid→pixel map | **Local** (parallel to charuco's) |
-| 3 | Circle scoring | `marker detect.rs::detect_circles_via_square_warp` → `circle_score.rs::score_circle_in_square` | Circle scoring + detection (§13) | **Local** |
-| 4 | Board-frame resolution | `marker match_circles.rs::resolve_board_frame` | Frame sweep over `C4` (§13) | **Local** |
-| 5 | Corner-frame shift | `marker detector.rs::corner_frame` | Square indices → inner-corner indices | **Local** |
-
-## 6. Standalone grid library — `pg detect_grid` / `detect_grid_all`
-
-`projective-grid` is a published crate with its own public detection entry point,
-used by external consumers (and exercised by `pg`'s own tests/benches/examples). Its
-breadth is the part no in-workspace detector reaches. Entry:
-`pg detect.rs::detect_grid_all`. Deep dive:
-[`projective-grid/docs/DESIGN.md`](../../crates/projective-grid/docs/DESIGN.md).
-
-| Evidence × lattice | Path | Status in this workspace |
-|---|---|---|
-| `(Square, Oriented2)` | topological square assembly (the spine chess uses) | ✅ exercised (via chess) |
-| `(Square, Oriented1)` | `synthesize_oriented2_from_oriented1` → square assembly + recovery schedule | 📚 library-only |
-| `(Square, Positions)` | `synthesize_oriented2` → square assembly + recovery schedule | 📚 library-only |
-| `(Hex, Oriented3)` | hex assembly (`detect_hex_oriented3_topological_all`) | 📚 library-only |
-| `(Hex, Positions)` | `synthesize_oriented3` → hex assembly | 📚 library-only |
-| anything else | `GridError::UnsupportedCombination` | — |
-
-The `Oriented1` / `Positions` / `Hex` rows are where the orientation-synthesis
-(§5), local/global-H extension, and recovery-schedule (§7) algorithms live. They are
-genuine library features (dot grids, circle grids, hex targets for external users),
-simply not on any path a `calib-targets-*` detector takes.
-
----
-
-## Cross-cutting observations
-
-- **One spine, five back-halves.** The structure is cleaner than it looks: §1's
-  spine is shared via crate embedding, not copy-paste. The decode back-halves
-  (§9–§13) are well-isolated — and the pole is the deliberate exception, reusing
-  the PuzzleBoard back-half wholesale and replacing only where the code lives.
-- **The delegation arrows all point down** (`charuco/puzzle/marker → chess →
-  pg/core`), which is correct layering. Detectors reach the DLT solver through
-  `core`'s image-domain wrapper; the solver itself lives once, in `pg`.
-- **Two corner-map builders and two "validation" concepts** ride along stages
-  marked *Local* above — small, parallel rather than shared, and the remaining
-  candidate for consolidation in this tree.
+The user-facing versions of these maps are the book's `pipeline_*.md` pages.

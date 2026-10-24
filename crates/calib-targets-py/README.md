@@ -1,6 +1,6 @@
 # calib-targets — Python bindings
 
-[![Book](https://img.shields.io/badge/book-getting--started-blue)](https://vitalyvorobyev.github.io/calib-targets-rs/getting-started.html)
+[![Book](https://img.shields.io/badge/book-getting--started-blue)](https://vitalyvorobyev.github.io/calib-targets-rs/book/getting-started.html)
 
 Native-feeling Python API for the `calib-targets` Rust workspace.
 Detects chessboards, ChArUco, PuzzleBoard, PuzzlePole, and marker boards, and
@@ -269,26 +269,6 @@ json.load(open(path)))`-compatible.
 - **Grayscale uint8 numpy arrays only.** No torch tensors, no GPU.
 - **Board PNG / SVG generation for chessboard, ChArUco, marker board,
   and PuzzleBoard is supported; other target kinds are not.**
-
-## Migration from pre-0.7 dict-based API
-
-| Old | New |
-|---|---|
-| `detect_chessboard(img, params={"min_corner_strength": 0.5})` | `detect_chessboard(img, params=ChessboardParams(min_corner_strength=0.5))` |
-| `detect_charuco(..., params={"board": {...}})` | `detect_charuco(..., params=CharucoParams(board=CharucoBoardSpec(...)))` |
-| `result["corners"]` | `result.corners` |
-| `json.dumps(result_dict)` | `json.dumps(result.to_dict())` |
-
-Dict-based configuration is rejected in the new API; use the typed
-dataclasses.
-
-`ChessboardParams` keeps the per-stage tuning knobs flat for ergonomics,
-but `to_dict()` now nests everything except the four stable fields
-(`graph_build_algorithm`, `min_labeled_corners`, `max_components`,
-`min_corner_strength`) under an `"advanced"` block — matching the Rust
-wire format. These advanced knobs are not covered by semver. The unused
-`projective_line_tol_rel` knob was removed (it was a no-op); drop it from
-any `ChessboardParams(...)` call that set it.
 
 ## Feature parity vs Rust facade
 

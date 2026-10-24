@@ -1,12 +1,11 @@
 # Synthetic Author-Like PuzzleBoard Fixtures
 
-This fixture set tests PuzzleBoard decoding on realistic photo-like images
-whose ground truth is unambiguous. The upstream author examples are useful for
-visual comparison, but the image bit pattern does not match the current
-canonical 501 x 501 map exactly. These synthetic images are generated directly
-from the committed `map_a.bin` and `map_b.bin` files, so successful detection
-proves the detector can match the current canonical map under similar visual
-conditions.
+This fixture set is the **public** PuzzleBoard decode regression: realistic
+photo-like images generated directly from the committed `map_a.bin` /
+`map_b.bin`, so every corner's ground truth is known exactly. (The upstream
+author photos also decode against the shipped map — see
+`tests/interop_authors.rs` — but they live in a local-only directory, so they
+cannot gate CI.)
 
 ## Fixture Generation
 
@@ -57,12 +56,12 @@ Overlay legend:
 - red rings: synthetic ground-truth corners;
 - green dots: detected PuzzleBoard-labelled corners.
 
-Current `origin/main`-based results after adding the fixtures:
+Expected results:
 
 | Scenario | Decoded Corners | Truth-Matched Corners | BER | D4 Relation |
 | --- | ---: | ---: | ---: | --- |
 | `oblique` | 361 | 361 | 0.000 | identity |
-| `foreshortened` | 348 | 348 | 0.000 | identity |
+| `foreshortened` | 349 | 349 | 0.000 | identity |
 | `small_rotated_fragment` | 64 | 64 | 0.000 | identity |
 
 The regression accepts any single D4 + translation relation between detected

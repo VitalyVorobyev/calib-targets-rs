@@ -16,8 +16,7 @@ crate and the **chessboard-specific** wrapper in
 grid finder; the chessboard wrapper that drives it (prefilter, recall
 boosters, precision check) is documented in
 `crates/calib-targets-chessboard/docs/PIPELINE.md`. The topological finder is
-the **sole** grid builder for every target family — the earlier `SeedAndGrow`
-builder was removed once topological matched or beat it on every path.
+the **sole** grid builder for every target family.
 
 ## Vocabulary
 
@@ -407,7 +406,7 @@ digest, and every named pipeline span.
   image-free.
 - `projective-grid` crate documentation — see the "Topological grid
   finder" section of the book chapter
-  [`book/src/projective_grid.md`](../book/src/projective_grid.md).
+  [`book/src/projective_grid.md`](../../book/src/projective_grid.md).
 - Generic core source:
   `crates/projective-grid/src/topological/`.
 - Chessboard adapter + recovery source:

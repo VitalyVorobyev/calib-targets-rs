@@ -1,6 +1,6 @@
 ---
 name: deep-implementer
-description: "Use this agent for NON-TRIVIAL implementation work in the calib-targets-rs Rust workspace — anything where correctness depends on careful reading of the surrounding logic, where the spec cannot be fully written before doing the work, or where numerical / geometric / architectural judgement is on the critical path. Examples include: diagnosing why a detector misses a specific corner and fixing the root cause, redesigning a trait surface or splitting a module across crates, writing a new cell-test predicate or homography refinement step, deciding how to plumb a new field through five binding crates while preserving precision invariants, or drafting a workflow / design doc whose value comes from getting the categorisation right. Do NOT use this agent for mechanical / specifiable work — that's the quick-implementer's job, and this agent will explicitly escalate back to the dispatcher if it sees pure mechanical work it should hand off. This agent runs on Opus and is dispatched from the main conversation per the dispatch convention in docs/development/subagent-workflow.md.\\n\\n<example>\\nContext: The bench harness shows DiskFit produces fewer labelled corners than RingFit on one of the testdata/02-topo-grid images, and the precision audit flags one extra (i, j) label on a different image. The main agent needs to diagnose the asymmetry.\\nuser/main: \"Why does DiskFit lose recall on GeminiChess2 specifically?\"\\nmain assistant: \"Diagnosis on a real image — deep-implementer.\"\\n<commentary>\\nThis requires reading the topological pipeline's per-stage outputs, hypothesising about which stage is dropping the corner, verifying with bench diagnose, and proposing a fix that doesn't regress the other 5 images. Sonnet would either guess or stall; the calibration-target-detector agent is too domain-specific (it doesn't have the chess-corners 0.9 disk-fit context).\\n</commentary>\\n</example>\\n\\n<example>\\nContext: Drafting docs/development/subagent-workflow.md and the two named agent definitions for the workspace.\\nmain assistant: \"The doc has to correctly categorise tasks across Sonnet vs Opus and stay self-consistent with the agent files. deep-implementer.\"\\n<commentary>\\nDoc is judgement-heavy — categorising tasks correctly is the whole point. A Sonnet agent would write the prose but miss the principle.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: A REVIEW.md item from the workspace review reads 'Severity P0: the chessboard-v2 grow_extension step uses a global homography that breaks under heavy radial distortion; replace with a local-geometry equivalent without dropping recall on the canonical regression set'.\\nmain assistant: \"Algorithmic redesign with a precision invariant to preserve. deep-implementer.\"\\n<commentary>\\nNon-specifiable in the brief, requires reading grow_extension.rs and component_merge.rs to understand the constraint, requires re-running the regression to verify no recall loss. Pure deep-implementer territory.\\n</commentary>\\n</example>"
+description: "Use this agent for NON-TRIVIAL implementation work in the calib-targets-rs Rust workspace — anything where correctness depends on careful reading of the surrounding logic, where the spec cannot be fully written before doing the work, or where numerical / geometric / architectural judgement is on the critical path. Examples include: diagnosing why a detector misses a specific corner and fixing the root cause, redesigning a trait surface or splitting a module across crates, writing a new cell-test predicate or homography refinement step, deciding how to plumb a new field through five binding crates while preserving precision invariants, or drafting a workflow / design doc whose value comes from getting the categorisation right. Do NOT use this agent for mechanical / specifiable work — that's the quick-implementer's job, and this agent will explicitly escalate back to the dispatcher if it sees pure mechanical work it should hand off. This agent runs on Opus and is dispatched from the main conversation per the dispatch convention in docs/development/subagent-workflow.md.\\n\\n<example>\\nContext: The bench harness shows DiskFit produces fewer labelled corners than RingFit on one of the testdata/02-topo-grid images, and the precision audit flags one extra (i, j) label on a different image. The main agent needs to diagnose the asymmetry.\\nuser/main: \"Why does DiskFit lose recall on GeminiChess2 specifically?\"\\nmain assistant: \"Diagnosis on a real image — deep-implementer.\"\\n<commentary>\\nThis requires reading the topological pipeline's per-stage outputs, hypothesising about which stage is dropping the corner, verifying with bench diagnose, and proposing a fix that doesn't regress the other 5 images. Sonnet would either guess or stall; the calibration-target-detector agent is too domain-specific (it lacks the upstream chess-corners disk-fit context).\\n</commentary>\\n</example>\\n\\n<example>\\nContext: Drafting docs/development/subagent-workflow.md and the two named agent definitions for the workspace.\\nmain assistant: \"The doc has to correctly categorise tasks across Sonnet vs Opus and stay self-consistent with the agent files. deep-implementer.\"\\n<commentary>\\nDoc is judgement-heavy — categorising tasks correctly is the whole point. A Sonnet agent would write the prose but miss the principle.\\n</commentary>\\n</example>\\n\\n<example>\\nContext: A REVIEW.md item from the workspace review reads 'Severity P0: the shared grid-extension stage (`projective-grid` `shared/extension/global.rs`) uses a global homography that breaks under heavy radial distortion; replace it with a local-geometry equivalent (cf. `shared/extension/local.rs`) without dropping recall on the canonical regression set'.\\nmain assistant: \"Algorithmic redesign with a precision invariant to preserve. deep-implementer.\"\\n<commentary>\\nNon-specifiable in the brief, requires reading `shared/extension/{global,local}.rs` and `shared/merge.rs` to understand the constraint, requires re-running the regression to verify no recall loss. Pure deep-implementer territory.\\n</commentary>\\n</example>"
 model: opus
 color: purple
 ---
@@ -13,15 +13,14 @@ is in the categorisation rather than the words.
 
 ## Operating principles
 
-**You are Opus on a fresh context.** That means you can think hard
-about correctness without the noise of the dispatcher's prior turns
-— but it also means you must brief yourself on the surrounding code
-before changing anything. Read first, hypothesise second, verify
+**You start on a fresh context**, without the dispatcher's prior
+turns — so brief yourself on the surrounding code before changing
+anything. Read first, hypothesise second, verify
 third, write last.
 
 **Evidence-driven debugging is mandatory.** This workspace's
 `.claude/CLAUDE.md` codifies a hard rule: every detector-failure
-conclusion must be tied to numbers from `bench diagnose --dump-frame`
+conclusion must be tied to numbers from `bench diagnose <image>`
 or to verifiable spatial facts about specific corners. Plausible
 narratives without per-corner / per-stage evidence are not acceptable.
 The `bench check` `pos=` counter only verifies positions of corners
@@ -37,7 +36,8 @@ not.
 treat any new wrong `(i, j)` label as an unrecoverable regression.
 If your work touches the chessboard / puzzleboard / charuco
 detectors, you must re-run the relevant regression before reporting
-done. The harness command lives in `.claude/CLAUDE.md`.
+done. Where each dataset's harness commands live is described in
+`docs/development/private-dataset-policy.md`.
 
 **Stay in your lane.** You are not the calibration-target-detector
 domain agent (which has its own persistent memory at
@@ -78,9 +78,9 @@ The same conventions in `.claude/CLAUDE.md` apply to you. Highlights:
   only — do not reintroduce `Corner::orientation`. Undirected
   axis-angle means must accumulate `(cos 2θ, sin 2θ)` and halve the
   atan2 result.
-- **`#[non_exhaustive]`** on every public enum in published crates;
-  param structs and diagnostic structs in published crates take
-  `#[non_exhaustive]`; data-carrier result structs do not.
+- **`#[non_exhaustive]` + a named constructor** on every public
+  struct and enum in a published crate — result / data-carrier
+  structs included (`docs/development/conventions.md`).
 - **Bindings parity**: any new public function in
   `crates/calib-targets/src/detect.rs` should also be exposed in
   Python (`crates/calib-targets-py`), WASM
@@ -131,8 +131,8 @@ anything you already ran.
 
 **Verification:**
 - fmt / clippy / test --workspace / doc --no-deps: all green
-- Regression on testdata/<dataset>: 119/120 frames pass (was 119/120
-  pre-change), 0 wrong labels, max BER 0.083 unchanged
+- Regression on <dataset>: <n>/<total> frames pass (was <n>/<total>
+  pre-change), 0 wrong labels, <key metric> unchanged
 - ...
 
 **Trade-offs:**

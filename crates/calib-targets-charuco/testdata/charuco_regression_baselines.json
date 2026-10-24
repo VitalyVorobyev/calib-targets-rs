@@ -1,5 +1,5 @@
 {
-    "_note": "Ratcheting ChArUco benchmark baselines for the board-level soft-bit matcher (the sole matcher; see docs/algorithms/charuco_concept.md). The legacy_matcher blocks below are retained as a historical record of the retired vote matcher and are no longer reachable.",
+    "_note": "Ratcheting ChArUco benchmark baselines for the board-level soft-bit matcher (the sole matcher; see book/src/algo_charuco_alignment.md). The legacy_matcher blocks below are retained as a historical record of the retired vote matcher and are no longer reachable.",
     "_generated": "2026-04-20",
     "_source": "crates/calib-targets-charuco/examples/run_dataset.rs with CharucoParams::for_board defaults (bit_likelihood_slope κ=36)",
     "datasets": {

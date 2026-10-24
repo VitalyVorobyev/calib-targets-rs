@@ -19,7 +19,7 @@ What it is not:
 
 Recommended reading order:
 
-1. [Project Overview](overview.md) and [Conventions](conventions.md)
+1. [Crates](crates.md) and [Conventions](conventions.md)
 2. [Algorithms](algorithms.md) — the building blocks every detector shares
 3. [Pipelines](pipelines.md) — each target's end-to-end detection flow
 4. Crate chapters, starting with [calib-targets-core](core.md) and [calib-targets-chessboard](chessboard.md)

@@ -221,7 +221,7 @@ feature, through the `projective_grid::diagnostics` entry points:
 ## Learn more
 
 Algorithm deep-dive and conceptual background:
-[book chapter](https://vitalyvorobyev.github.io/calib-targets-rs/projective_grid.html).
+[book chapter](https://vitalyvorobyev.github.io/calib-targets-rs/book/projective_grid.html).
 Release posture and remaining stabilization work: [road to 1.0](ROADMAP-1.0.md).
 Version history and release notes: [changelog](CHANGELOG.md).
 

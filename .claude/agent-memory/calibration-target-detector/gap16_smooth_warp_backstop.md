@@ -8,7 +8,7 @@ metadata:
 # Gap 16 — global smooth-warp precision backstop: NOT SAFE (measured 2026-06-22)
 
 Investigated implementing the Gap-16 backstop in
-`crates/projective-grid/src/shared/validate/recovery.rs::drop_set`: fit a global
+`crates/projective-grid/src/shared/validate/wrong_label_filters.rs::drop_set`: fit a global
 biquadratic (6-term `1,u,v,u²,uv,v²`) warp `(i,j)→pixel` over the labelled set
 (affine fallback when sparse), drop corners whose reprojection residual is a high
 robust outlier. **Conclusion: a global low-order smooth-warp residual cannot serve
@@ -47,6 +47,6 @@ predicate (which Gap 15 already is), not a global residual. The recall half of G
 (recovering the legitimate-but-unreconstructed bottom-left frontier corner on
 GeminiChess1) is a separate problem and not addressed by a global-residual gate.
 
-Reproduce: throwaway `crates/calib-targets-bench/examples/gap16_probe.rs` (deleted)
+Reproduce: a throwaway probe example (deleted)
 + temporary `GAP16_DISABLE_CRIT4` env hook in `topological_wrong_label_drops`
 (reverted). Both removed; tree left clean at HEAD.

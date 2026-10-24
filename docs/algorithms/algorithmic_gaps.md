@@ -46,10 +46,10 @@ mislabelling.
 The sole labelling pipeline is:
 
 - **`Topological`** — Shu/Brunton/Fiala 2009 grid finder
-  (`topological::detect_square_oriented2_all`) with an
+  (`topological/square_detector.rs::detect_square_oriented2_all`) with an
   axis-driven cell test that replaces the paper's image-color sampling
   so `projective-grid` stays standalone. Used for all four target
-  families. The `SeedAndGrow` variant was removed.
+  families.
 
 The topological facade runs the shared **component-merge** pass
 (`projective_grid::shared::merge::merge_components_local`) — local
@@ -133,7 +133,7 @@ remain **experimental**: nothing here should be read as a production-readiness
 claim for them until a representative real-image campaign exists.
 
 **Fix.** A real-image campaign per mode, blessed the way the chessboard
-baselines are. Until then, `book/src/overview.md#gaps-and-early-stage-areas`
+baselines are. Until then, `book/src/crates.md#maturity`
 should keep saying so.
 
 ### Gap 22 — The `expert` namespace is not yet a compatibility boundary
@@ -289,7 +289,7 @@ item; the hex recovery schedule (Gap 4) is a smaller incremental one.
 [12] J. Zaragoza, T. Chin, M. S. Brown, D. Suter. "As-Projective-As-
      Possible Image Stitching with Moving DLT." *IEEE TPAMI* 36(7),
      2014. Per-cell local homographies; what the
-     `GridHomographyMesh` is conceptually doing.
+     chessboard mesh rectification (`rectify_mesh_from_grid`) does.
 
 [13] R. Hartley, A. Zisserman. *Multiple View Geometry in Computer
      Vision*, 2nd ed. Cambridge, 2003. Chapter 4 covers normalised

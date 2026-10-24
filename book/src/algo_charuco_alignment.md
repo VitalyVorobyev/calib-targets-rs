@@ -82,9 +82,7 @@ rotation and differ in translation by that offset.
 Corner IDs are assigned through the corner alignment, and it is what
 `CharucoDetection::alignment` reports: `alignment.apply(corner_grid)` is
 the board corner, and `alignment.apply(marker.gc)` the top-left board
-corner of the marker's square. Before 0.15.5 the cell alignment was used
-for corners, so a board seen turned by more than 45° was labelled one
-square off.
+corner of the marker's square.
 
 ## Corner-ID assignment
 

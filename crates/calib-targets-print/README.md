@@ -169,9 +169,9 @@ The workspace facade [`calib-targets`] re-exports this crate as
 ## Related
 
 - [Book: printable targets — canonical guide][book-chapter]
-- [Book: getting started](https://vitalyvorobyev.github.io/calib-targets-rs/getting-started.html)
+- [Book: getting started](https://vitalyvorobyev.github.io/calib-targets-rs/book/getting-started.html)
 - CLI — `cargo install calib-targets` (Rust binary) or `pip install calib-targets`
   (Python console script) ships a `calib-targets gen {chessboard,charuco,puzzleboard,marker-board}`
   workflow backed by this crate
 
-[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/printable.html
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/printable.html

@@ -10,7 +10,7 @@ positives in this codebase.
 ## Required investigation pattern for any detector failure
 
 1. **Atomic-stage breakdown first.** Before proposing any fix, dump the
-   `DebugFrame` (`bench diagnose --dump-frame …`) and walk every stage: per
+   per-stage breakdown (`bench diagnose <image>`) and walk every stage: per
    stage, list inputs, outputs, and the specific decision that dropped each
    corner. Counts per stage (Strong / Clustered / NoCluster / Labeled / Raw),
    per-corner `max_d`, per-rejection-reason buckets in `extension` / `rescue`,

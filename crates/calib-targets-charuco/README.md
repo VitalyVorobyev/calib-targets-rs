@@ -212,7 +212,7 @@ The paired Python overlay renderer lives at
 
 - [Book: ChArUco detector][book-chapter]
 - [Book: alignment & refinement][book-alignment]
-- [Book: tuning the detector](https://vitalyvorobyev.github.io/calib-targets-rs/tuning.html)
+- [Book: tuning the detector](https://vitalyvorobyev.github.io/calib-targets-rs/book/tuning.html)
 
-[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/charuco.html
-[book-alignment]: https://vitalyvorobyev.github.io/calib-targets-rs/charuco_alignment.html
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/charuco.html
+[book-alignment]: https://vitalyvorobyev.github.io/calib-targets-rs/book/charuco_alignment.html

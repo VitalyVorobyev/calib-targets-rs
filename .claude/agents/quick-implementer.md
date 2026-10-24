@@ -41,8 +41,8 @@ and editing a single struct field with a known new value.
 
 ## Workspace conventions you must follow
 
-You are operating inside `/Users/vitalyvorobyev/vision/calib-targets-rs`.
-The repository's `.claude/CLAUDE.md` defines the binding rules. You do
+You are operating inside the calib-targets-rs checkout you were
+started in (possibly a git worktree). The repository's `.claude/CLAUDE.md` defines the binding rules. You do
 not need to re-read it in full — the parts that matter for routine
 work are summarised here:
 
@@ -120,9 +120,8 @@ one-line note about where the underlying JSONs landed:
 | GeminiChess1 | topological | disk_fit | 58 | 19.7 |
 | ... |
 
-**Raw JSONs:** bench_results/chessboard.topological.json,
-bench_results/chessboard.chessboard_v2.json,
-tools/out/topo-grid-performance/{ringfit,diskfit}.json
+**Raw JSONs:** bench_results/<run>.json,
+tools/out/<experiment>/{ringfit,diskfit}.json
 ```
 
 If anything failed:

@@ -34,7 +34,7 @@ per target, with a shared corner vocabulary.
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
 Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.15.0.md)
-([book chapter][migration]); the [0.13.0 guide](docs/migrations/0.13.0.md) is kept
+([book chapter][migration]); the [0.14.0 guide](docs/migrations/0.14.0.md) is kept
 for consumers upgrading across two releases.
 
 [book]: https://vitalyvorobyev.github.io/calib-targets-rs/book/
@@ -204,7 +204,7 @@ ct.write_target_bundle(doc, "my_board/charuco_a4")  # .json + .svg + .png
 Ready-made specs for all four target types: [`testdata/printable/`](testdata/printable).
 Canonical guide: [printable-target chapter][printable-chapter].
 
-[printable-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/printable.html
+[printable-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/printable.html
 
 ## Detection results
 
@@ -222,7 +222,7 @@ physical board, in millimetres) once the board is aligned. The book chapter
 [Understanding Results][output] documents exactly when each optional field
 is populated; the [API reference][api] lists every result type and field.
 
-[output]: https://vitalyvorobyev.github.io/calib-targets-rs/output.html
+[output]: https://vitalyvorobyev.github.io/calib-targets-rs/book/output.html
 
 ## Limitations
 
@@ -263,7 +263,7 @@ for usage.
 ## Development
 
 ```bash
-cargo fmt --all
+cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --all-features
 cargo doc --workspace --no-deps         # must produce zero warnings
@@ -271,7 +271,7 @@ mdbook build book
 ```
 
 Pre-release quality gates (binding parity, typing stubs, WASM build, etc.)
-are documented in [`.claude/CLAUDE.md`](.claude/CLAUDE.md).
+are documented in [`docs/development/release-gates.md`](docs/development/release-gates.md).
 
 ## Diligence statement
 

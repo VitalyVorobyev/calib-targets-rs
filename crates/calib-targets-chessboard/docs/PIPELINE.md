@@ -29,7 +29,7 @@ canonicalisation. The generic grid-finder internals
 are documented separately in
 [`docs/algorithms/topological-grid-detection.md`](../../../docs/algorithms/topological-grid-detection.md).
 
-**Fallible construction.** `Detector::new(params) -> Result<Self,
+**Fallible construction.** `ChessboardDetector::new(params) -> Result<Self,
 ChessboardParamsError>` validates params up front. No combination the
 public surface can express is rejected today (`ChessboardParamsError` is
 a reserved, uninhabited seam); the fallible signature is retained so a
@@ -39,7 +39,7 @@ future validation can be added without a breaking change.
 `ChessboardParams` fields (`min_labeled_corners`, `max_components`,
 `min_corner_strength`) are part of the public config
 contract. All per-stage knobs live behind the opt-in, **non-semver**
-`DetectorParams::advanced` (`ChessboardAdvancedTuning`); when unset, every knob
+`ChessboardParams::advanced` (`ChessboardAdvancedTuning`); when unset, every knob
 holds its default. The Knobs column below names `ChessboardAdvancedTuning` fields
 unless prefixed `params.` (a stable top-level field).
 
@@ -47,22 +47,23 @@ unless prefixed `params.` (a stable top-level field).
 
 ## Topological pipeline
 
-The orchestrator is `pipeline::detect_all_topological` (production) /
-`pipeline::trace_topological` (compact serializable trace over the same
-production path — no separate timed implementation). The six logical
-stages map onto the `pipeline/` module tree as follows.
+Entry: `ChessboardDetector::detect` / `detect_all` (`detector.rs`) →
+`pipeline::detect_all_topological`. `trace_topological` /
+`trace_topological_detection` (feature `diagnostics`) serialize the same
+production path — there is no separate traced implementation. The six
+logical stages map onto the `pipeline/` module tree as follows.
 
 ### Stage table
 
 | # | Name | Module | In | Out | Decision | Failure modes | Knobs |
 |---|---|---|---|---|---|---|---|
-| 1 | `prefilter` | `inputs.rs` | `&[ChessCorner]` from ChESS | per-corner usable flag; weak corners kept as positions with no-information axes | `strength ≥ min_corner_strength` **and** `max(σ₀, σ₁) ≤ topological.axis_align_tol_rad` (`pipeline::axis_admission_sigma` — derived from the Stage 3 tolerance, not a knob of its own) | very-low-contrast frames; saturated edges (sigma = π → no info); marker misdetections | `params.min_corner_strength` (the σ half follows `axis_align_tol_rad`) |
-| 2 | `cluster_axes` | `cluster/` | `Strong` corners' `axes` | `ClusterCenters {Θ₀ ≤ Θ₁}` in `[0, π)` + per-corner `Canonical`/`Swapped`/`NoCluster` label | generic `projective_grid::expert::orientation`: orientation histogram + plateau-aware peak picking + double-angle `(cos 2θ, sin 2θ)` 2-means; per-corner slot assignment admitted iff `max(d_a0, d_a1) ≤ cluster_tol_deg + cluster_sigma_k·max(σ)` | histogram bias from marker-internal corners pulling centres off true axes; uncertain axes becoming unclustered | `num_bins`, `max_iters_2means`, `cluster_tol_deg`, `cluster_sigma_k`, `peak_min_separation_deg`, `min_peak_weight_fraction` |
+| 1 | `prefilter` | `inputs.rs::topological_inputs` | `&[ChessCorner]` from ChESS | per-corner usable flag; weak corners kept as positions with no-information axes | `strength ≥ min_corner_strength` **and** `max(σ₀, σ₁) ≤ topological.axis_align_tol_rad` (`pipeline::axis_admission_sigma` — derived from the Stage 3 tolerance, not a knob of its own) | very-low-contrast frames; saturated edges (sigma = π → no info); marker misdetections | `params.min_corner_strength` (the σ half follows `axis_align_tol_rad`) |
+| 2 | `cluster_axes` | `cluster.rs` → `pg cluster_axes` | `Strong` corners' `axes` | `ClusterCenters {Θ₀ ≤ Θ₁}` in `[0, π)` + per-corner `Canonical`/`Swapped`/`NoCluster` label | generic `projective_grid::expert::orientation`: orientation histogram + plateau-aware peak picking + double-angle `(cos 2θ, sin 2θ)` 2-means; per-corner slot assignment admitted iff `max(d_a0, d_a1) ≤ cluster_tol_deg + cluster_sigma_k·max(σ)` | histogram bias from marker-internal corners pulling centres off true axes; uncertain axes becoming unclustered | `num_bins`, `max_iters_2means`, `cluster_tol_deg`, `cluster_sigma_k`, `peak_min_separation_deg`, `min_peak_weight_fraction` |
 | 3 | `topological_grid` | `projective-grid::expert::square` via `pipeline/mod.rs` | oriented features (positions + dual axes) + cluster centres as an axis hint | merged labelled `(i, j) → source_index` components in the topology axis-slot frame | `assemble_oriented2_components`: Delaunay classify → quad assembly → axis-driven cell-test walk → local-geometry component merge; intentionally stops before public canonicalization, generic validation, and projective fit | axis-driven cell test admitting a spurious edge across a marker; foreshortening near the band edges | `topological` (`TopologicalParams`) |
-| 4a | `axis_aware_recovery` | `recover.rs` + `boosters.rs` | facade-merged components + clustered corners | per-component grid extended by booster fills | Estimate directional cell scale, then interior gap fill + line extrapolation through `fill_grid_holes`; additions re-run axis, parity, and edge invariants. Optional weak-cluster rescue re-admits only near-threshold `NoCluster` corners. | borderline axes; extrapolation past the board | `attach_search_rel`, `attach_axis_tol_deg`, `attach_ambiguity_factor`, `step_tol`, `edge_axis_tol_deg`, `enable_weak_cluster_rescue`, `weak_cluster_tol_deg`, `max_booster_iters` |
+| 4a | `axis_aware_recovery` | `recover.rs::recover_topological_components` + `boosters.rs` | facade-merged components + clustered corners | per-component grid extended by booster fills | Estimate directional cell scale, then interior gap fill + line extrapolation through `fill_grid_holes`; additions re-run axis, parity, and edge invariants. Optional weak-cluster rescue re-admits only near-threshold `NoCluster` corners. | borderline axes; extrapolation past the board | `attach_search_rel`, `attach_axis_tol_deg`, `attach_ambiguity_factor`, `step_tol`, `edge_axis_tol_deg`, `enable_weak_cluster_rescue`, `weak_cluster_tol_deg`, `max_booster_iters` |
 | 4b | `geometry_only_recovery` | `recover.rs` + `boosters.rs` | output of 4a + admitted `NoCluster` corners | conservative additions, then post-recovery component merge | One fill pass over the existing KD/prediction engine. A unique candidate must be supported entirely by the pre-pass snapshot: two perpendicular cardinal neighbours plus their diagonal, parallelogram agreement, and every available cardinal edge-length check. `Raw`, weak, and sigma-invalid corners are ineligible. | severe local projection; ambiguous nearby candidate | `enable_geometry_only_recovery`, `geometry_recovery_tol_rel`, `attach_ambiguity_factor`, `step_tol`, `component_merge` |
-| 5 | `final_geometry_check` | `geometry_check.rs` | final labelled set | drop list + `detection_refused` flag | **mandatory, can only DROP** (never add or relabel): (a) shared `validate` (line collinearity + local-H residual) with **looser** `geometry_check_*` tolerances — catches gross mislabels (full-cell / diagonal ≈ 1.4-cell residual) without flagging accepted perspective drift; (b) the lattice-orientation parity invariant (`sign(e_u × e_v)` is constant under a homography, so a reflected sub-block is provably mislabelled) — always applied; (c) the direct topological wrong-label check (interior skipped-corner edges + duplicate-pixel labels); (d) largest-cardinally-connected-component filter, dropping isolated leaks outside the main grid. Refuses the detection if survivors `< min_labeled_corners` | strict per-edge length tests over-flag distorted boards (kept loose deliberately); single-component constraint is the chessboard contract | `geometry_check_line_tol_rel`, `geometry_check_local_h_tol_rel`, `line_min_members`, `validate_step_aware`, `enable_final_edge_shape_check` |
-| 6 | `output` | `output.rs` | surviving labelled set | `ChessboardDetection { cell_size, corners: ChessboardCorner[] }` | call `projective_grid::expert::lattice::normalize_square_entries` (rebase min → `(0, 0)`; canonicalise so `+i ≈ +x`, `+j ≈ +y`; stable `(j, i)` sort), then copy the normalized `Coord{u,v}` onto each output corner | — | `params.min_labeled_corners` |
+| 5 | `final_geometry_check` | `geometry_check.rs::run_geometry_check` | final labelled set | drop list + `detection_refused` flag | **mandatory, can only DROP** (never add or relabel): (a) shared `validate` (line collinearity + local-H residual) with **looser** `geometry_check_*` tolerances — catches gross mislabels (full-cell / diagonal ≈ 1.4-cell residual) without flagging accepted perspective drift; (b) the lattice-orientation parity invariant (`sign(e_u × e_v)` is constant under a homography, so a reflected sub-block is provably mislabelled) — always applied; (c) the direct topological wrong-label check (interior skipped-corner edges + duplicate-pixel labels); (d) largest-cardinally-connected-component filter, dropping isolated leaks outside the main grid. Refuses the detection if survivors `< min_labeled_corners` | strict per-edge length tests over-flag distorted boards (kept loose deliberately); single-component constraint is the chessboard contract | `geometry_check_line_tol_rel`, `geometry_check_local_h_tol_rel`, `line_min_members`, `validate_step_aware`, `enable_final_edge_shape_check` |
+| 6 | `output` | `output.rs::build_detection` | surviving labelled set | `ChessboardDetection { cell_size, corners: ChessboardCorner[] }` | call `projective_grid::expert::lattice::normalize_square_entries` (rebase min → `(0, 0)`; canonicalise so `+i ≈ +x`, `+j ≈ +y`; stable `(j, i)` sort), then copy the normalized `Coord{u,v}` onto each output corner | — | `params.min_labeled_corners` |
 
 ### Key invariants
 
@@ -90,7 +91,7 @@ mathematical guarantee for arbitrary imagery:
 
 ### Multi-component dispatch
 
-`Detector::detect_all` is the multi-board entry point: it can return
+`ChessboardDetector::detect_all` is the multi-component entry point: it can return
 several `ChessboardDetection`s (up to `params.max_components`) when one
 image contains physically distinct grids. Within a single image, the
 topological facade already produces and merges connected components, so a
@@ -119,7 +120,7 @@ crate keeps the ChESS glue and slot-parity semantics.
     largest-component filter), and the `fill_grid_holes` engine plus the
     `SquareAttachPolicy` seam where caller-specific invariants enter.
 - **`calib-targets-chessboard`** (chessboard-specific): the strength /
-  sigma prefilter (`inputs.rs`), axis clustering glue (`cluster/`), the recall
+  sigma prefilter (`inputs.rs`), axis clustering glue (`cluster.rs`), the recall
   boosters with parity + directional edge scale (`boosters.rs`), the
   per-component recovery + post-booster merge (`recover.rs`), the
   mandatory geometry-check **orchestration** (the drop filters
@@ -127,8 +128,10 @@ crate keeps the ChESS glue and slot-parity semantics.
   the output adapter (`output.rs`) that maps the normalized lattice
   canonical `Coord{u,v}` into the workspace result — the rebase +
   canonicalise + sort *algorithm* itself now lives in
-  `projective_grid::LabelledGrid::normalize` — and the multi-component
-  dispatch.
+  `projective-grid` — and the multi-component dispatch.
+- Off the detection path but public: `rectified_view.rs`
+  (`rectify_from_chessboard_result`) and `mesh_warp.rs`
+  (`rectify_mesh_from_grid`) build rectified views of a detection.
 
 ## Cross-references
 
@@ -139,10 +142,8 @@ crate keeps the ChESS glue and slot-parity semantics.
   topological core, independent of chessboard semantics.
 - `crate`-level rustdoc (`src/lib.rs`) — the canonical six-stage summary
   table and a runnable quickstart.
-- CLAUDE.md "Evidence-driven debugging" — every detector-failure
-  conclusion must be tied to measured numbers / per-corner facts, never a
-  plausible narrative; `bench check`'s `pos=` does **not** validate new
-  `(i, j)` labels, so overlays + an independent geometry check are
-  mandatory.
-- CLAUDE.md "Corner orientation contract (axes-only)" — the axis
-  convention the cluster code and per-edge gates rely on.
+- [`docs/development/debugging.md`](../../../docs/development/debugging.md)
+  — the mandatory evidence-driven protocol for detector failures.
+- [`docs/development/detection-pipeline.md`](../../../docs/development/detection-pipeline.md)
+  — the axes-only corner-orientation contract the cluster code and
+  per-edge gates rely on.

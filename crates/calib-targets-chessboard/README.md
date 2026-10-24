@@ -73,14 +73,13 @@ bounding box and sorted by `(j, i)`) plus a stable
 | `input_index: usize` | Index back into the caller's input `&[ChessCorner]` slice — used by ChArUco / marker-board alignment. |
 | `score: f32` | Corner score. |
 
-`detect_with_diagnostics` / `detect_all_with_diagnostics` return
-[`DebugFrame`] — full per-stage telemetry (corner outcomes, iteration
-traces, booster results, the seed grid directions and cell size) emitted
-as schema-versioned JSON. These entry points and the whole `diagnostics`
-module are gated behind the **`diagnostics` cargo feature (off by
-default)** — the hot `detect()` path builds no trace. The grid-axis
-angles, which are not part of the result contract, are reachable there;
-the cell size is also carried on the result (`ChessboardDetection::cell_size`).
+For diagnostics, the opt-in **`diagnostics` cargo feature (off by default)**
+exposes `trace_topological(corners, params)`, which returns a compact
+serializable `TopologicalTrace` of the final labelled components (and
+`trace_topological_detection`, which continues the same result through the
+chessboard recovery and final geometry gate). The hot `detect()` path builds
+no trace. The cell size is carried on the result
+(`ChessboardDetection::cell_size`).
 
 ## Configuration
 
@@ -164,17 +163,14 @@ See the [parameter reference][tuning-chapter] for field-by-field guidance.
 | Feature | Default | Effect |
 |---|---|---|
 | `tracing` | off | Adds `#[tracing::instrument]` to detector entry points. |
-| `diagnostics` | off | Exposes the `diagnostics` module (`DebugFrame`, per-stage traces, `StageCounts`, `DEBUG_FRAME_SCHEMA`) and the `detect*_with_diagnostics` entry points. Without it the hot path builds no trace. |
-| `dataset` | off | Pulls in `serde_json` for the `run_dataset` and `debug_single` examples; implies `diagnostics`. |
+| `diagnostics` | off | Exposes `trace_topological` / `trace_topological_detection`, the topological grid builder's serializable trace. Without it the hot path builds no trace. |
+| `dataset` | off | Pulls in `serde_json` for the dataset benches; implies `diagnostics`. |
 
 ## Examples and benches
 
 ```bash
-# Single image → DebugFrame JSON the Python overlay consumes.
-cargo run --release -p calib-targets-chessboard --features dataset \
-    --example debug_single -- \
-    --image path/to/image.png \
-    --out-default /tmp/frame.json
+# Detect on one image and print the labelled corners.
+cargo run --release -p calib-targets-chessboard --example detect_chessboard
 
 # Per-frame timing across representative sub-frames.
 cargo bench -p calib-targets-chessboard --bench chessboard_timing
@@ -194,6 +190,6 @@ cargo test -p calib-targets-chessboard                        # unit + smoke
 - [`projective-grid`](https://docs.rs/projective-grid) — the graph /
   validation pieces underneath.
 
-[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/chessboard.html
-[tuning-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/tuning.html
-[output-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/output.html
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/chessboard.html
+[tuning-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/tuning.html
+[output-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/output.html

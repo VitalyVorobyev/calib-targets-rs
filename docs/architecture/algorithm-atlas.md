@@ -2,10 +2,11 @@
 
 > The **what** of the detection stack: every atomic algorithm in the workspace,
 > named once, with its home, its signature, and which pipelines use it.
-> For the **how-they-compose** view see [`pipeline-maps.md`](pipeline-maps.md).
+> For the **how-they-compose** view see each crate's `docs/PIPELINE.md`
+> (indexed in [`pipeline-maps.md`](pipeline-maps.md)).
 
 This is a hand-maintained snapshot. When you add, remove, or move an atomic
-algorithm, update this file and [`pipeline-maps.md`](pipeline-maps.md) in the same
+algorithm, update this file and the owning crate's `docs/PIPELINE.md` in the same
 PR (see [`README.md`](README.md#keeping-this-current)).
 
 ## How to read a node
@@ -65,7 +66,7 @@ Turning raw ChESS corners into the generic features the grid engine consumes.
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
 | Global axis clustering | `pg cluster/mod.rs::cluster_axes` | weighted edge dirs → 2 centres + assignments | Undirected circular 2-means → the two dominant board axes. | ✅ |
-| Undirected circular mean | `pg cluster/circular.rs::circular_mean` | angles → mean (mod π) | Accumulate `(cos2θ, sin2θ)`; the axes-only contract. | ✅ |
+| Undirected circular mean | `pg cluster/circular.rs::refine_2means_double_angle` | angle votes + seeds → 2 centres (mod π) | Accumulate `(cos2θ, sin2θ)`; the axes-only contract. | ✅ |
 | Domain cluster adapter | `chess pipeline/cluster.rs` | corners → clustered corners + centres | Thin map between pg cluster output and chess stage/label enums. | ✅ (wrapper) |
 
 ## 4. Grid assembly — the topological builder
@@ -82,7 +83,7 @@ and [`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/P
 | Triangle-pair → quad | `pg topological/quads.rs` | triangles + classified edges → quads | Merge diagonal-sharing pairs into grid cells. | ✅ |
 | Quad filter | `pg topological/filter.rs::apply_topological_quad_filter` | quads + degrees → filtered quads | Reject degree>4, extreme parallelograms, out-of-band cell sizes. | ✅ |
 | Integer component labelling (walk) | `pg topological/walk.rs::label_components` | quads + seed → `(i,j)→index` per component | Flood-fill integer labels, rebase min→(0,0). | ✅ |
-| Square orchestrator | `pg topological/mod.rs::detect_square_oriented2_all` | oriented features + params → labelled components | Drives delaunay→classify→quads→filter→walk. | ✅ |
+| Square orchestrator | `pg topological/square_detector.rs::detect_square_oriented2_all` | oriented features + params → labelled components | Drives delaunay→classify→quads→filter→walk. | ✅ |
 | Hex cell classification | `pg topological/hex.rs::classify_hex_cells` | mesh + hex axis caches → valid cells | Three-direction alignment + equilateral test. | 📚 |
 | Hex axial labelling | `pg topological/hex.rs::label_components` | hex cells + seed → axial labels | Axial flood-fill with parallelogram completion (no quad merge). | 📚 |
 | Hex orchestrator | `pg topological/hex_detect.rs::detect_hex_oriented3_topological_all` | features → labelled hex components | Hex analogue of the square orchestrator + D6 merge. | 📚 |
@@ -111,9 +112,9 @@ detector feeds native ChESS dual axes (`Oriented2`). Deep dive:
 ## 7. Growth & recovery — the geometry-only engine
 
 `projective-grid`'s grow/fill/extend/recover machinery. Chessboard composes the
-`grow` + `fill` primitives in its own boosters; it runs `RecoverySchedule::Off`
-(`chess pipeline/mod.rs:116`) and never touches `extension`, `grow_extend`, or the
-`recovery` schedule — those drive the library-only orientation-free path.
+`grow` + `fill` primitives in its own boosters; its builder seam
+(`pg expert.rs::assemble_oriented2_components`) returns before any recovery, so it
+never touches `extension`, `grow_extend`, or the `recovery` schedule — those drive the library-only orientation-free path.
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
@@ -164,7 +165,7 @@ Grid is delegated to `chess`; markers are decoded by `aruco`. This crate owns th
 soft-LL matcher is the sole matcher** (`charuco detector/board_match/`); markers
 are re-emitted under the chosen hypothesis, so a returned marker can never disagree
 with its alignment. Deep dive:
-[`algorithms/charuco_concept.md`](../algorithms/charuco_concept.md).
+[ChArUco alignment & corner IDs](../../book/src/algo_charuco_alignment.md).
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|

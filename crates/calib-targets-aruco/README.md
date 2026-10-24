@@ -111,5 +111,5 @@ Hamming distance a candidate code may differ from a dictionary entry. Use
 
 - [`calib-targets-charuco`][charuco] — full ChArUco detector built on
   `calib-targets-chessboard` and this crate.
-- [Book: ArUco decoding details](https://vitalyvorobyev.github.io/calib-targets-rs/aruco_decoding.html)
-- [Book: ChArUco alignment + refinement](https://vitalyvorobyev.github.io/calib-targets-rs/charuco_alignment.html)
+- [Book: ArUco decoding details](https://vitalyvorobyev.github.io/calib-targets-rs/book/aruco_decoding.html)
+- [Book: ChArUco alignment + refinement](https://vitalyvorobyev.github.io/calib-targets-rs/book/charuco_alignment.html)

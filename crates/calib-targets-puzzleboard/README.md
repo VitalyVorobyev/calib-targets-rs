@@ -208,7 +208,7 @@ Ready-to-use specs live under [`testdata/printable/*.json`](../../testdata/print
 ## Related
 
 - [Book: PuzzleBoard detector][book-chapter]
-- [Book: printable targets](https://vitalyvorobyev.github.io/calib-targets-rs/printable.html)
+- [Book: printable targets](https://vitalyvorobyev.github.io/calib-targets-rs/book/printable.html)
 - [Paper: Stelldinger 2024, arXiv:2409.20127][arXiv:2409.20127]
 
-[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/puzzleboard.html
+[book-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/puzzleboard.html

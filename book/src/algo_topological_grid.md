@@ -18,10 +18,6 @@ paper's image-color cell test replaced by an **axis-alignment test** so
 the core stays image-free and tolerant of perspective and radial
 distortion.
 
-> **Historical note.** An earlier `SeedAndGrow` builder once coexisted with
-> this one. It and the algorithm selector have been removed; there is no
-> algorithm choice in the current public configuration.
-
 ## Vocabulary
 
 - **Grid edge** — a link between two corners that runs along the lattice

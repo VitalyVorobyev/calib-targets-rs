@@ -5,22 +5,17 @@
 Rust workspace at `/Users/vitalyvorobyev/vision/calib-targets-rs`.
 - `crates/calib-targets-charuco/` — ChArUco detection pipeline (primary crate)
 - `crates/calib-targets-aruco/` — ArUco marker decoding
-- `crates/calib-targets-chessboard/` — Chessboard detection (GridGraph BFS)
+- `crates/calib-targets-chessboard/` — Chessboard detection (topological grid builder from `projective-grid`)
 - `crates/calib-targets-core/` — Core types, homography, etc.
-- `chess-corners-core` (external) — ChESS corner detector primitives
+- `chess-corners` (external) — ChESS corner detector
 
 ## ChArUco Detection Pipeline Stages
-
-```
-ChESS → GridGraph → ChessboardDetector → MarkerCells → scan_decode_markers_in_cells
-  → select_alignment → map_charuco_corners → validate_and_fix_corners → CharucoDetectionResult
-```
 
 See `crates/calib-targets-charuco/src/detector/pipeline.rs`.
 
 ## Key Coordinate Systems
 
-- **Grid frame (G)**: ChESS corner BFS-assigned integer coords, 1-based inner corners
+- **Grid frame (G)**: integer `(i, j)` labels from the topological builder's per-component walk, rebased so the labelled bounding-box minimum is `(0, 0)` (non-negative; inner corners)
 - **Board frame (B)**: Board cell/corner indices, 0-based cells, 1-based inner corners
 - **`alignment.map(i,j)`**: Maps grid coords → board coords (applies D4 rotation + translation)
 - **`marker.gc`**: Grid-frame cell position, OFFSET from cell TL (`gc0`) by `marker.rotation`:
@@ -31,7 +26,7 @@ See `crates/calib-targets-charuco/src/detector/pipeline.rs`.
 
 ## Corner Validation Module
 
-`crates/calib-targets-charuco/src/detector/corner_validation.rs`
+`crates/calib-targets-charuco/src/detector/corner_refit.rs` (`validate_and_fix_corners`)
 
 **Algorithm**: Estimates a board-to-image homography H from ALL inlier marker corners,
 then for each ChArUco corner: if `|detected - H.apply(target_pos)| > threshold_rel * px_per_square`,
@@ -52,11 +47,6 @@ match marker.rotation { 1 => (gc.gx-1, gc.gy), 2 => (gc.gx-1, gc.gy-1), 3 => (gc
 
 ## Key API Facts
 
-- `chess-corners-core` (NOT `chess-corners`) must be a production dependency for `[dependencies]`
-- `ChessParams` has no serde → use `#[serde(skip)]` on fields containing it
-- `chess_response_u8_patch` returns ResponseMap in PATCH-LOCAL coords; shift by (x0,y0) to global
-- `ImageView::with_origin([x0,y0])` allows refiner to read global pixels from local response coords
-- `detect_corners_from_response_with_refiner` returns `Corner.xy` in response-map-local coords
 - `estimate_homography_rect_to_img` available from `calib_targets_core` (full DLT, Hartley normalized)
 - `board.charuco_corner_id_from_board_corner(i,j)` returns None for board-border corners (i≤0 etc)
 
@@ -70,31 +60,11 @@ match marker.rotation { 1 => (gc.gx-1, gc.gy), 2 => (gc.gx-1, gc.gy-1), 3 => (gc
 - **Double-angle circular mean for undirected axes**: angles on [0, π) representing
   undirected lines can cancel when averaged naively (sin θ and sin(θ+π) both positive, cos θ
   and cos(θ+π) opposite → mean collapses to π/2). Always accumulate in DOUBLE-ANGLE space
-  (cos 2θ, sin 2θ) and halve the atan2 result. See `orientation_clustering::refined_angle`,
-  `build_peak_support`, and the center-update step in `cluster_orientations`.
-- **ChessboardClusterValidator direction canonicalization**: when cluster centers ARE grid
-  axes (v2 contract), direction classification must still be independent of which cluster
-  came out as slot 0 vs slot 1. Pick axis_u = whichever has larger |x|, then flip signs so
-  axis_u has non-negative x AND {axis_u, axis_v} is right-handed in y-down coords.
-
-## Phase 0 Axes-Only Migration (Corner.orientation removed)
-
-- `Corner.orientation: f32` is gone. All orientation-driven code reads `axes: [AxisEstimate; 2]`.
-- `axes[0]` and `axes[1]` are the two GRID AXES (not diagonals) at each corner, orthogonal by
-  construction in chess-corners 0.6. Adapter functions no longer shift by π/4.
-- `ChessboardClusterValidator::grid_diagonals` is kept as a historical field name but carries
-  GRID AXES (cluster centers from axes-only clustering), not diagonals. Validator computes
-  direction from axes directly (no more v_plus/v_minus sum-of-diagonals trick).
-- Test helpers `make_corner(x, y, axis0)` set `axes[0] = axis0` and `axes[1] = axis0 + π/2`.
-  Use `make_corner_swapped` for the chessboard parity flip.
-- `OrientationClusteringParams::use_dual_axis` was removed; dual-axis is the ONLY behavior.
+  (cos 2θ, sin 2θ) and halve the atan2 result.
 
 ## Test Structure
 
-- `crates/calib-targets-charuco/tests/regression.rs`: 3 tests
-  - `detects_charuco_on_large_png` (22×22, DICT_4X4_1000, ≥200 corners, IDs 369/309/109 not outliers)
-  - `detects_charuco_on_small_png` (22×22 partial, DICT_4X4_250, ≥60 corners)
-  - `detects_plain_chessboard_on_mid_png` (7×11 inner corners, 100% detection)
+- `crates/calib-targets-charuco/tests/regression.rs` — public-testdata ChArUco and plain-chessboard regressions
 
 ## Investigations
 

@@ -41,13 +41,13 @@
 //!
 //! | Module | Responsibility |
 //! |---|---|
-//! | [`cluster`] | Stage 2/3 — axis clustering into the two grid-direction centres. |
+//! | [`cluster`] | Stage 2 — axis clustering into the two grid-direction centres. |
 //! | [`inputs`] | Input adaptation: ChESS corners → `projective-grid` features. |
-//! | [`recover`] | Stage 4 — per-component recall boosters + component merge. |
-//! | [`boosters`] | Stage 11 — interior gap fill + line extrapolation. |
+//! | [`recover`] | Stage 4 — per-component recovery + component merge. |
+//! | [`boosters`] | Stage 4 boosters — interior gap fill + line extrapolation. |
 //! | [`types`] | [`ChessboardDetection`] / [`ChessboardCorner`] result types. |
-//! | [`geometry_check`] | Stage 12 — the mandatory final precision gate. |
-//! | [`output`] | Stage 13 — labelled grid → [`ChessboardDetection`]. |
+//! | [`geometry_check`] | Stage 5 — the mandatory final precision gate. |
+//! | [`output`] | Stage 6 — labelled grid → [`ChessboardDetection`]. |
 
 mod boosters;
 mod cluster;

@@ -1,473 +1,202 @@
 # C API Guide
 
-`calib-targets-rs` ships a repo-local native FFI crate, `calib-targets-ffi`, for
-C and C++ consumers that want the same detector stack exposed by the Rust
-facade crate.
+`calib-targets-ffi` exposes the detector stack of the `calib-targets` facade
+crate through a stable C ABI, with a thin header-only C++17 RAII wrapper on top.
+For the shortest working CMake integration see the
+[CMake consumer quickstart](./cmake-consumer-quickstart.md); for the design
+rationale see the [decision record](./decision-record.md).
 
-This guide covers the current release-facing native surface:
+| What | Where |
+|---|---|
+| Generated C header | `crates/calib-targets-ffi/include/calib_targets_ffi.h` |
+| C++ wrapper (header-only) | `crates/calib-targets-ffi/include/calib_targets_ffi.hpp` |
+| C example | `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c` |
+| C++ example | `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp` |
+| CMake consumer example | `crates/calib-targets-ffi/examples/cmake_wrapper_consumer/` |
+| Package staging / archive tools | `src/bin/stage-cmake-package.rs`, `src/bin/package-release-archive.rs` |
 
-- generated public header: `crates/calib-targets-ffi/include/calib_targets_ffi.h`
-- header-only C++ helper wrapper: `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
-- repo-local staging helper: `crates/calib-targets-ffi/src/bin/stage-cmake-package.rs`
-- repo-local release-archive helper: `crates/calib-targets-ffi/src/bin/package-release-archive.rs`
-- repo-owned C example: `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
-- repo-owned C++ example: `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
-- repo-owned CMake consumer example:
-  `crates/calib-targets-ffi/examples/cmake_wrapper_consumer/`
+## Versioning and support boundaries
 
-For the architectural rationale behind the ABI shape, see the
-[decision record](./decision-record.md). This document focuses on consumption,
-not design history.
+- **The crate version is the ABI version.** It is pinned in
+  `crates/calib-targets-ffi/Cargo.toml` independently of the Rust workspace
+  release and gets a major bump on every struct-layout or exported-symbol
+  break (the manifest comment lists each break). `ct_version_string()` returns
+  it, and the release-archive names and the CMake package version carry it.
+  The CMake version file accepts any package version `>=` the requested one,
+  so request an exact version if you need to pin an ABI major.
+- `calib-targets-ffi` is `publish = false`: there is no crates.io or
+  package-manager distribution. Tagged `v*` releases attach prebuilt native
+  archives for Linux, macOS, and Windows.
+- Image input is 8-bit grayscale only (`ct_gray_image_u8_t`).
+- Marker dictionaries are the built-in `CT_DICTIONARY_*` ids only; custom
+  dictionaries are not exposed.
+- The C++ wrapper needs C++17; the CMake package needs CMake 3.16+.
 
-If you want a direct “what files do I need and what does the smallest CMake
-consumer look like?” walkthrough, start with
-[`docs/ffi/cmake-consumer-quickstart.md`](./cmake-consumer-quickstart.md).
+## Exported functions
 
-## Current Support Boundaries
+| Family | Functions |
+|---|---|
+| Library | `ct_version_string`, `ct_last_error_message` |
+| Chessboard | `ct_chessboard_params_init_default`, `ct_chessboard_detector_{create,destroy,detect,detect_all}` |
+| ChArUco | `ct_charuco_detector_{create,destroy,detect,diagnose_json}` |
+| Marker board | `ct_marker_board_detector_{create,destroy,detect,diagnose_json}` |
+| PuzzleBoard | `ct_puzzleboard_detector_{create,destroy,detect,diagnose_json}` |
 
-- `calib-targets-ffi` is repo-local and remains `publish = false`.
-- Supported tagged GitHub releases attach native archives for Linux, macOS, and
-  Windows. Each archive contains the staged `include/`, `lib/`, and
-  `lib/cmake/` prefix, so downstream consumers can integrate without building
-  Rust from source.
-- The crate is still not distributed on crates.io, and there is still no
-  package-manager metadata, installer flow, or signed native package.
-- Image input is limited to 8-bit grayscale buffers via `ct_gray_image_u8_t`.
-- The v1 ABI supports built-in dictionary ids only.
-- The C++ helper wrapper assumes a C++17-capable compiler.
-- The staged CMake consumer flow assumes CMake 3.16 or newer and is currently
-  validated on Linux, macOS, and Windows release runners.
+Per-family outputs:
 
-## What Ships
+| Detector | Result header | Caller-owned arrays |
+|---|---|---|
+| Chessboard `detect` | `ct_chessboard_result_t` (`corners_len`, optional `cell_size`) | `ct_chessboard_corner_t` |
+| Chessboard `detect_all` | one `ct_chessboard_result_t` per component | all components' `ct_chessboard_corner_t`, concatenated |
+| ChArUco | `ct_charuco_result_t` (detection, `markers_len`, grid alignment) | `ct_labeled_corner_t`, `ct_marker_detection_t` |
+| Marker board | `ct_marker_board_result_t` (detection, optional alignment) | `ct_labeled_corner_t` |
+| PuzzleBoard | `ct_puzzleboard_result_t` (alignment, edge/bit statistics, master origin) | `ct_labeled_corner_t` (master-board `(I, J)` labels) |
 
-The native ABI currently exposes:
+PuzzleBoard decode knobs live in `ct_puzzleboard_decode_config_t`:
+`search_mode` (`CT_PUZZLEBOARD_SEARCH_MODE_{FULL,FIXED_BOARD}`), `scoring_mode`
+(`CT_PUZZLEBOARD_SCORING_MODE_{HARD_WEIGHTED,SOFT_LOG_LIKELIHOOD}`), and
+`symmetry_mode` (`CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS`, the default, or
+`..._ROTATIONS_AND_REFLECTIONS` when the optical path mirrors the image).
 
-- chessboard detection via `ct_chessboard_detector_*`
-- ChArUco detection via `ct_charuco_detector_*`
-- PuzzleBoard detection via `ct_puzzleboard_detector_*`
-- checkerboard marker-board detection via `ct_marker_board_detector_*`
-- a staged CMake config package exporting `calib_targets_ffi::c` and
-  `calib_targets_ffi::cpp`
-- shared status/error retrieval through `ct_status_t` and
-  `ct_last_error_message`
-- caller-owned result arrays with query/fill patterns instead of heap ownership
-  crossing the ABI boundary
+## API model
 
-PuzzleBoard-specific create-time knobs and result diagnostics are also
-part of the ABI:
+**Status and errors.** Every fallible function returns `ct_status_t`:
+`CT_STATUS_OK`; `CT_STATUS_NOT_FOUND` (the detector ran but found no target);
+`CT_STATUS_INVALID_ARGUMENT`, `CT_STATUS_BUFFER_TOO_SMALL`,
+`CT_STATUS_CONFIG_ERROR` (caller-visible failures); `CT_STATUS_INTERNAL_ERROR`.
+The message for the last failure on the calling thread comes from
+`ct_last_error_message(buf, capacity, &len)`, using the same query/fill pattern
+as the result arrays (query with `NULL, 0`, allocate `len + 1`, call again).
 
-- `ct_puzzleboard_decode_config_t.search_mode` selects `FULL` vs
-  `FIXED_BOARD` matching.
-- `ct_puzzleboard_decode_config_t.scoring_mode` selects legacy
-  hard-weighted ranking vs soft log-likelihood ranking.
-- `ct_puzzleboard_decode_config_t.symmetry_mode` selects which board
-  orientations the decoder searches: `ROTATIONS` (default, the four 90°
-  rotations) or `ROTATIONS_AND_REFLECTIONS` (all eight dihedral transforms,
-  needed only when the optical path mirrors the image).
-- `ct_puzzleboard_result_t` carries the chosen scoring mode plus optional
-  `score_best`, `score_runner_up`, `score_margin`, and runner-up
-  alignment data when the decoder computed them.
+**Handles.** Each family has an opaque handle (`ct_chessboard_detector_t`,
+`ct_charuco_detector_t`, `ct_marker_board_detector_t`,
+`ct_puzzleboard_detector_t`). `*_create` allocates it, `*_destroy` frees it,
+`*_destroy(NULL)` is a no-op. Never free a handle yourself or destroy it twice.
 
-## Download Native Release Archives
+**Args and buffers.** Each `*_detect` takes a `*_detect_args_t` (detector handle
++ image) and a `*_detect_buffers_t` (optional result header, output arrays with
+capacities, and required `*_len` out-pointers). No memory crosses the ABI:
 
-Supported tagged releases attach one native archive per platform. Archive names
-follow this pattern:
+1. Call with each array pointer `NULL` and capacity `0`; the `*_len`
+   out-pointers receive the required lengths.
+2. Allocate the arrays yourself and call again to fill them. A short buffer
+   returns `CT_STATUS_BUFFER_TOO_SMALL`.
 
-- Linux and macOS: `calib-targets-ffi-<version>-<platform>.tar.gz`
-- Windows: `calib-targets-ffi-<version>-<platform>.zip`
+`ct_chessboard_detector_detect_all` uses `ct_chessboard_detect_all_args_t` /
+`ct_chessboard_detect_all_buffers_t`: `results_buf` receives one header per
+recovered component (up to `max_components`) and `corners_buf` all corners
+concatenated — slice it with each header's `corners_len`. It returns
+`CT_STATUS_OK` with zero components when nothing is found.
 
-Each archive unpacks into a single top-level directory named the same way,
-containing the staged package prefix directly:
+**Configs.** `ct_chessboard_params_init_default` fills `ct_chessboard_params_t`
+with the Rust defaults; the ChESS front-end (`ct_chess_config_t`) has no init
+helper and must be filled explicitly (see the quickstart).
 
-```text
-calib-targets-ffi-<version>-<platform>/
-  include/
-  lib/
-  lib/cmake/calib_targets_ffi/
-```
+**Diagnostics JSON.** Detection results are always typed C structs. The
+ChArUco, marker-board, and PuzzleBoard detectors additionally expose
+`*_diagnose_json(args, buf, capacity, &len)`, which re-runs detection and writes
+the Rust diagnostics struct (`CharucoDetectDiagnostics`,
+`MarkerBoardDiagnostics`, `PuzzleBoardDiagnostics`) as NUL-terminated UTF-8
+JSON. It returns `CT_STATUS_OK` with a well-formed payload even when detection
+fails, and its schema carries a looser stability promise than the typed API.
+The C++ wrapper exposes it as `detect_diagnostics_json(image, &json)`.
 
-Point `CMAKE_PREFIX_PATH` at that unpacked top-level directory.
-
-If you are working from a repo checkout instead of a tagged release asset, the
-rest of this guide still shows how to build and stage the same layout locally.
-
-## Build And Link
-
-Build the shared library from the workspace root:
-
-```bash
-cargo build -p calib-targets-ffi
-```
-
-The public headers live in:
-
-```text
-crates/calib-targets-ffi/include/
-```
-
-The shared library is produced in the usual Cargo target directory, for example:
-
-- macOS: `target/debug/libcalib_targets_ffi.dylib`
-- Linux: `target/debug/libcalib_targets_ffi.so`
-- Windows: `target/debug/calib_targets_ffi.dll`
-
-Typical include and link flags from the repo root look like this:
-
-```bash
-cc -std=c11 -Wall -Wextra -pedantic \
-  -I crates/calib-targets-ffi/include \
-  your_app.c \
-  -L target/debug \
-  -lcalib_targets_ffi \
-  -o your_app
-```
-
-On Unix-like platforms you usually also want either an rpath or a runtime
-library search path:
-
-- macOS: `DYLD_LIBRARY_PATH=target/debug`
-- Linux: `LD_LIBRARY_PATH=target/debug`
-
-If you want to verify the checked-in header before integrating, run:
-
-```bash
-cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
-```
-
-## Stage A CMake Package
-
-If you are working from a repo checkout, build the shared library first, then
-stage the same package prefix that is shipped inside the native release
-archives:
-
-```bash
-cargo build -p calib-targets-ffi
-cargo run -p calib-targets-ffi --bin stage-cmake-package -- \
-  --lib-dir target/debug \
-  --prefix target/ffi-cmake-package
-```
-
-That produces a prefix with the shape:
-
-```text
-target/ffi-cmake-package/
-  include/calib_targets_ffi.h
-  include/calib_targets_ffi.hpp
-  lib/libcalib_targets_ffi.{so,dylib}
-  lib/cmake/calib_targets_ffi/calib_targets_ffi-config.cmake
-  lib/cmake/calib_targets_ffi/calib_targets_ffi-config-version.cmake
-```
-
-The generated CMake package exports two targets:
-
-- `calib_targets_ffi::c` for the shared C ABI library
-- `calib_targets_ffi::cpp` for the header-only C++ wrapper layered on top of it
-
-The local stage command is useful when you want to test packaging changes from a
-checkout. Supported tagged releases ship the same layout as downloadable native
-archives, but there is still no system package or package-manager integration.
-
-## Build A Matching Release Archive Locally
-
-If you want to rehearse the exact tagged-release payload from a repo checkout,
-build the release library and package the staged prefix as a platform archive:
-
-```bash
-cargo build -p calib-targets-ffi --release
-cargo run -p calib-targets-ffi --bin package-release-archive -- \
-  --lib-dir target/release \
-  --output-dir target/ffi-release-archives
-```
-
-The command prints the produced archive path. Linux and macOS emit `.tar.gz`;
-Windows emits `.zip`. Unpacking that archive yields the same top-level
-`calib-targets-ffi-<version>-<platform>/` prefix that the tagged GitHub
-releases publish.
-
-## API Model
-
-### Status Codes And Error Text
-
-Every exported function returns `ct_status_t`.
-
-- `CT_STATUS_OK` means success.
-- `CT_STATUS_NOT_FOUND` means the detector ran successfully but found no target.
-- `CT_STATUS_INVALID_ARGUMENT`, `CT_STATUS_BUFFER_TOO_SMALL`, and
-  `CT_STATUS_CONFIG_ERROR` indicate caller-visible failures.
-- `CT_STATUS_INTERNAL_ERROR` is reserved for unexpected internal failures.
-
-Failure details are retrieved with `ct_last_error_message(...)`. Use the same
-query/copy pattern as the result arrays:
+## C example
 
 ```c
-size_t len = 0;
-ct_status_t status = ct_last_error_message(NULL, 0, &len);
-```
-
-Then allocate a buffer of at least `len + 1` bytes and call it again.
-
-### Handle Ownership
-
-Each detector family uses an opaque handle:
-
-- `ct_chessboard_detector_t`
-- `ct_charuco_detector_t`
-- `ct_puzzleboard_detector_t`
-- `ct_marker_board_detector_t`
-
-Ownership rules are simple:
-
-- `*_create(...)` allocates a handle on success.
-- `*_destroy(...)` frees it.
-- `*_destroy(NULL)` is allowed.
-- Do not free a handle yourself or destroy it twice.
-
-### Caller-Owned Arrays
-
-Variable-length outputs never allocate memory for you. Instead:
-
-1. Call the detect function with the output array pointer set to `NULL` and its
-   capacity set to `0`.
-2. Read the required length from the corresponding `*_len` out-parameter.
-3. Allocate that many entries in your own memory.
-4. Call the detect function again to fill the array.
-
-For chessboard detection that pattern is:
-
-```c
-size_t corners_len = 0;
-ct_chessboard_detector_detect(detector, &image, &result, NULL, 0, &corners_len);
-```
-
-Then allocate `corners_len` `ct_labeled_corner_t` entries and call
-`ct_chessboard_detector_detect(...)` again.
-
-## Plain C Tutorial: Chessboard Detection
-
-The complete runnable example in this repo is:
-
-- `crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c`
-
-That example uses the repo-local helper header
-`crates/calib-targets-ffi/examples/native_smoke_common.h` for two things:
-
-- loading a binary PGM fixture into `ct_gray_image_u8_t`
-- constructing a known-good `ct_chessboard_detector_config_t`
-
-`native_smoke_common.h` is example scaffolding, not part of the public API.
-Downstream applications should build their own config/image-loading helpers and
-fill the public ABI structs from `calib_targets_ffi.h`.
-
-The end-to-end detection flow itself looks like this:
-
-```c
+ct_chessboard_detector_config_t config = /* fill chess + chessboard fields */;
 ct_chessboard_detector_t *detector = NULL;
-ct_chessboard_detector_config_t config = ct_native_default_chessboard_detector_config();
-ct_chessboard_result_t result;
-ct_labeled_corner_t *corners = NULL;
-size_t corners_len = 0;
-
-memset(&result, 0, sizeof(result));
-
-ct_status_t status = ct_chessboard_detector_create(&config, &detector);
-if (status != CT_STATUS_OK) {
+if (ct_chessboard_detector_create(&config, &detector) != CT_STATUS_OK) {
   /* read ct_last_error_message(...) */
 }
 
-status = ct_chessboard_detector_detect(detector, &image, &result, NULL, 0, &corners_len);
-if (status != CT_STATUS_OK) {
-  /* handle failure */
-}
+ct_chessboard_detect_args_t args = { detector, &image };
+ct_chessboard_result_t result;
+size_t corners_len = 0;
+ct_chessboard_detect_buffers_t bufs = { &result, NULL, 0, &corners_len };
 
-corners = (ct_labeled_corner_t *)calloc(corners_len, sizeof(*corners));
-status = ct_chessboard_detector_detect(
-    detector,
-    &image,
-    &result,
-    corners,
-    corners_len,
-    &corners_len);
-if (status != CT_STATUS_OK) {
-  /* handle failure */
+ct_status_t status = ct_chessboard_detector_detect(&args, &bufs);  /* query */
+if (status == CT_STATUS_OK) {
+  ct_chessboard_corner_t *corners = calloc(corners_len, sizeof(*corners));
+  bufs.out_corners = corners;
+  bufs.corners_capacity = corners_len;
+  status = ct_chessboard_detector_detect(&args, &bufs);            /* fill */
+  /* ... use corners[k].position / corners[k].grid ... */
+  free(corners);
 }
-
 ct_chessboard_detector_destroy(detector);
-free(corners);
 ```
 
-The checked-in example also demonstrates two important failure paths worth
-preserving in downstream code:
-
-- invalid create arguments return `CT_STATUS_INVALID_ARGUMENT`
-- short output buffers return `CT_STATUS_BUFFER_TOO_SMALL`
-
-To compile and run the repo-owned example from the workspace root on the same
-macOS/Linux-style path covered by the repo smoke test:
+The repo example adds PGM loading and a default config through the
+example-only helper `examples/native_smoke_common.h` (not public API) and
+exercises the `CT_STATUS_INVALID_ARGUMENT` and `CT_STATUS_BUFFER_TOO_SMALL`
+paths. Build and run it from the workspace root (macOS/Linux):
 
 ```bash
 cargo build -p calib-targets-ffi
-
 cc -std=c11 -Wall -Wextra -pedantic \
-  -I crates/calib-targets-ffi/include \
-  -I crates/calib-targets-ffi/examples \
+  -I crates/calib-targets-ffi/include -I crates/calib-targets-ffi/examples \
   crates/calib-targets-ffi/examples/chessboard_consumer_smoke.c \
-  -L target/debug \
-  -lcalib_targets_ffi \
-  -Wl,-rpath,$PWD/target/debug \
+  -L target/debug -lcalib_targets_ffi -Wl,-rpath,$PWD/target/debug \
   -o chessboard_consumer_smoke
-```
-
-Then run it against a grayscale PGM fixture:
-
-```bash
 ./chessboard_consumer_smoke path/to/image.pgm
 ```
 
-If you want a repo-owned end-to-end proof, use the native smoke test instead:
+## C++ wrapper
 
-```bash
-cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture
-```
-
-## C++ Tutorial: Thin Wrapper Layer
-
-The helper wrapper lives in:
-
-- `crates/calib-targets-ffi/include/calib_targets_ffi.hpp`
-
-It is header-only and stays strictly above the C ABI:
-
-- detector ownership is mapped into RAII objects
-- status handling stays explicit through `calib_targets::ffi::Status`
-- the wrapper does not introduce new exported symbols
-
-The current wrapper example is:
-
-- `crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp`
-
-Minimal usage looks like this:
+`calib_targets_ffi.hpp` maps each handle to a move-only RAII class
+(`calib_targets::ffi::ChessboardDetector`, `CharucoDetector`,
+`MarkerBoardDetector`, `PuzzleBoardDetector`), runs the query/fill pattern into
+`std::vector`s, and reports errors as `calib_targets::ffi::Status`
+(`code`, `message`, `ok()`). It adds no exported symbols; the chessboard
+`detect_all` entry point is C-only.
 
 ```cpp
-ct_chessboard_detector_config_t config = ct_native_default_chessboard_detector_config();
 calib_targets::ffi::ChessboardDetector detector;
-ct_chessboard_result_t result{};
-std::vector<ct_labeled_corner_t> corners;
-
 auto status = detector.create(config);
-if (!status.ok()) {
-  /* inspect status.message */
-}
-
-status = detector.detect(image.descriptor, &result, &corners);
-if (!status.ok()) {
-  /* inspect status.message */
-}
+ct_chessboard_result_t result{};
+std::vector<ct_chessboard_corner_t> corners;
+if (status.ok()) status = detector.detect(image, &result, &corners);
+if (!status.ok()) { /* status.code, status.message */ }
 ```
 
-The wrapper example uses the same repo-local helper header as the C example for
-fixture loading and default config construction. The public contract is still
-the C ABI types from `calib_targets_ffi.h`.
+Compile `examples/chessboard_wrapper_smoke.cpp` like the C example, with
+`c++ -std=c++17`.
 
-Compile it from the workspace root on the same macOS/Linux-style path covered by
-the repo smoke test, using a C++17-capable compiler:
+## Getting the library
+
+**Prebuilt archives.** Tagged releases attach
+`calib-targets-ffi-<abi-version>-<platform>.tar.gz` (Linux, macOS) or `.zip`
+(Windows). Each unpacks to one directory holding the package prefix
+(`include/`, `lib/`, `lib/cmake/calib_targets_ffi/`); point
+`CMAKE_PREFIX_PATH` at it.
+
+**From a checkout.** `cargo build -p calib-targets-ffi` produces
+`libcalib_targets_ffi.{so,dylib}` / `calib_targets_ffi.dll` under
+`target/<profile>/`. Stage the same prefix the archives ship, or build the
+archive itself:
 
 ```bash
-cargo build -p calib-targets-ffi
-
-c++ -std=c++17 -Wall -Wextra -pedantic \
-  -I crates/calib-targets-ffi/include \
-  -I crates/calib-targets-ffi/examples \
-  crates/calib-targets-ffi/examples/chessboard_wrapper_smoke.cpp \
-  -L target/debug \
-  -lcalib_targets_ffi \
-  -Wl,-rpath,$PWD/target/debug \
-  -o chessboard_wrapper_smoke
-```
-
-## CMake Consumer Flow
-
-The staged package is intended to remove handwritten include directories and
-linker flags from downstream CMake consumers. The repo-owned example is:
-
-- `crates/calib-targets-ffi/examples/cmake_wrapper_consumer/`
-
-Its `CMakeLists.txt` uses the staged package like this:
-
-```cmake
-cmake_minimum_required(VERSION 3.16)
-project(chessboard_cmake_consumer LANGUAGES CXX)
-
-find_package(calib_targets_ffi CONFIG REQUIRED)
-
-add_executable(chessboard_cmake_consumer main.cpp)
-target_compile_features(chessboard_cmake_consumer PRIVATE cxx_std_17)
-target_link_libraries(chessboard_cmake_consumer PRIVATE calib_targets_ffi::cpp)
-
-set_property(
-  TARGET chessboard_cmake_consumer
-  PROPERTY BUILD_RPATH "$<TARGET_FILE_DIR:calib_targets_ffi::c>"
-)
-```
-
-To build and run that example from the workspace root:
-
-```bash
-cargo build -p calib-targets-ffi
 cargo run -p calib-targets-ffi --bin stage-cmake-package -- \
-  --lib-dir target/debug \
-  --prefix target/ffi-cmake-package
-
-cmake -S crates/calib-targets-ffi/examples/cmake_wrapper_consumer \
-  -B target/cmake-wrapper-consumer \
-  -DCMAKE_PREFIX_PATH=$PWD/target/ffi-cmake-package
-cmake --build target/cmake-wrapper-consumer
-target/cmake-wrapper-consumer/chessboard_cmake_consumer path/to/image.pgm
+  --lib-dir target/debug --prefix target/ffi-cmake-package
+cargo build -p calib-targets-ffi --release
+cargo run -p calib-targets-ffi --bin package-release-archive -- \
+  --lib-dir target/release --output-dir target/ffi-release-archives
 ```
 
-The example keeps the public boundary clean:
+The package exports `calib_targets_ffi::c` (the shared C library) and
+`calib_targets_ffi::cpp` (the header-only wrapper on top of it); usage is in
+the [quickstart](./cmake-consumer-quickstart.md). On Windows, put
+`<prefix>/lib` on `PATH` or copy the DLL next to the executable.
 
-- it includes `calib_targets_ffi.hpp` from the staged package
-- it links against the exported `calib_targets_ffi::cpp` target
-- its local helper header handles PGM loading and config construction inside the
-  consumer project rather than depending on repo-internal smoke helpers
-
-On Windows, make sure `<prefix>/lib` is on `PATH` when you run a consumer
-binary, or copy `calib_targets_ffi.dll` next to the executable. The repo smoke
-tests set `PATH` automatically for that case.
-
-## Other Detector Families
-
-The other detector families follow the same broad model:
-
-- ChArUco:
-  `ct_charuco_detector_create`, `ct_charuco_detector_detect`,
-  `ct_charuco_detector_destroy`
-- Marker board:
-  `ct_marker_board_detector_create`, `ct_marker_board_detector_detect`,
-  `ct_marker_board_detector_destroy`
-
-The main differences are the output arrays:
-
-- ChArUco fills both `ct_labeled_corner_t` and `ct_marker_detection_t`
-- marker-board detection fills labeled corners, circle candidates, and circle
-  matches
-
-The same ownership and query/fill rules apply.
-
-## Validation Commands
-
-These commands exercise the native surface the repo currently documents:
+## Validation
 
 ```bash
-cargo run -p calib-targets-ffi --bin generate-ffi-header -- --check
+cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
 cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture
 cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
-cargo test -p calib-targets-ffi --test release_archive_smoke -- --nocapture
+cargo test -p calib-targets-ffi --test release_archive_smoke -- --ignored --nocapture
 ```
 
-## Design History
-
-If you need the design rationale rather than the consumer workflow, see
-[`docs/ffi/decision-record.md`](decision-record.md) — the accepted ADR for the
-FFI ABI shape (dedicated crate, C-only extern, fixed structs, no JSON transport,
-built-in dictionaries, cdylib packaging).
+The header check fails when `calib_targets_ffi.h` is stale; regenerate it by
+running the same command without `--check`.

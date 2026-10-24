@@ -2,34 +2,39 @@
 
 This tree is the **internal / developer** documentation for the
 `calib-targets-rs` workspace: design notes, algorithm deep-dives, process
-guides, and release history.
+guides, and release history. It is the complete map — every internal doc is
+listed here.
 
-> **User-facing docs live elsewhere.** The polished, published documentation is
-> the mdBook under [`../book/src/`](../book/src/) (getting started, tuning,
-> per-crate guides, examples). Keep the two distinct: when in doubt, *how a
-> consumer uses the library* → book; *how the algorithms work and how we develop
-> them* → here.
+> **User-facing docs live elsewhere.** The published documentation is the mdBook
+> under [`../book/src/`](../book/src/) (getting started, tuning, per-crate
+> guides, examples). Keep the two distinct: *how a consumer uses the library* →
+> book; *how the algorithms work and how we develop them* → here.
 
-## Map
+## `architecture/` — how the whole stack fits together
 
-### `architecture/` — start here: how the whole stack fits together
-A cross-cutting map of the detection stack — the algorithm atlas, per-detector
-pipeline maps, and the crate-layering view. The best entry point when
-onboarding or auditing the detector crates. (The critique and cleanup backlog
-that once lived here went away with the consolidation they tracked; open
-engineering items are now in
-[`development/backlog.md`](development/backlog.md).)
+The best entry point when onboarding or auditing the detector crates.
 
 | File | What it covers |
 |---|---|
-| [`architecture/README.md`](architecture/README.md) | Entry map + the one-screen verdict + the keep-it-current rule. |
-| [`architecture/algorithm-atlas.md`](architecture/algorithm-atlas.md) | Every atomic algorithm + the algorithm×pipeline matrix. |
-| [`architecture/pipeline-maps.md`](architecture/pipeline-maps.md) | Each detector stage-by-stage (algorithm, local vs delegated). |
+| [`architecture/README.md`](architecture/README.md) | Entry map, the one-screen verdict, the keep-it-current rule. |
+| [`architecture/algorithm-atlas.md`](architecture/algorithm-atlas.md) | Every atomic algorithm + the algorithm × pipeline matrix. |
+| [`architecture/pipeline-maps.md`](architecture/pipeline-maps.md) | The shared grid spine + index of the per-crate stage maps. |
 | [`architecture/dependency-and-layering.md`](architecture/dependency-and-layering.md) | Crate DAG, layering, the library-only surface. |
 
-### `development/` — developer guides
-The everyday gates and conventions. These are the guides linked from the
-project [`CLAUDE.md`](../.claude/CLAUDE.md).
+## Per-crate design docs
+
+| File | What it covers |
+|---|---|
+| [`calib-targets-chessboard/docs/PIPELINE.md`](../crates/calib-targets-chessboard/docs/PIPELINE.md) | Chessboard stage table (the reference pipeline). |
+| [`calib-targets-charuco/docs/PIPELINE.md`](../crates/calib-targets-charuco/docs/PIPELINE.md) | ChArUco stage table. |
+| [`calib-targets-puzzleboard/docs/PIPELINE.md`](../crates/calib-targets-puzzleboard/docs/PIPELINE.md) | PuzzleBoard + PuzzlePole stage table. |
+| [`calib-targets-marker/docs/PIPELINE.md`](../crates/calib-targets-marker/docs/PIPELINE.md) | Marker-board stage table. |
+| [`calib-targets-puzzleboard/docs/SYNTHETIC_AUTHOR_LIKE.md`](../crates/calib-targets-puzzleboard/docs/SYNTHETIC_AUTHOR_LIKE.md) | The public synthetic PuzzleBoard decode fixtures. |
+| [`projective-grid/docs/DESIGN.md`](../crates/projective-grid/docs/DESIGN.md) | `projective-grid` design: lattice × strategy × evidence axes, module tree, invariants. |
+| [`projective-grid/docs/ORIENTATION.md`](../crates/projective-grid/docs/ORIENTATION.md) | Where orientation enters the grid builder and how it runs without it. |
+| [`projective-grid/ROADMAP-1.0.md`](../crates/projective-grid/ROADMAP-1.0.md) | What stands between `projective-grid` and 1.0. |
+
+## `development/` — developer guides
 
 | File | What it covers |
 |---|---|
@@ -37,55 +42,49 @@ project [`CLAUDE.md`](../.claude/CLAUDE.md).
 | [`debugging.md`](development/debugging.md) | Mandatory evidence-driven protocol for any detector failure. |
 | [`conventions.md`](development/conventions.md) | Public-struct conventions, binding/CLI/dict-key parity, local-only-artifact rules. |
 | [`private-dataset-policy.md`](development/private-dataset-policy.md) | Disclosure policy + the two private regression datasets. |
-| [`backlog.md`](development/backlog.md) | Open engineering items that are not detector algorithms (bindings, plumbing, packaging). |
-| [`release-gates.md`](development/release-gates.md) | Full pre-release quality-gate checklist. |
-| [`refactor-gates.md`](development/refactor-gates.md) | Standing per-phase validation gate for in-flight refactors. |
-| [`commands.md`](development/commands.md) | Complete build / example / bench / binding / CLI command reference. |
+| [`release-gates.md`](development/release-gates.md) | Every gate list: label-moving-change regression gate + bless protocol, pre-release checks, MSRV and release procedure. |
+| [`commands.md`](development/commands.md) | Build / example / bench / binding / CLI command reference. |
 | [`profiling.md`](development/profiling.md) | Flamegraph / per-span timing capture for the grid-build pipeline. |
-| [`performance.md`](development/performance.md) | Benchmark methodology, current bottleneck ranking, and the prioritized optimization backlog. |
-| [`subagent-workflow.md`](development/subagent-workflow.md) | Dispatching quick-/deep-implementer subagents during feature work. |
+| [`performance.md`](development/performance.md) | Benchmark methodology, current bottleneck ranking, optimization backlog. |
+| [`backlog.md`](development/backlog.md) | Open engineering items that are not detector algorithms (bindings, plumbing, packaging). |
+| [`subagent-workflow.md`](development/subagent-workflow.md) | Dispatching quick-/deep-implementer subagents. |
 
-### `algorithms/` — algorithm deep-dives & design notes
+## `algorithms/` — algorithm deep-dives
 
 | File | What it covers |
 |---|---|
-| [`topological-grid-detection.md`](algorithms/topological-grid-detection.md) | Canonical stage-by-stage map for the sole grid builder (the book's `algo_topological_grid` summarises this). |
-| [`algorithmic_gaps.md`](algorithms/algorithmic_gaps.md) | Workspace-wide ledger of open/closed algorithmic gaps and known limitations. |
+| [`topological-grid-detection.md`](algorithms/topological-grid-detection.md) | Canonical stage-by-stage map of the sole grid builder. |
+| [`algorithmic_gaps.md`](algorithms/algorithmic_gaps.md) | Ledger of open algorithmic gaps and known limits. |
 | [`puzzle_detection_spec.md`](algorithms/puzzle_detection_spec.md) | PuzzleBoard soft-edge-decode + global-inference design. |
-| [`charuco_concept.md`](algorithms/charuco_concept.md) | ChArUco board-level hypothesis-scoring concept. |
+| [`puzzlepole_construction.md`](algorithms/puzzlepole_construction.md) | PuzzlePole cylindrical construction, decoder cost, coordinate conventions. |
 | [`diskfit-antipodal-sector.md`](algorithms/diskfit-antipodal-sector.md) | Upstream `chess-corners` DiskFit axis-slot inversion defect note. |
 
-### `ffi/` — C / C++ consumer docs
+## `ffi/` — C / C++ consumer docs
 
 | File | What it covers |
 |---|---|
-| [`README.md`](ffi/README.md) | C API guide: headers, build, CMake staging, support boundaries, ABI shape. |
-| [`cmake-consumer-quickstart.md`](ffi/cmake-consumer-quickstart.md) | Shortest-path CMake integration with a minimal C++ example. |
-| [`decision-record.md`](ffi/decision-record.md) | Accepted ADR for the FFI ABI choices. |
+| [`ffi/README.md`](ffi/README.md) | C API guide: headers, build, CMake staging, ABI versioning, diagnostics JSON. |
+| [`ffi/cmake-consumer-quickstart.md`](ffi/cmake-consumer-quickstart.md) | Shortest-path CMake integration with a minimal C++ example. |
+| [`ffi/decision-record.md`](ffi/decision-record.md) | Accepted ADR for the FFI ABI choices. |
 
-### Release history
-- [`changelog/`](changelog/) — archived per-minor-version release notes
-  (`0.1.x` … `0.9.x`), indexed from the root [`CHANGELOG.md`](../CHANGELOG.md).
-- [`migrations/`](migrations/) — breaking-change migration guides, newest first:
-  [`0.15.0.md`](migrations/0.15.0.md) (live) and [`0.14.0.md`](migrations/0.14.0.md),
-  kept for consumers upgrading across two releases. Both are pulled into the
-  book's Migration chapter via `{{#include}}`; **do not move/rename**. Older
-  guides ([`0.13.0.md`](migrations/0.13.0.md), [`0.12.0.md`](migrations/0.12.0.md),
-  [`0.11.0.md`](migrations/0.11.0.md), [`0.10.0.md`](migrations/0.10.0.md)) stay
-  on disk but are no longer included in the book.
+## Release history
+
+- [`changelog/`](changelog/) — archived per-minor-version release notes,
+  indexed from the root [`CHANGELOG.md`](../CHANGELOG.md).
+- [`migrations/`](migrations/) — breaking-change migration guides.
+  [`0.15.0.md`](migrations/0.15.0.md) and [`0.14.0.md`](migrations/0.14.0.md)
+  are pulled into the book's Migration chapter via `{{#include}}` — **do not
+  move/rename** them; older guides stay on disk but are not included.
 - [`releases/`](releases/) — GitHub release bodies consumed by CI.
   [`ffi-c-api-release-draft.md`](releases/ffi-c-api-release-draft.md) is the
-  `body_path` of the native-FFI archive release
-  (`.github/workflows/release-native-ffi.yml`), so it must track the **C ABI**
+  `body_path` of the native-FFI archive release, so it tracks the **C ABI**
   version, which is independent of the workspace version.
 
-## Local-only (untracked) contents
+## Local-only contents
 
-These directories are **gitignored** and hold private / generated data — never
-commit them and never cite their contents in any public surface (see
+Never commit these and never cite their contents in a public surface (see
 [`development/private-dataset-policy.md`](development/private-dataset-policy.md)):
 
-- `datasets/` — private regression-dataset notes (counts, hashes, frame ids).
-- `img/02-topo-grid/`, `img/130x130_puzzle/` — rendered pipeline overlays.
-
-(`img/target_gallery.png` is a tracked asset used by the top-level README.)
+- `datasets/` (gitignored) — private regression-dataset notes.
+- `img/` subdirectories — rendered pipeline overlays (untracked).
+  `img/target_gallery.png` is the one tracked asset, used by the top-level README.
