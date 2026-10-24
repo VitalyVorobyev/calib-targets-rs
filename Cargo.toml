@@ -65,7 +65,7 @@ approx = "0.5"
 assert_cmd = "2"
 axum = "0.8"
 cbindgen = "0.29"
-chess-corners = "1.3"
+chess-corners = "1.6"
 clap = "4.5"
 criterion = { version = "0.5", default-features = false, features = ["cargo_bench_support", "html_reports"] }
 delaunator = "1.0"

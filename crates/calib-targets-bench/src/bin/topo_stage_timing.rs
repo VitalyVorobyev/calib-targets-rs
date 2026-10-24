@@ -63,8 +63,9 @@ struct Args {
     #[arg(long, default_value_t = 5)]
     warmup: usize,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
-    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
-    /// disk-sector fit added in chess-corners 0.9.
+    /// the upstream default; `disk-fit` fits the axes from the gradients of a
+    /// full disk around each corner, meant for strongly skewed corners (axis
+    /// separation far from 90°).
     #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
     orientation_method: OrientationMethodArg,
     /// Absolute ChESS response floor.

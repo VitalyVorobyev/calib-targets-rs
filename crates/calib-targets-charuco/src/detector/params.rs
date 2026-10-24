@@ -2,7 +2,7 @@ use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{default_chess_config, DetectorConfig};
-use chess_corners::{ChessRefiner, SaddlePointConfig};
+use chess_corners::{ChessRefiner, SaddlePointConfig, Uncertainty};
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -240,6 +240,11 @@ fn default_cell_weight_border_threshold() -> f32 {
 /// skipped ([`without_orientation`](DetectorConfig::without_orientation)): the
 /// re-detection consumes only the refined corner position, so the per-corner
 /// axis fit would be wasted work — preserving the old hand-rolled path's cost.
+/// The position covariance is skipped for the same reason
+/// ([`Uncertainty::Off`]); positions are identical under every uncertainty
+/// tier. It matters more than the axis fit: with the covariance on, every ROI
+/// call estimates the pixel noise over the *whole* image, a full-frame pass
+/// per re-detected corner.
 pub(crate) fn default_redetect_params() -> DetectorConfig {
     DetectorConfig::chess()
         .with_threshold(0.0)
@@ -249,6 +254,7 @@ pub(crate) fn default_redetect_params() -> DetectorConfig {
         })
         .with_chess(|c| c.refiner = ChessRefiner::SaddlePoint(SaddlePointConfig::default()))
         .without_orientation()
+        .with_uncertainty(Uncertainty::Off)
 }
 
 impl CharucoParams {
@@ -390,6 +396,9 @@ mod tests {
         // Orientation is skipped: the re-detection uses only the refined
         // position, so the per-corner axis fit would be wasted cost.
         assert!(cfg.orientation_method.is_none());
+        // Covariance is skipped for the same reason (and to avoid a
+        // whole-image noise estimate per ROI call).
+        assert_eq!(cfg.uncertainty, Uncertainty::Off);
         let chess_corners::DetectionStrategy::Chess(chess) = cfg.strategy else {
             panic!("expected the ChESS strategy, got {:?}", cfg.strategy);
         };

@@ -53,6 +53,11 @@ const WORKSPACE_CHESS_THRESHOLD: f32 = 15.0;
 /// the upstream default, and the ChESS response scale did not change in 1.0,
 /// so `15.0` keeps producing exactly the corner set it did under 0.11.
 ///
+/// Every other field keeps the upstream default — including, since
+/// `chess-corners` 1.6, the position-uncertainty tier (`Propagated`, with the
+/// pixel noise estimated from each image). Corner positions do not depend on
+/// it; select `Uncertainty::Off` to skip the covariance and its noise estimate.
+///
 /// This is the default value of the `chess` field carried by the
 /// compound-target params structs — `CharucoParams`, `PuzzleBoardParams`, and
 /// `MarkerBoardParams` — whose facade image entry points own their corner pass;
@@ -109,6 +114,11 @@ mod tests {
         // The shared detection knobs (`nms_radius` / `min_cluster_size` moved
         // here from the per-strategy config in 1.0) stay at upstream defaults.
         assert_eq!(cfg.detection, baseline.detection);
+
+        // The position-uncertainty knobs (chess-corners 1.6) stay at upstream
+        // defaults too: a propagated covariance, noise estimated per image.
+        assert_eq!(cfg.uncertainty, baseline.uncertainty);
+        assert_eq!(cfg.noise_sigma, baseline.noise_sigma);
 
         // The nested ChESS strategy fields stay at upstream defaults so
         // the override is purely the acceptance threshold.

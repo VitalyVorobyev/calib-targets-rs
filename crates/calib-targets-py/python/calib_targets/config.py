@@ -26,7 +26,7 @@ from .enums import CirclePolarity, DictionaryName, MarkerLayout
 #
 # The Rust side is ``chess_corners::DetectorConfig``, a tagged-enum tree:
 # strategy / threshold / multiscale / upscale / orientation_method /
-# merge_radius. The Python user-facing class is ``ChessConfig`` so the
+# merge_radius / noise_sigma / uncertainty. The Python user-facing class is ``ChessConfig`` so the
 # import name from ``calib_targets`` stays stable across the 0.8 → 0.10
 # migration; semantically it carries the full ``DetectorConfig``.
 # ---------------------------------------------------------------------------
@@ -346,6 +346,19 @@ class OrientationMethod:
     DISK_FIT = "disk_fit"
 
 
+class Uncertainty:
+    """Which position uncertainty the corner detector computes (Rust unit-enum).
+
+    ``PROPAGATED`` (the default) propagates the image noise through each
+    corner's subpixel localizer and adds a per-localizer systematic term;
+    ``OFF`` skips that work and the per-image noise estimate. Corner positions
+    are identical under both.
+    """
+
+    OFF = "off"
+    PROPAGATED = "propagated"
+
+
 # ---------------------------------------------------------------------------
 # ChessStrategyConfig (nested under DetectionStrategy.chess)
 # ---------------------------------------------------------------------------
@@ -612,6 +625,11 @@ def _threshold_from_wire(value: Any) -> float:
     return float(value)
 
 
+def _optional_float(value: Any) -> float | None:
+    """Coerce a nullable wire number (Rust ``Option<f32>``)."""
+    return None if value is None else float(value)
+
+
 @dataclass(slots=True)
 class ChessConfig:
     """High-level ChESS-detector configuration.
@@ -657,6 +675,11 @@ class ChessConfig:
 
         # Pre-pipeline upscale for tiny markers:
         cfg = ChessConfig(upscale=UpscaleConfig.fixed(2))
+
+        # Known sensor noise (gray levels) for the position covariance, or
+        # skip the covariance and its per-image noise estimate entirely:
+        cfg = ChessConfig(noise_sigma=2.0)
+        cfg = ChessConfig(uncertainty=Uncertainty.OFF)
     """
 
     strategy: DetectionStrategy = field(default_factory=DetectionStrategy.chess)
@@ -670,6 +693,12 @@ class ChessConfig:
     #: ``Option<OrientationMethod>``); every descriptor then carries no axes.
     orientation_method: str | None = OrientationMethod.RING_FIT
     merge_radius: float = 3.0
+    #: Pixel-noise standard deviation in gray levels (``>= 0``) used to
+    #: express each corner's position covariance in px². ``None`` estimates it
+    #: from each image; set it when the sensor noise is known.
+    noise_sigma: float | None = None
+    #: Which position uncertainty to compute — an :class:`Uncertainty` value.
+    uncertainty: str = Uncertainty.PROPAGATED
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -680,6 +709,8 @@ class ChessConfig:
             "upscale": self.upscale.to_dict(),
             "orientation_method": self.orientation_method,
             "merge_radius": float(self.merge_radius),
+            "noise_sigma": _optional_float(self.noise_sigma),
+            "uncertainty": self.uncertainty,
         }
 
     @classmethod
@@ -718,8 +749,9 @@ class ChessConfig:
             upscale=UpscaleConfig.from_dict(data.get("upscale", d.upscale.to_dict())),
             orientation_method=data.get("orientation_method", d.orientation_method),
             merge_radius=float(data.get("merge_radius", d.merge_radius)),
+            noise_sigma=_optional_float(data.get("noise_sigma", d.noise_sigma)),
+            uncertainty=data.get("uncertainty", d.uncertainty),
         )
-
 
 # ---------------------------------------------------------------------------
 # Chessboard detection params

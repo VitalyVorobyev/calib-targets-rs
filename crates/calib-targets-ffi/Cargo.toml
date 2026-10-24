@@ -22,8 +22,10 @@ name = "calib-targets-ffi"
 # the `diameter_frac` copy of it, and `ct_circle_match_params_t` loses
 # `max_distance_cells`, a pre-alignment cell-distance gate the new
 # hypothesis-and-verify frame search has no use for. Three struct-layout
-# breaking changes.
-version = "5.0.0"
+# breaking changes. v6.0.0 follows chess-corners 1.6: `ct_chess_config_t`
+# appends `noise_sigma` and `uncertainty` (struct-layout-breaking; both are
+# zero-initialisation safe).
+version = "6.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true
 license.workspace = true

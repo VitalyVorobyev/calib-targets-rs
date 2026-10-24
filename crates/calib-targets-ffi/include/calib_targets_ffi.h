@@ -221,12 +221,42 @@ typedef struct ct_upscale_config_t {
 } ct_upscale_config_t;
 
 /**
+ * Optional `float` convention used by fixed ABI structs.
+ */
+typedef struct ct_optional_f32_t {
+  uint32_t has_value;
+  float value;
+} ct_optional_f32_t;
+
+/**
+ * Position-uncertainty tier identifier type for ChESS corner detection.
+ *
+ * `CT_UNCERTAINTY_PROPAGATED` is `0`, so a zero-initialised
+ * `ct_chess_config_t` selects the default tier.
+ */
+typedef uint32_t ct_uncertainty_t;
+
+/**
  * Shared ChESS configuration for raw corner detection.
+ *
+ * ABI note (6.0.0): `noise_sigma` and `uncertainty` are appended. Both are
+ * safe to zero-initialise: an unset `noise_sigma` estimates the pixel noise
+ * from each image, and `0` is `CT_UNCERTAINTY_PROPAGATED`, the default tier.
  */
 typedef struct ct_chess_config_t {
   struct ct_chess_params_t params;
   struct ct_coarse_to_fine_params_t multiscale;
   struct ct_upscale_config_t upscale;
+  /**
+   * Pixel-noise standard deviation in gray levels (`>= 0`) used to express
+   * each corner's position covariance in px². Unset estimates it from each
+   * image; set it when the sensor noise is known.
+   */
+  struct ct_optional_f32_t noise_sigma;
+  /**
+   * Which position uncertainty to compute (a `ct_uncertainty_t` constant).
+   */
+  ct_uncertainty_t uncertainty;
 } ct_chess_config_t;
 
 /**
@@ -266,14 +296,6 @@ typedef struct ct_chessboard_detect_args_t {
    */
   const struct ct_gray_image_u8_t *image;
 } ct_chessboard_detect_args_t;
-
-/**
- * Optional `float` convention used by fixed ABI structs.
- */
-typedef struct ct_optional_f32_t {
-  uint32_t has_value;
-  float value;
-} ct_optional_f32_t;
 
 /**
  * Chessboard detection header.
@@ -909,6 +931,18 @@ typedef struct ct_puzzleboard_detect_buffers_t {
 #define CT_UPSCALE_MODE_DISABLED 0
 
 #define CT_UPSCALE_MODE_FIXED 1
+
+/**
+ * Propagate the image noise through each corner's localizer and add its
+ * systematic-error term (the default).
+ */
+#define CT_UNCERTAINTY_PROPAGATED 0
+
+/**
+ * Compute no position covariance and skip the per-image noise estimate.
+ * Corner positions are identical under both tiers.
+ */
+#define CT_UNCERTAINTY_OFF 1
 
 #define CT_MARKER_LAYOUT_OPENCV_CHARUCO 1
 

@@ -19,10 +19,9 @@ Read those first for any pipeline question. The remainder of this
 file lists what is known to be missing or suboptimal, with a
 proposed fix per gap.
 
-> Related upstream-defect note:
-> [`docs/algorithms/diskfit-antipodal-sector.md`](diskfit-antipodal-sector.md)
-> records why `RingFit` stays the default `OrientationMethod` (a latent
-> axis-slot inversion in `chess-corners`' `DiskFit` fitter).
+> No upstream orientation defect is open: the `DiskFit` axis-slot inversion once
+> recorded here does not reproduce on `chess-corners` 1.3 or 1.6 (slot labels
+> alternate with grid parity on every labelled corner of the public testdata).
 
 ---
 

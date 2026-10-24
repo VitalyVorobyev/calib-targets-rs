@@ -45,6 +45,18 @@ pub type ct_upscale_mode_t = u32;
 pub const CT_UPSCALE_MODE_DISABLED: ct_upscale_mode_t = 0;
 pub const CT_UPSCALE_MODE_FIXED: ct_upscale_mode_t = 1;
 
+/// Position-uncertainty tier identifier type for ChESS corner detection.
+///
+/// `CT_UNCERTAINTY_PROPAGATED` is `0`, so a zero-initialised
+/// `ct_chess_config_t` selects the default tier.
+pub type ct_uncertainty_t = u32;
+/// Propagate the image noise through each corner's localizer and add its
+/// systematic-error term (the default).
+pub const CT_UNCERTAINTY_PROPAGATED: ct_uncertainty_t = 0;
+/// Compute no position covariance and skip the per-image noise estimate.
+/// Corner positions are identical under both tiers.
+pub const CT_UNCERTAINTY_OFF: ct_uncertainty_t = 1;
+
 /// Fixed board marker-layout identifier type.
 pub type ct_marker_layout_t = u32;
 pub const CT_MARKER_LAYOUT_OPENCV_CHARUCO: ct_marker_layout_t = 1;
@@ -434,12 +446,22 @@ pub struct ct_upscale_config_t {
 }
 
 /// Shared ChESS configuration for raw corner detection.
+///
+/// ABI note (6.0.0): `noise_sigma` and `uncertainty` are appended. Both are
+/// safe to zero-initialise: an unset `noise_sigma` estimates the pixel noise
+/// from each image, and `0` is `CT_UNCERTAINTY_PROPAGATED`, the default tier.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_chess_config_t {
     pub params: ct_chess_params_t,
     pub multiscale: ct_coarse_to_fine_params_t,
     pub upscale: ct_upscale_config_t,
+    /// Pixel-noise standard deviation in gray levels (`>= 0`) used to express
+    /// each corner's position covariance in px². Unset estimates it from each
+    /// image; set it when the sensor noise is known.
+    pub noise_sigma: ct_optional_f32_t,
+    /// Which position uncertainty to compute (a `ct_uncertainty_t` constant).
+    pub uncertainty: ct_uncertainty_t,
 }
 
 /// Chessboard detector parameters.

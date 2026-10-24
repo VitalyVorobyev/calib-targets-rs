@@ -122,8 +122,9 @@ pub(crate) struct DiagnoseArgs {
     #[arg(long)]
     pub(crate) chessboard_config: Option<String>,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
-    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
-    /// disk-sector fit added in chess-corners 0.9.
+    /// the upstream default; `disk-fit` fits the axes from the gradients of a
+    /// full disk around each corner, meant for strongly skewed corners (axis
+    /// separation far from 90°).
     #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
     pub(crate) orientation_method: OrientationMethodArg,
 }
@@ -148,8 +149,9 @@ pub(crate) struct RunArgs {
     #[arg(long)]
     pub(crate) chessboard_config: Option<String>,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
-    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
-    /// disk-sector fit added in chess-corners 0.9.
+    /// the upstream default; `disk-fit` fits the axes from the gradients of a
+    /// full disk around each corner, meant for strongly skewed corners (axis
+    /// separation far from 90°).
     #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
     pub(crate) orientation_method: OrientationMethodArg,
 }
@@ -173,8 +175,9 @@ pub(crate) struct PreviewArgs {
     #[arg(long, value_enum, default_value_t = EngineArg::Pipeline)]
     pub(crate) engine: EngineArg,
     /// Override chess-corners' axis-fit method. Default `ring-fit` matches
-    /// upstream behaviour; `disk-fit` opts into the more accurate (slower)
-    /// disk-sector fit added in chess-corners 0.9.
+    /// the upstream default; `disk-fit` fits the axes from the gradients of a
+    /// full disk around each corner, meant for strongly skewed corners (axis
+    /// separation far from 90°).
     #[arg(long, value_enum, default_value_t = OrientationMethodArg::RingFit)]
     pub(crate) orientation_method: OrientationMethodArg,
 }

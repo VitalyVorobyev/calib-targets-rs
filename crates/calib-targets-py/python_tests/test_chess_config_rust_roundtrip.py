@@ -123,3 +123,29 @@ def test_fixed_upscale_accepted_by_rust() -> None:
     image = _load_gray("small0.png")
     cfg = ct.ChessConfig(upscale=ct.UpscaleConfig.fixed(2))
     _core.detect_chessboard(image, chess_cfg=cfg.to_dict())
+
+
+def test_uncertainty_knobs_accepted_by_rust() -> None:
+    """``noise_sigma`` / ``uncertainty`` deserialise on the Rust side.
+
+    Corner positions do not depend on the uncertainty tier, so switching the
+    covariance off (or pinning the noise level) must leave the labelled corner
+    count unchanged.
+    """
+    image = _load_gray("mid.png")
+    baseline = _core.detect_chessboard(image, chess_cfg=ct.ChessConfig().to_dict())
+    for cfg in (
+        ct.ChessConfig(uncertainty=ct.Uncertainty.OFF),
+        ct.ChessConfig(noise_sigma=2.0),
+    ):
+        result = _core.detect_chessboard(image, chess_cfg=cfg.to_dict())
+        assert _corner_count(result) == _corner_count(baseline)
+
+
+def test_unknown_uncertainty_rejected_by_rust() -> None:
+    """A misspelt tier fails loudly instead of silently falling back."""
+    image = _load_gray("mid.png")
+    data = ct.ChessConfig().to_dict()
+    data["uncertainty"] = "full"
+    with pytest.raises(ValueError):
+        _core.detect_chessboard(image, chess_cfg=data)
