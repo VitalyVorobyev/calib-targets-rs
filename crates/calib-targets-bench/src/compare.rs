@@ -216,6 +216,7 @@ mod tests {
             labelled_count: labelled,
             diff_vs_baseline: BaselineDiff::default(),
             structural_precision: StructuralPrecision::default(),
+            quality: None,
         }
     }
 
@@ -231,6 +232,7 @@ mod tests {
                 p50_ms: 0.0,
                 p95_ms: 0.0,
                 max_ms: 0.0,
+                quality: Default::default(),
             },
             per_image: rows,
         }

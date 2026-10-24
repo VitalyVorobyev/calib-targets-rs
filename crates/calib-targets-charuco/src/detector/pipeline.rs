@@ -264,7 +264,7 @@ impl CharucoDetector {
     /// configured by [`CharucoParams::chess`](crate::CharucoParams::chess).
     ///
     /// This is the ergonomic entry point: hand it an image and it does the
-    /// whole pipeline. It is exactly
+    /// whole pipeline. It gives the result of
     /// `self.detect_with_corners(image, &self.detect_corners(image))` — reach
     /// for [`Self::detect_with_corners`] when you already have a corner cloud
     /// (a custom upstream, or one shared across detectors).
@@ -491,12 +491,18 @@ impl CharucoDetector {
         // Single-component and merged paths agree: the raw counts recorded on
         // the frame are exactly those of the components that contributed to
         // the returned result.
-        let (merged, raw_counts) = if results.len() == 1 {
+        let (mut merged, raw_counts) = if results.len() == 1 {
             results.into_iter().next().unwrap()
         } else {
             merge_charuco_results(results)
         };
         sink.record_frame_counts(raw_counts);
+        // The covariances' noise level is known only when the front end ran
+        // here; caller-supplied corners came from a pass this detector did
+        // not see.
+        merged.quality = merged
+            .quality
+            .with_noise_sigma(noise.and_then(FrameNoise::sigma));
         Ok(merged)
     }
 

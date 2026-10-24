@@ -2,7 +2,7 @@
 
 use std::cmp::Ordering;
 
-use calib_targets_chessboard::ChessCorner;
+use calib_targets_chessboard::{detect_corner_frame, ChessCorner};
 use calib_targets_chessboard::{
     ChessboardCorner, ChessboardDetection, ChessboardDetector as ChessDetector,
 };
@@ -92,18 +92,23 @@ impl PuzzleBoardDetector {
     /// [`PuzzleBoardParams::chess`](crate::PuzzleBoardParams::chess).
     ///
     /// This is the ergonomic entry point: hand it an image and it does the
-    /// whole pipeline. It is exactly
+    /// whole pipeline. It gives the result of
     /// `self.detect_with_corners(image, &self.detect_corners(image))` — reach
     /// for [`Self::detect_with_corners`] when you already have a corner cloud
     /// (a custom upstream, or one shared across detectors).
     ///
     /// The error and tie-breaking semantics are those of
-    /// [`Self::detect_with_corners`].
+    /// [`Self::detect_with_corners`]. Running the corner pass itself, it also
+    /// knows the frame's noise level and records it on the result's
+    /// [`quality`](PuzzleBoardDetection::quality).
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
     ) -> Result<PuzzleBoardDetection, PuzzleBoardDetectError> {
-        self.detect_with_corners(image, &self.detect_corners(image))
+        let frame = detect_corner_frame(image, &self.params.chess);
+        let mut result = self.detect_with_corners(image, &frame.corners)?;
+        result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+        Ok(result)
     }
 
     /// Detect a PuzzleBoard in `image` using raw ChESS corner features.
@@ -163,7 +168,12 @@ impl PuzzleBoardDetector {
         Result<PuzzleBoardDetection, PuzzleBoardDetectError>,
         PuzzleBoardDiagnostics,
     ) {
-        self.diagnose_with_corners(image, &self.detect_corners(image))
+        let frame = detect_corner_frame(image, &self.params.chess);
+        let (mut result, diagnostics) = self.diagnose_with_corners(image, &frame.corners);
+        if let Ok(result) = &mut result {
+            result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+        }
+        (result, diagnostics)
     }
 
     /// Detect a PuzzleBoard and additionally return per-call diagnostics

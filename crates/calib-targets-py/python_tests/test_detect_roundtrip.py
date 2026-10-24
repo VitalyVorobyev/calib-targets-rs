@@ -531,6 +531,11 @@ def test_detect_charuco_with_corners_matches_detect_charuco() -> None:
 
     direct = ct.detect_charuco(image, params=params)
     via_corners = ct.detect_charuco_with_corners(image, corners, params=params)
+    # Identical but for the frame's noise level, which only the detector that
+    # ran the corner pass knows.
+    assert direct.quality.noise_sigma is not None
+    assert via_corners.quality.noise_sigma is None
+    via_corners.quality.noise_sigma = direct.quality.noise_sigma
     assert via_corners.to_dict() == direct.to_dict()
 
 
@@ -624,3 +629,104 @@ def test_charuco_corners_carry_position_covariance() -> None:
     labeled = result.detection.corners
     assert [c.position_covariance for c in labeled] == covs
     _assert_roundtrip(result)
+
+
+# ---------------------------------------------------------------------------
+# per-detection quality
+# ---------------------------------------------------------------------------
+
+
+_QUALITY_KEYS = {
+    "noise_sigma",
+    "covariance_coverage",
+    "median_sigma_px",
+    "p95_sigma_px",
+    "local_residual_count",
+    "local_residual_rms_px",
+    "variance_factor_count",
+    "variance_factor",
+}
+
+
+def _assert_quality_measured(quality: ct.DetectionQuality, corners: int) -> None:
+    # On a lossless camera image the default config estimates the noise and
+    # measures a covariance on (nearly) every corner.
+    assert isinstance(quality, ct.DetectionQuality)
+    assert quality.noise_sigma is not None and quality.noise_sigma >= 0.0
+    assert 0.9 <= quality.covariance_coverage <= 1.0
+    assert quality.median_sigma_px is not None and quality.p95_sigma_px is not None
+    assert 0.0 < quality.median_sigma_px <= quality.p95_sigma_px
+    assert 0 < quality.local_residual_count <= corners
+    assert quality.local_residual_rms_px is not None and quality.local_residual_rms_px > 0.0
+    assert 0 < quality.variance_factor_count <= quality.local_residual_count
+    assert quality.variance_factor is not None and quality.variance_factor > 0.0
+
+
+def test_chessboard_quality_matches_the_rust_payload() -> None:
+    image = _load_gray("mid.png")
+    raw = _core.detect_chessboard(image, params=None)
+    assert raw is not None
+    assert set(raw["quality"].keys()) == _QUALITY_KEYS
+    result = ct.ChessboardDetectionResult.from_dict(raw)
+    # Byte-identical dict parity with the Rust payload.
+    assert result.to_dict()["quality"] == raw["quality"]
+    _assert_quality_measured(result.quality, len(result.corners))
+    _assert_roundtrip(result)
+
+
+def test_every_detection_result_carries_quality() -> None:
+    charuco = ct.detect_charuco(_load_gray("small2.png"), params=_charuco_params_small2())
+    _assert_quality_measured(charuco.quality, len(charuco.corners))
+    # `puzzleboard_small.png` is a noise-free render: the noise estimate
+    # declines, so no corner carries a covariance — but the local residual is
+    # still measured.
+    puzzle = ct.detect_puzzleboard(
+        _load_gray("puzzleboard_small.png"), params=_puzzleboard_params()
+    )
+    assert puzzle.quality.noise_sigma is None
+    assert puzzle.quality.covariance_coverage == 0.0
+    assert puzzle.quality.median_sigma_px is None
+    assert puzzle.quality.variance_factor is None
+    assert 0 < puzzle.quality.local_residual_count <= len(puzzle.corners)
+    assert puzzle.quality.local_residual_rms_px is not None
+    spec = _puzzlepole_spec()
+    pole = ct.detect_puzzlepole(
+        _load_gray("puzzlepole_view.png"), params=ct.PuzzlePoleParams.for_pole(spec)
+    )
+    # Covariance statistics only on a (non-planar) pole.
+    assert pole.quality.local_residual_count == 0
+    assert pole.quality.local_residual_rms_px is None
+    assert pole.quality.variance_factor is None
+    marker = ct.detect_marker_board(
+        _load_gray("markerboard_crop.png"), params=_marker_board_params()
+    )
+    assert marker is not None
+    _assert_quality_measured(marker.quality, len(marker.corners))
+    for result in (charuco, puzzle, pole, marker):
+        _assert_roundtrip(result)
+
+
+def test_with_corners_quality_has_no_noise_level() -> None:
+    # The detector did not run the corner pass, so it cannot know the noise
+    # the covariances were computed with; the rest is still measured.
+    image = _load_gray("small2.png")
+    params = _charuco_params_small2()
+    result = ct.detect_charuco_with_corners(
+        image, _topological_corners(image, params.chess), params=params
+    )
+    assert result.quality.noise_sigma is None
+    assert result.quality.covariance_coverage > 0.9
+
+
+def test_quality_dicts_parse_without_the_key() -> None:
+    # Payloads written before the field existed omit it; an empty dict is the
+    # "nothing measured" value, as on the Rust side.
+    restored = ct.ChessboardDetectionResult.from_dict(
+        {"corners": [], "cell_size": None}
+    )
+    assert restored.quality == ct.DetectionQuality()
+    assert ct.DetectionQuality.from_dict({}) == ct.DetectionQuality()
+    with pytest.raises(ValueError):
+        ct.DetectionQuality.from_dict({"bogus": 1})
+    q = ct.DetectionQuality(noise_sigma=1.5, covariance_coverage=1.0, variance_factor=1.2)
+    assert ct.DetectionQuality.from_dict(q.to_dict()) == q

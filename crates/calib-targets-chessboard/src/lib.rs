@@ -98,8 +98,8 @@ pub use rectified_view::{rectify_from_chessboard_result, RectifiedBoardView, Rec
 
 // Re-export the foreign types [`detect_corners`] needs — the ChESS front-end
 // config, its named default, the image view, and the covariance its corners
-// carry — so running the corner pass through this crate does not require
+// carry — plus the quality summary every detection carries, so running the corner pass through this crate does not require
 // naming `calib-targets-core` as well.
 pub use calib_targets_core::{
-    default_chess_config, DetectorConfig, GrayImageView, PositionCovariance,
+    default_chess_config, DetectionQuality, DetectorConfig, GrayImageView, PositionCovariance,
 };

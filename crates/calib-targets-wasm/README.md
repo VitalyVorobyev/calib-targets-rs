@@ -220,6 +220,20 @@ that reports none, or a noise estimate that declined (typical of JPEG input —
 set `noise_sigma`). See
 [chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
+Every detection result (`ChessboardDetection`, `CharucoDetection`,
+`MarkerBoardDetection`, `PuzzleBoardDetection`) also has
+`quality: DetectionQuality` (unavailable statistics are `null`):
+
+| Field | Meaning |
+|---|---|
+| `noise_sigma` | Image noise (gray levels) the covariances used; null for `*_with_corners` calls or when the estimate declined. |
+| `covariance_coverage` | Fraction of delivered corners carrying a covariance. |
+| `median_sigma_px`, `p95_sigma_px` | Median / 95th-percentile per-corner σ (least certain direction), px. |
+| `local_residual_count`, `local_residual_rms_px` | Corners with ≥ 6 of 8 grid neighbours; RMS of their leave-one-out residual (corner predicted from its neighbours alone), px. |
+| `variance_factor_count`, `variance_factor` | Robust variance factor σ̂₀² of those residuals whitened by the corner's and the prediction's covariance: ≈ 1 the covariances describe the local scatter, > 1 overconfident (expected on real images). Frame-comparable, not pass/fail. |
+
+See [Corner uncertainty & detection quality](https://vitalyvorobyev.github.io/calib-targets-rs/book/uncertainty.html).
+
 ## Functions
 
 | Function | Returns |

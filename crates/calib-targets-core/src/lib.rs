@@ -33,6 +33,7 @@ mod grid_smoothness;
 mod homography;
 mod image;
 pub mod io;
+mod quality;
 mod rectify;
 
 pub use bit_likelihood::log_sigmoid;
@@ -60,6 +61,7 @@ pub use grid_alignment::{
     cell_rect_corners_at, cell_to_corner_alignment, GridAlignment, GridTransform,
     GRID_TRANSFORMS_C4, GRID_TRANSFORMS_D4,
 };
+pub use quality::{DetectionQuality, MIN_LOCAL_NEIGHBOURS};
 
 /// The canonical integer grid-coordinate type `(u, v)` — `u` is the grid's
 /// first axis (right), `v` the second (down). Re-exported from

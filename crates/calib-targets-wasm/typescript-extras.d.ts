@@ -242,6 +242,41 @@ export interface PositionCovariance {
   yy: number;
 }
 
+/**
+ * How well a detection's corners are localized (Rust `DetectionQuality`),
+ * measured on the corners it delivered.
+ *
+ * The local check predicts every corner with at least six of its eight grid
+ * neighbours from those neighbours alone (the intersection of the lines
+ * through its opposite neighbours, the corner left out)
+ * and whitens the residual with the corner's and the prediction's covariance.
+ * `variance_factor` ≈ 1: the covariances describe the local scatter; < 1:
+ * conservative; > 1: overconfident or an unmodelled effect (expected on real
+ * images). A frame-comparable number, not a pass/fail test.
+ */
+export interface DetectionQuality {
+  /**
+   * Image noise (gray levels, 1σ) the covariances were computed with; `null`
+   * when the detector did not run the corner pass itself (`*_with_corners`)
+   * or the noise estimate declined.
+   */
+  noise_sigma: number | null;
+  /** Fraction of delivered corners carrying a covariance, in `[0, 1]`. */
+  covariance_coverage: number;
+  /** Median per-corner σ along the least certain direction, px. */
+  median_sigma_px: number | null;
+  /** 95th-percentile (nearest rank) per-corner σ, px. */
+  p95_sigma_px: number | null;
+  /** Corners with a complete enough neighbourhood for the local check. */
+  local_residual_count: number;
+  /** RMS leave-one-out residual length over those corners, px. */
+  local_residual_rms_px: number | null;
+  /** Corners in `variance_factor` (every covariance it needs present). */
+  variance_factor_count: number;
+  /** Robust variance factor σ̂₀² (`median(z) / ln 2`) of the whitened residuals. */
+  variance_factor: number | null;
+}
+
 export interface Corner {
   position: Point2;
   /**
@@ -313,6 +348,8 @@ export interface ChessboardDetection {
   corners: ChessboardCorner[];
   /** Grid pitch in pixels; `null` only on results built without a seed. */
   cell_size: number | null;
+  /** Localization quality of `corners`. */
+  quality: DetectionQuality;
 }
 
 export interface MarkerDetection {
@@ -348,6 +385,8 @@ export interface CharucoDetection {
   /** Markers consistent with `alignment` (inliers of the chosen hypothesis). */
   markers: MarkerDetection[];
   alignment: GridAlignment;
+  /** Localization quality of `corners`. */
+  quality: DetectionQuality;
 }
 
 export interface MarkerBoardCorner {
@@ -368,6 +407,8 @@ export interface MarkerBoardCorner {
 export interface MarkerBoardDetection {
   corners: MarkerBoardCorner[];
   alignment: GridAlignment | null;
+  /** Localization quality of `corners`. */
+  quality: DetectionQuality;
 }
 
 /**
@@ -428,6 +469,8 @@ export interface PuzzleBoardDetection {
   corners: PuzzleBoardCorner[];
   alignment: GridAlignment;
   decode: PuzzleBoardDecodeInfo;
+  /** Localization quality of `corners`. */
+  quality: DetectionQuality;
 }
 
 // ---------------------------------------------------------------------------

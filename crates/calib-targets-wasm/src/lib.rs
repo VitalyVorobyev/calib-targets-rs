@@ -699,9 +699,14 @@ pub fn detect_chessboard(
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let view = make_view(pixels, width, height);
-    let corners = calib_targets_chessboard::detect_corners(&view, &chess);
+    // The frame's noise level goes onto the result's `quality`, which the
+    // corner-cloud detector cannot know.
+    let frame = calib_targets_chessboard::detect_corner_frame(&view, &chess);
     let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
-    let result = detector.detect(&corners);
+    let result = detector.detect(&frame.corners).map(|mut d| {
+        d.quality = d.quality.with_noise_sigma(frame.noise.sigma());
+        d
+    });
     to_js(&result)
 }
 
@@ -725,9 +730,12 @@ pub fn detect_chessboard_all(
     let chess = resolve_chess_cfg(chess_cfg)?;
 
     let view = make_view(pixels, width, height);
-    let corners = calib_targets_chessboard::detect_corners(&view, &chess);
+    let frame = calib_targets_chessboard::detect_corner_frame(&view, &chess);
     let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
-    let results = detector.detect_all(&corners);
+    let mut results = detector.detect_all(&frame.corners);
+    for d in &mut results {
+        d.quality = d.quality.with_noise_sigma(frame.noise.sigma());
+    }
     to_js(&results)
 }
 
@@ -814,12 +822,10 @@ pub fn detect_marker_board(
     validate_gray(pixels, width, height)?;
     let mut mb_params: MarkerBoardParams = from_js(params)?;
     apply_chess_cfg_override(&mut mb_params.chess, chess_cfg)?;
-    let chess = mb_params.chess;
 
     let view = make_view(pixels, width, height);
-    let corners = calib_targets_chessboard::detect_corners(&view, &chess);
     let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
-    let result = detector.detect_with_corners(&view, &corners).ok();
+    let result = detector.detect(&view).ok();
     to_js(&result)
 }
 
@@ -940,13 +946,11 @@ pub fn diagnose_charuco(
     validate_gray(pixels, width, height)?;
     let mut charuco_params: calib_targets_charuco::CharucoParams = from_js(params)?;
     apply_chess_cfg_override(&mut charuco_params.chess, chess_cfg)?;
-    let chess = charuco_params.chess;
 
     let view = make_view(pixels, width, height);
-    let corners = calib_targets_chessboard::detect_corners(&view, &chess);
     let detector =
         CharucoDetector::new(charuco_params).map_err(|e| JsError::new(&e.to_string()))?;
-    let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
+    let (result, diagnostics) = detector.diagnose(&view);
     to_js(&serde_json::json!({
         "result": result.ok(),
         "diagnostics": diagnostics,
@@ -997,12 +1001,10 @@ pub fn diagnose_marker_board(
     validate_gray(pixels, width, height)?;
     let mut mb_params: MarkerBoardParams = from_js(params)?;
     apply_chess_cfg_override(&mut mb_params.chess, chess_cfg)?;
-    let chess = mb_params.chess;
 
     let view = make_view(pixels, width, height);
-    let corners = calib_targets_chessboard::detect_corners(&view, &chess);
     let detector = MarkerBoardDetector::new(mb_params).map_err(|e| JsError::new(&e.to_string()))?;
-    let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
+    let (result, diagnostics) = detector.diagnose(&view);
     to_js(&serde_json::json!({
         "result": result.ok(),
         "diagnostics": diagnostics,
@@ -1050,13 +1052,11 @@ pub fn diagnose_puzzleboard(
     validate_gray(pixels, width, height)?;
     let mut puzzle_params: PuzzleBoardParams = from_js(params)?;
     apply_chess_cfg_override(&mut puzzle_params.chess, chess_cfg)?;
-    let chess = puzzle_params.chess;
 
     let view = make_view(pixels, width, height);
-    let corners = calib_targets_chessboard::detect_corners(&view, &chess);
     let detector =
         PuzzleBoardDetector::new(puzzle_params).map_err(|e| JsError::new(&e.to_string()))?;
-    let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
+    let (result, diagnostics) = detector.diagnose(&view);
     to_js(&serde_json::json!({
         "result": result.ok(),
         "diagnostics": diagnostics,

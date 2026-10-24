@@ -349,12 +349,9 @@ fn detect_chessboard(
     let params = chessboard_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
-    let result = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::ChessboardDetector::new(params.clone())
-            .ok()
-            .and_then(|d| d.detect(&corners))
-    });
+    // The facade helper also records the frame's noise level on the result's
+    // `quality`; a miss and a rejected config both map to `None`.
+    let result = py.detach(move || detect::detect_chessboard(&img, &chess_cfg, &params).ok());
     match result {
         Some(res) => {
             let json = serde_json::to_value(res)
@@ -393,12 +390,7 @@ fn detect_chessboard_all(
     let params = chessboard_params_from_py(params)?;
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
-    let results = py.detach(move || {
-        let corners = detect::detect_corners(&img, &chess_cfg);
-        chessboard::ChessboardDetector::new(params.clone())
-            .map(|d| d.detect_all(&corners))
-            .unwrap_or_default()
-    });
+    let results = py.detach(move || detect::detect_chessboard_all(&img, &chess_cfg, &params));
     let json =
         serde_json::to_value(results).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
     json_to_py(py, &json)

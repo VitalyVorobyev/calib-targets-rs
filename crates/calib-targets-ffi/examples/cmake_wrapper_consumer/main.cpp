@@ -68,6 +68,12 @@ int main(int argc, char **argv) {
     consumer_support::reset_gray_image_buffer(&image);
     return 1;
   }
+  if (!consumer_support::quality_is_sane(result.quality, corners.size())) {
+    std::cerr << "unexpected detection quality: coverage=" << result.quality.covariance_coverage
+              << " local=" << result.quality.local_residual_count << "\n";
+    consumer_support::reset_gray_image_buffer(&image);
+    return 1;
+  }
 
   consumer_support::reset_gray_image_buffer(&image);
   return 0;

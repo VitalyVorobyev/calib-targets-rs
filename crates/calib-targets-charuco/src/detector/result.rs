@@ -1,6 +1,7 @@
 use calib_targets_aruco::MarkerDetection;
 use calib_targets_core::{
-    Coord, GridAlignment, LabeledCorner, PositionCovariance, TargetDetection, TargetKind,
+    Coord, DetectionQuality, GridAlignment, LabeledCorner, PositionCovariance, TargetDetection,
+    TargetKind,
 };
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -91,16 +92,25 @@ pub struct CharucoDetection {
     pub markers: Vec<MarkerDetection>,
     /// Alignment from the rectified grid coordinate system into board coordinates.
     pub alignment: GridAlignment,
+    /// How well [`Self::corners`] are localized, measured on the delivered
+    /// corners (after re-detection and merging). See [`DetectionQuality`].
+    /// [`noise_sigma`](DetectionQuality::noise_sigma) is set when the detector
+    /// ran the corner pass itself ([`CharucoDetector::detect`](crate::CharucoDetector::detect)).
+    #[serde(default)]
+    pub quality: DetectionQuality,
 }
 
 impl CharucoDetection {
-    /// Create a result from its typed corners, inlier markers, and alignment.
+    /// Create a result from its typed corners, inlier markers, and alignment,
+    /// measuring its [`quality`](Self::quality).
     pub fn new(
         corners: Vec<CharucoCorner>,
         markers: Vec<MarkerDetection>,
         alignment: GridAlignment,
     ) -> Self {
+        let labeled: Vec<LabeledCorner> = corners.iter().map(CharucoCorner::to_labeled).collect();
         Self {
+            quality: DetectionQuality::from_corners(&labeled),
             corners,
             markers,
             alignment,

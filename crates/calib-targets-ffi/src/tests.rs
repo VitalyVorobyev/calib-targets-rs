@@ -415,8 +415,52 @@ fn chessboard_detect_supports_query_and_copy() {
             && c.yy > 0.0
             && c.xx * c.yy - c.xy * c.xy > 0.0
     }));
+    // The result header carries the detection's quality, with the frame's
+    // noise level (the FFI detector runs the corner pass itself).
+    let q = result.quality;
+    assert_eq!(q.noise_sigma.has_value, CT_TRUE);
+    assert_eq!(q.covariance_coverage, 1.0);
+    assert_eq!(q.median_sigma_px.has_value, CT_TRUE);
+    assert!(q.p95_sigma_px.value >= q.median_sigma_px.value);
+    assert!(q.local_residual_count > 0 && q.local_residual_count <= corners.len());
+    assert_eq!(q.variance_factor_count, q.local_residual_count);
+    assert_eq!(q.variance_factor.has_value, CT_TRUE);
+    assert!(q.variance_factor.value > 0.0);
 
     unsafe { ct_chessboard_detector_destroy(detector) };
+}
+
+#[test]
+fn detection_quality_converter_maps_every_field() {
+    use calib_targets::core::{Coord, DetectionQuality, LabeledCorner, PositionCovariance};
+    let corners: Vec<LabeledCorner> = (0..25)
+        .map(|k| {
+            let (u, v) = (k % 5, k / 5);
+            // A little non-projective wobble so the residual is non-zero.
+            let wobble = if (u + v) % 2 == 0 { 0.05 } else { -0.05 };
+            LabeledCorner::new([u as f32 * 10.0 + wobble, v as f32 * 10.0].into(), 1.0)
+                .with_grid(Coord::new(u, v))
+                .with_position_covariance(PositionCovariance::new(0.01, 0.0, 0.01))
+        })
+        .collect();
+    let q = DetectionQuality::from_corners(&corners).with_noise_sigma(2.0);
+    let out = crate::convert::detection_quality_to_ffi(&q);
+    assert_eq!(out.noise_sigma, ct_optional_f32_t::some(2.0));
+    assert_eq!(out.covariance_coverage, 1.0);
+    assert_eq!(out.median_sigma_px, ct_optional_f32_t::some(0.1));
+    assert_eq!(out.p95_sigma_px, ct_optional_f32_t::some(0.1));
+    assert_eq!(out.local_residual_count, 9);
+    assert_eq!(out.variance_factor_count, 9);
+    assert_eq!(
+        out.local_residual_rms_px,
+        ct_optional_f32_t::some(q.local_residual_rms_px.unwrap())
+    );
+    assert_eq!(
+        out.variance_factor,
+        ct_optional_f32_t::some(q.variance_factor.unwrap())
+    );
+    let empty = crate::convert::detection_quality_to_ffi(&DetectionQuality::default());
+    assert_eq!(empty, ct_detection_quality_t::default());
 }
 
 #[test]

@@ -18,12 +18,15 @@ use projective_grid::expert::attachment::GrowResult;
 use projective_grid::expert::lattice::normalize_square_entries;
 use projective_grid::{Coord, GridEntry};
 
-use super::types::{ChessboardCorner, ChessboardDetection};
+use super::types::{measure_quality, ChessboardCorner, ChessboardDetection};
 
 /// Build a [`ChessboardDetection`] from a labelled component.
 ///
 /// `cell_size` is the grid pitch in pixels recorded on the result (see
-/// [`ChessboardDetection::cell_size`]).
+/// [`ChessboardDetection::cell_size`]). The delivered corner set's
+/// [`quality`](ChessboardDetection::quality) is measured here, once per
+/// detection, without the frame's noise level (this stage never sees the
+/// image).
 pub(crate) fn build_detection(
     corners: &[CornerAug],
     grow: &GrowResult,
@@ -54,6 +57,7 @@ pub(crate) fn build_detection(
     }
 
     ChessboardDetection {
+        quality: measure_quality(&chessboard_corners),
         corners: chessboard_corners,
         cell_size: Some(cell_size),
     }

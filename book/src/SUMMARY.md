@@ -13,6 +13,7 @@
 - [Reference]()
   - [The Grid Model](projective_grid.md)
   - [Understanding Results](output.md)
+  - [Corner uncertainty & detection quality](uncertainty.md)
   - [Conventions](conventions.md)
   - [Metrics](metrics.md)
   - [Migration Guide](migration.md)

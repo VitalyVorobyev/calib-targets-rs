@@ -56,6 +56,12 @@ int main(int argc, char **argv) {
     ct_native_gray_image_buffer_reset(&image);
     return 1;
   }
+  if (!ct_native_quality_is_sane(&result.quality, corners.size())) {
+    std::cerr << "unexpected detection quality: coverage=" << result.quality.covariance_coverage
+              << " local=" << result.quality.local_residual_count << "\n";
+    ct_native_gray_image_buffer_reset(&image);
+    return 1;
+  }
 
   calib_targets::ffi::ChessboardDetector moved = std::move(detector);
   corners.clear();

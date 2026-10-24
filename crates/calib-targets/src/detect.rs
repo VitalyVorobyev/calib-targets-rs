@@ -273,11 +273,24 @@ pub fn detect_chessboard(
     chess_cfg: &DetectorConfig,
     params: &chessboard::ChessboardParams,
 ) -> Result<chessboard::ChessboardDetection, DetectError> {
-    let corners = detect_corners(img, chess_cfg);
+    let frame = chessboard::detect_corner_frame(&gray_view(img), chess_cfg);
     let detector = chessboard::ChessboardDetector::new(params.clone())?;
-    detector.detect(&corners).ok_or(DetectError::NoDetection {
-        target: core::TargetKind::Chessboard,
-    })
+    let detection = detector
+        .detect(&frame.corners)
+        .ok_or(DetectError::NoDetection {
+            target: core::TargetKind::Chessboard,
+        })?;
+    Ok(with_frame_noise(detection, &frame))
+}
+
+/// Record the frame's noise level on a chessboard detection's quality: the
+/// chessboard detector runs on a corner cloud and cannot know it.
+fn with_frame_noise(
+    mut detection: chessboard::ChessboardDetection,
+    frame: &chessboard::CornerFrame,
+) -> chessboard::ChessboardDetection {
+    detection.quality = detection.quality.with_noise_sigma(frame.noise.sigma());
+    detection
 }
 
 /// Multi-component variant of [`detect_chessboard`]: returns every same-board
@@ -295,11 +308,15 @@ pub fn detect_chessboard_all(
     chess_cfg: &DetectorConfig,
     params: &chessboard::ChessboardParams,
 ) -> Vec<chessboard::ChessboardDetection> {
-    let corners = detect_corners(img, chess_cfg);
+    let frame = chessboard::detect_corner_frame(&gray_view(img), chess_cfg);
     let Ok(detector) = chessboard::ChessboardDetector::new(params.clone()) else {
         return Vec::new();
     };
-    detector.detect_all(&corners)
+    detector
+        .detect_all(&frame.corners)
+        .into_iter()
+        .map(|d| with_frame_noise(d, &frame))
+        .collect()
 }
 
 /// Run the ChArUco detector end-to-end: ChESS corners -> grid -> markers -> alignment -> IDs.
@@ -429,15 +446,16 @@ pub fn detect_chessboard_best(
     chess_cfg: &DetectorConfig,
     param_configs: &[chessboard::ChessboardParams],
 ) -> Result<chessboard::ChessboardDetection, DetectError> {
-    let corners = detect_corners(img, chess_cfg);
+    let frame = chessboard::detect_corner_frame(&gray_view(img), chess_cfg);
     param_configs
         .iter()
         .filter_map(|params| {
             chessboard::ChessboardDetector::new(params.clone())
                 .ok()?
-                .detect(&corners)
+                .detect(&frame.corners)
         })
         .max_by_key(|d| d.corners.len())
+        .map(|d| with_frame_noise(d, &frame))
         .ok_or(DetectError::NoDetection {
             target: core::TargetKind::Chessboard,
         })
@@ -514,9 +532,10 @@ pub fn detect_puzzleboard_best(
     let mut last_err: Option<DetectError> = None;
     let mut corner_cache: Vec<(DetectorConfig, chessboard::CornerFrame)> = Vec::new();
     for params in configs {
-        let corners = &cached_frame(img, &params.chess, &mut corner_cache).corners;
-        match detect_puzzleboard_with_corners(img, corners, params) {
-            Ok(r) => {
+        let frame = cached_frame(img, &params.chess, &mut corner_cache);
+        match detect_puzzleboard_with_corners(img, &frame.corners, params) {
+            Ok(mut r) => {
+                r.quality = r.quality.with_noise_sigma(frame.noise.sigma());
                 let better = match &best {
                     None => true,
                     Some(b) => {
@@ -580,9 +599,10 @@ pub fn detect_puzzlepole_best(
     let mut last_err: Option<DetectError> = None;
     let mut corner_cache: Vec<(DetectorConfig, chessboard::CornerFrame)> = Vec::new();
     for params in configs {
-        let corners = &cached_frame(img, &params.chess, &mut corner_cache).corners;
-        match detect_puzzlepole_with_corners(img, corners, params) {
-            Ok(r) => {
+        let frame = cached_frame(img, &params.chess, &mut corner_cache);
+        match detect_puzzlepole_with_corners(img, &frame.corners, params) {
+            Ok(mut r) => {
+                r.quality = r.quality.with_noise_sigma(frame.noise.sigma());
                 let better = match &best {
                     None => true,
                     Some(b) => {
@@ -640,9 +660,12 @@ pub fn detect_marker_board_best(
         let Ok(detector) = marker::MarkerBoardDetector::new(params.clone()) else {
             continue;
         };
-        let corners = &cached_frame(img, &params.chess, &mut corner_cache).corners;
-        let result = match detector.detect_with_corners(&gray_view(img), corners) {
-            Ok(result) => result,
+        let frame = cached_frame(img, &params.chess, &mut corner_cache);
+        let result = match detector.detect_with_corners(&gray_view(img), &frame.corners) {
+            Ok(mut result) => {
+                result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+                result
+            }
             Err(err) => {
                 last_err = Some(err.into());
                 continue;

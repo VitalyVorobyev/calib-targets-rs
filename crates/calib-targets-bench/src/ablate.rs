@@ -903,6 +903,7 @@ mod tests {
                 labelled_count: *lc,
                 diff_vs_baseline: Default::default(),
                 structural_precision: Default::default(),
+                quality: None,
             })
             .collect();
         RunReport {
@@ -916,6 +917,7 @@ mod tests {
                 p50_ms: 0.0,
                 p95_ms: 0.0,
                 max_ms: 0.0,
+                quality: Default::default(),
             },
             per_image,
         }

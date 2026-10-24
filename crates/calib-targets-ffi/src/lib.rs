@@ -33,10 +33,10 @@ pub use types::*;
 use crate::convert::{
     alignment_to_ffi, chessboard_corner_to_ffi, chessboard_params_default_values,
     convert_charuco_detector_params, convert_chess_config, convert_chessboard_params,
-    convert_marker_board_params, convert_puzzleboard_params, labeled_corner_to_ffi,
-    map_charuco_create_error, map_charuco_detect_error, map_marker_board_detect_error,
-    map_puzzleboard_create_error, map_puzzleboard_detect_error, marker_detection_to_ffi,
-    option_f32_to_ffi,
+    convert_marker_board_params, convert_puzzleboard_params, detection_quality_to_ffi,
+    labeled_corner_to_ffi, map_charuco_create_error, map_charuco_detect_error,
+    map_marker_board_detect_error, map_puzzleboard_create_error, map_puzzleboard_detect_error,
+    marker_detection_to_ffi, option_f32_to_ffi,
 };
 use crate::error::{last_error_bytes, panic_message, set_last_error_message, FfiError, FfiResult};
 
@@ -124,13 +124,15 @@ impl PreparedGrayImage {
         })
     }
 
-    fn detect_corners(
+    /// The corner pass plus the frame's noise level (for the chessboard
+    /// result's `quality`, which the corner-cloud detector cannot know).
+    fn detect_corner_frame(
         &self,
         chess: &DetectorConfig,
-    ) -> Vec<calib_targets::chessboard::ChessCorner> {
+    ) -> calib_targets::chessboard::CornerFrame {
         // Pre-blur is not exposed via the C ABI; callers requiring it must
         // pre-process the image before submitting it.
-        calib_targets::chessboard::detect_corners(&self.view(), chess)
+        calib_targets::chessboard::detect_corner_frame(&self.view(), chess)
     }
 
     fn view(&self) -> GrayImageView<'_> {

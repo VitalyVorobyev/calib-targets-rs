@@ -298,6 +298,57 @@ typedef struct ct_chessboard_detect_args_t {
 } ct_chessboard_detect_args_t;
 
 /**
+ * Per-detection localization quality (`DetectionQuality` in Rust).
+ *
+ * Covariance statistics over the delivered corners, plus the local
+ * leave-one-out check: each corner with at least six of its eight grid
+ * neighbours is predicted from them alone (the intersection of the lines
+ * through its opposite neighbours), and the residual is whitened by the corner's and the
+ * prediction's covariance. `variance_factor` ≈ 1 means the covariances
+ * describe the local scatter, > 1 that they are overconfident (expected on
+ * real images); a frame-comparable number, not a pass/fail test.
+ *
+ * Every `ct_optional_f32_t` member is unset when unavailable: `noise_sigma`
+ * when the detector did not run the corner pass itself or the estimate
+ * declined, the σ statistics when no corner carries a covariance, the local
+ * statistics when no corner qualifies.
+ */
+typedef struct ct_detection_quality_t {
+  /**
+   * Image noise (gray levels, 1σ) the covariances were computed with.
+   */
+  struct ct_optional_f32_t noise_sigma;
+  /**
+   * Fraction of delivered corners carrying a covariance, `[0, 1]`.
+   */
+  float covariance_coverage;
+  /**
+   * Median per-corner σ along the least certain direction, px.
+   */
+  struct ct_optional_f32_t median_sigma_px;
+  /**
+   * 95th-percentile (nearest rank) per-corner σ, px.
+   */
+  struct ct_optional_f32_t p95_sigma_px;
+  /**
+   * Corners with a complete enough neighbourhood for the local check.
+   */
+  size_t local_residual_count;
+  /**
+   * RMS leave-one-out residual length over those corners, px.
+   */
+  struct ct_optional_f32_t local_residual_rms_px;
+  /**
+   * Corners in `variance_factor` (every covariance it needs present).
+   */
+  size_t variance_factor_count;
+  /**
+   * Robust variance factor σ̂₀² of the whitened leave-one-out residuals.
+   */
+  struct ct_optional_f32_t variance_factor;
+} ct_detection_quality_t;
+
+/**
  * Chessboard detection header.
  *
  * Carries the labelled-corner count plus the seed-derived grid pitch;
@@ -316,6 +367,10 @@ typedef struct ct_chessboard_result_t {
    * detector did not record one (e.g. an empty / failed detection).
    */
   struct ct_optional_f32_t cell_size;
+  /**
+   * Localization quality of this detection's corners.
+   */
+  struct ct_detection_quality_t quality;
 } ct_chessboard_result_t;
 
 /**
@@ -558,6 +613,10 @@ typedef struct ct_charuco_result_t {
   struct ct_target_detection_t detection;
   size_t markers_len;
   struct ct_grid_alignment_t alignment;
+  /**
+   * Localization quality of the delivered corners.
+   */
+  struct ct_detection_quality_t quality;
 } ct_charuco_result_t;
 
 /**
@@ -738,6 +797,10 @@ typedef struct ct_marker_board_result_t {
   struct ct_target_detection_t detection;
   uint32_t has_alignment;
   struct ct_grid_alignment_t alignment;
+  /**
+   * Localization quality of the delivered corners.
+   */
+  struct ct_detection_quality_t quality;
 } ct_marker_board_result_t;
 
 /**
@@ -878,6 +941,10 @@ typedef struct ct_puzzleboard_result_t {
   float dot_dissent_rate;
   int32_t master_origin_row;
   int32_t master_origin_col;
+  /**
+   * Localization quality of the delivered corners.
+   */
+  struct ct_detection_quality_t quality;
 } ct_puzzleboard_result_t;
 
 /**

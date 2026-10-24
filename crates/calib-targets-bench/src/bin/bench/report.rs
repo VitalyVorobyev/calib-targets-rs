@@ -2,6 +2,7 @@
 //! compute/summary/serialization helpers live in the library
 //! (`calib_targets_bench::report`).
 
+use calib_targets::DetectionQuality;
 use calib_targets_bench::report::RunReport;
 
 pub(crate) fn print_summary(report: &RunReport) -> std::io::Result<()> {
@@ -22,7 +23,7 @@ pub(crate) fn print_summary(report: &RunReport) -> std::io::Result<()> {
         let dup = d.duplicate_run_positions.len();
         let sp = &r.structural_precision;
         println!(
-            "{status:<11} {:<50} {:>4} corners {:>7.1} ms  miss={:>3} extra={:>3} pos={:>3} id={:>3} dup={:>3} ov={:>3} col={:>3}{}",
+            "{status:<11} {:<50} {:>4} corners {:>7.1} ms  miss={:>3} extra={:>3} pos={:>3} id={:>3} dup={:>3} ov={:>3} col={:>3}{}{}",
             r.image,
             r.labelled_count,
             r.elapsed_ms,
@@ -34,6 +35,7 @@ pub(crate) fn print_summary(report: &RunReport) -> std::io::Result<()> {
             sp.overlong_edges,
             sp.collapsed_pairs,
             if d.inconsistent_shift { "  SHIFT-INCONSISTENT" } else { "" },
+            r.quality.as_ref().map(quality_cell).unwrap_or_default(),
         );
     }
     let improvements: usize = report
@@ -53,5 +55,33 @@ pub(crate) fn print_summary(report: &RunReport) -> std::io::Result<()> {
         report.summary.p95_ms,
         report.summary.max_ms,
     );
+    let q = &report.summary.quality;
+    println!(
+        "quality (median over {} images, report-only): noise={} (known {}) cov={} σ_med={} px  local_rms={} px  σ̂₀²={} ({} images)",
+        q.images,
+        opt(q.noise_sigma, 2),
+        q.noise_known,
+        opt(q.covariance_coverage, 2),
+        opt(q.median_sigma_px, 3),
+        opt(q.local_residual_rms_px, 3),
+        opt(q.variance_factor, 2),
+        q.variance_factor_images,
+    );
     Ok(())
+}
+
+/// The per-image quality columns (report-only).
+fn quality_cell(q: &DetectionQuality) -> String {
+    format!(
+        "  noise={} cov={} σ_med={} rms={} σ̂₀²={}",
+        opt(q.noise_sigma, 2),
+        opt(Some(q.covariance_coverage), 2),
+        opt(q.median_sigma_px, 3),
+        opt(q.local_residual_rms_px, 3),
+        opt(q.variance_factor, 2),
+    )
+}
+
+fn opt(v: Option<f32>, digits: usize) -> String {
+    v.map_or_else(|| "-".to_string(), |v| format!("{v:.digits$}"))
 }

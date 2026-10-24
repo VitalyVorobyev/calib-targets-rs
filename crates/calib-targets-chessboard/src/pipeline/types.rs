@@ -5,7 +5,7 @@
 //! returned by the mandatory final geometry check. No pipeline logic lives
 //! here — see the sibling stage modules for the stage bodies.
 
-use calib_targets_core::{Coord, LabeledCorner, PositionCovariance};
+use calib_targets_core::{Coord, DetectionQuality, LabeledCorner, PositionCovariance};
 
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -87,17 +87,27 @@ pub struct ChessboardDetection {
     /// returned detection). Exposed on the stable result so consumers can
     /// scale geometry checks and overlays.
     pub cell_size: Option<f32>,
+    /// How well [`Self::corners`] are localized: covariance statistics and the
+    /// local leave-one-out variance factor, measured when the detection was
+    /// built. [`noise_sigma`](DetectionQuality::noise_sigma) is set only by
+    /// the image-level entry points, which know the frame's noise level; a
+    /// detector run on a corner cloud leaves it `None`.
+    #[serde(default)]
+    pub quality: DetectionQuality,
 }
 
 impl ChessboardDetection {
-    /// Create a detection from its labelled corner set.
+    /// Create a detection from its labelled corner set, measuring its
+    /// [`quality`](Self::quality).
     ///
     /// `cell_size` defaults to `None`; populate it with
     /// [`ChessboardDetection::with_cell_size`].
     pub fn new(corners: Vec<ChessboardCorner>) -> Self {
+        let quality = measure_quality(&corners);
         Self {
             corners,
             cell_size: None,
+            quality,
         }
     }
 
@@ -107,6 +117,12 @@ impl ChessboardDetection {
         self.cell_size = Some(cell_size);
         self
     }
+}
+
+/// [`DetectionQuality::from_corners`] over chessboard corners.
+pub(crate) fn measure_quality(corners: &[ChessboardCorner]) -> DetectionQuality {
+    let labeled: Vec<LabeledCorner> = corners.iter().map(ChessboardCorner::to_labeled).collect();
+    DetectionQuality::from_corners(&labeled)
 }
 
 /// Outcome of the mandatory final geometry check.

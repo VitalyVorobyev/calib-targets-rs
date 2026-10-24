@@ -58,6 +58,8 @@ Pixel coordinates of the detected corner in the input image.
 
 - Origin: **top-left**.
 - X axis: right; Y axis: down.
+- Pixel centres are at integer coordinates: a corner on the boundary between
+  pixel columns 15 and 16 is at `x = 15.5` (see [Conventions](conventions.md)).
 - Sub-pixel accuracy; values are not rounded to integer pixels.
 
 ### `position_covariance`
@@ -87,6 +89,10 @@ C) when no covariance was measured:
 Positions are identical whether or not the covariance is computed. A ChArUco
 corner that the detector re-measures near its marker-predicted position
 carries the covariance of that re-measurement.
+
+Every detection result also has a `quality` field summarising the delivered
+corners' covariances and how well they describe the corners' local scatter;
+see [Corner uncertainty & detection quality](uncertainty.md).
 
 ### `grid` — `(i, j)`
 

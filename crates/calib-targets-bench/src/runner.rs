@@ -3,8 +3,11 @@
 use std::path::Path;
 use std::time::Instant;
 
-use calib_targets::chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
-use calib_targets::detect::{detect_corners, DetectorConfig};
+use calib_targets::chessboard::{
+    detect_corner_frame, ChessCorner, ChessboardDetector, ChessboardParams,
+};
+use calib_targets::detect::{gray_view, DetectorConfig};
+use calib_targets::DetectionQuality;
 use calib_targets_core::axis_estimate_to_next;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
 use projective_grid::{
@@ -46,6 +49,10 @@ pub struct RunOutcome {
     pub elapsed_ms: f64,
     /// Detector output (`None` if no chessboard was found).
     pub detection: Option<BaselineImage>,
+    /// The detection's [`DetectionQuality`], with the frame's noise level
+    /// filled in. Report-only — never part of a baseline. `None` when no
+    /// chessboard was found or the engine reports none ([`Engine::Grid`]).
+    pub quality: Option<DetectionQuality>,
     /// The actual image fed to the detector (post-crop, post-upscale).
     /// Held so the overlay renderer can draw on the same coordinate space
     /// as the detector saw.
@@ -112,13 +119,19 @@ pub fn run_snap(
     let upscaled = upscale_snap(snap, entry.upscale);
 
     let started = Instant::now();
-    let corners = detect_corners(&upscaled, chess_cfg);
+    let frame = detect_corner_frame(&gray_view(&upscaled), chess_cfg);
     // The stable `ChessboardDetection` carries `cell_size`, so the pipeline
     // baseline reads it straight off the hot `detect()` path — no
     // `DebugFrame` needed here (overlays still use one separately).
-    let baseline_image = match engine {
-        Engine::Pipeline => run_pipeline_engine(params, &corners),
-        Engine::Grid => run_grid_engine(params, &corners),
+    let (baseline_image, quality) = match engine {
+        Engine::Pipeline => match run_pipeline_engine(params, &frame.corners) {
+            Some((image, quality)) => (
+                Some(image),
+                Some(quality.with_noise_sigma(frame.noise.sigma())),
+            ),
+            None => (None, None),
+        },
+        Engine::Grid => (run_grid_engine(params, &frame.corners), None),
     };
     let elapsed_ms = started.elapsed().as_secs_f64() * 1e3;
 
@@ -128,6 +141,7 @@ pub fn run_snap(
         upscale: entry.upscale,
         elapsed_ms,
         detection: baseline_image,
+        quality,
         fed_image: upscaled,
     })
 }
@@ -141,11 +155,12 @@ fn upscale_snap(snap: GrayImage, upscale: u32) -> GrayImage {
     }
 }
 
-/// Full chessboard production pipeline → [`BaselineImage`].
+/// Full chessboard production pipeline → [`BaselineImage`] and the
+/// detection's [`DetectionQuality`].
 fn run_pipeline_engine(
     params: &ChessboardParams,
     corners: &[ChessCorner],
-) -> Option<BaselineImage> {
+) -> Option<(BaselineImage, DetectionQuality)> {
     let d = ChessboardDetector::new(params.clone())
         .ok()?
         .detect(corners)?;
@@ -163,11 +178,14 @@ fn run_pipeline_engine(
         })
         .collect();
     out.sort_by_key(|c| (c.j, c.i));
-    Some(BaselineImage {
-        labelled_count: out.len(),
-        cell_size_px,
-        corners: out,
-    })
+    Some((
+        BaselineImage {
+            labelled_count: out.len(),
+            cell_size_px,
+            corners: out,
+        },
+        d.quality,
+    ))
 }
 
 /// Raw `projective-grid` grid builder → [`BaselineImage`], bypassing the

@@ -218,6 +218,20 @@ inline std::size_t count_valid_covariances(const std::vector<ct_chessboard_corne
   return valid;
 }
 
+// Whether a chessboard result's `quality` is internally consistent and
+// populated, as it is for a lossless frame detected by the default config.
+inline bool quality_is_sane(const ct_detection_quality_t &q, std::size_t corners_len) {
+  return q.noise_sigma.has_value == CT_TRUE && q.noise_sigma.value >= 0.0f &&
+         q.covariance_coverage >= 0.9f && q.covariance_coverage <= 1.0f &&
+         q.median_sigma_px.has_value == CT_TRUE && q.median_sigma_px.value > 0.0f &&
+         q.p95_sigma_px.has_value == CT_TRUE &&
+         q.p95_sigma_px.value >= q.median_sigma_px.value && q.local_residual_count > 0 &&
+         q.local_residual_count <= corners_len && q.local_residual_rms_px.has_value == CT_TRUE &&
+         q.local_residual_rms_px.value > 0.0f && q.variance_factor_count > 0 &&
+         q.variance_factor_count <= q.local_residual_count &&
+         q.variance_factor.has_value == CT_TRUE && q.variance_factor.value > 0.0f;
+}
+
 }  // namespace consumer_support
 
 #endif

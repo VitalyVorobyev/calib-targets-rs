@@ -107,9 +107,18 @@ fn charuco_detect_matches_detect_with_corners() {
     let detector = CharucoDetector::new(charuco_params()).expect("detector");
     let view = gray_view(&img);
 
-    let via_detect = detector.detect(&view);
+    let mut via_detect = detector.detect(&view);
     let corners = detector.detect_corners(&view);
     let via_corners = detector.detect_with_corners(&view, &corners);
+    // `detect` ran the corner pass, so it knows the frame's noise level and
+    // records it on the quality; `detect_with_corners` cannot. Everything
+    // else must agree.
+    if let Ok(d) = &via_corners {
+        assert_eq!(d.quality.noise_sigma, None);
+    }
+    if let Ok(d) = &mut via_detect {
+        d.quality.noise_sigma = None;
+    }
 
     assert!(
         !corners.is_empty(),
@@ -154,9 +163,18 @@ fn puzzleboard_detect_matches_detect_with_corners() {
     let detector = PuzzleBoardDetector::new(puzzleboard_params()).expect("detector");
     let view = gray_view(&img);
 
-    let via_detect = detector.detect(&view);
+    let mut via_detect = detector.detect(&view);
     let corners = detector.detect_corners(&view);
     let via_corners = detector.detect_with_corners(&view, &corners);
+    // `detect` ran the corner pass, so it knows the frame's noise level and
+    // records it on the quality; `detect_with_corners` cannot. Everything
+    // else must agree.
+    if let Ok(d) = &via_corners {
+        assert_eq!(d.quality.noise_sigma, None);
+    }
+    if let Ok(d) = &mut via_detect {
+        d.quality.noise_sigma = None;
+    }
 
     assert!(
         !corners.is_empty(),
@@ -201,9 +219,18 @@ fn marker_board_detect_matches_detect_with_corners() {
     let detector = MarkerBoardDetector::new(marker_params()).expect("detector");
     let view = gray_view(&img);
 
-    let via_detect = detector.detect(&view);
+    let mut via_detect = detector.detect(&view);
     let corners = detector.detect_corners(&view);
     let via_corners = detector.detect_with_corners(&view, &corners);
+    // `detect` ran the corner pass, so it knows the frame's noise level and
+    // records it on the quality; `detect_with_corners` cannot. Everything
+    // else must agree.
+    if let Ok(d) = &via_corners {
+        assert_eq!(d.quality.noise_sigma, None);
+    }
+    if let Ok(d) = &mut via_detect {
+        d.quality.noise_sigma = None;
+    }
 
     assert!(
         !corners.is_empty(),

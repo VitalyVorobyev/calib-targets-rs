@@ -15,6 +15,7 @@
 //! private numbers leak into public surfaces.
 
 pub mod ablate;
+pub mod accuracy;
 pub mod baseline;
 pub mod charuco_config;
 pub mod compare;

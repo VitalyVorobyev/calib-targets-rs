@@ -67,7 +67,7 @@ pub use calib_targets_puzzleboard as puzzleboard;
 
 pub use calib_targets_chessboard::ChessCorner;
 pub use calib_targets_core::{
-    Coord, LabeledCorner, PositionCovariance, TargetDetection, TargetKind,
+    Coord, DetectionQuality, LabeledCorner, PositionCovariance, TargetDetection, TargetKind,
 };
 
 /// The chessboard detector's introspection entry points, re-exported so a

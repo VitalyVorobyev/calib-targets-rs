@@ -8,10 +8,12 @@
 //!   summary, and serialization helpers used by `run`/`check`.
 //! - [`diagnose`] — the `diagnose` subcommand (per-stage breakdown +
 //!   diagnostic overlays, including the topological path).
+//! - [`accuracy`] — the `accuracy` subcommand (ground-truth accuracy suite).
 //! - this file — the entry point and the `run`/`preview`/`bless`/`compare`/
 //!   `ablate` subcommands plus their small shared helpers. `run` and `ablate`
 //!   share the per-config run loop via `calib_targets_bench::run_set`.
 
+mod accuracy;
 mod cli;
 mod diagnose;
 mod report;
@@ -52,6 +54,7 @@ fn main() -> ExitCode {
         Cmd::Diagnose(args) => cmd_diagnose(args),
         Cmd::Compare(args) => cmd_compare(args),
         Cmd::Ablate(args) => cmd_ablate(args),
+        Cmd::Accuracy(args) => accuracy::cmd_accuracy(args),
     }
 }
 

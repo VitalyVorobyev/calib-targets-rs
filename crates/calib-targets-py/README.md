@@ -311,6 +311,23 @@ estimate declined — typical of JPEG input; set `ChessConfig.noise_sigma` then.
 Positions do not depend on it. Model and caveats:
 [chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
+### Per-detection quality
+
+Every detection result (`ChessboardDetectionResult`, `CharucoDetection`,
+`PuzzleBoardDetection`, `PuzzlePoleDetection`, `MarkerBoardDetection`) has a
+`quality: DetectionQuality` field (every optional field `None` when
+unavailable; a PuzzlePole carries the covariance statistics only):
+
+| Field | Meaning |
+|---|---|
+| `noise_sigma` | Image noise (gray levels) the covariances used; `None` for `*_with_corners` calls or when the estimate declined. |
+| `covariance_coverage` | Fraction of delivered corners carrying a covariance. |
+| `median_sigma_px`, `p95_sigma_px` | Median / 95th-percentile per-corner σ (least certain direction), px. |
+| `local_residual_count`, `local_residual_rms_px` | Corners with ≥ 6 of 8 grid neighbours; RMS of their leave-one-out residual (corner predicted from its neighbours alone), px. |
+| `variance_factor_count`, `variance_factor` | Robust variance factor σ̂₀² of those residuals whitened by the corner's and the prediction's covariance: ≈ 1 the covariances describe the local scatter, > 1 overconfident (expected on real images). Frame-comparable, not pass/fail. |
+
+See the book's [Corner uncertainty & detection quality](https://vitalyvorobyev.github.io/calib-targets-rs/book/uncertainty.html) page.
+
 ## Implementation note
 
 The compiled Rust module is internal (`calib_targets._core`). Public

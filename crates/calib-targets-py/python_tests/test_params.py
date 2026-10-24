@@ -362,6 +362,20 @@ def test_puzzleboard_printing_roundtrip() -> None:
     assert restored.to_dict() == doc.to_dict()
 
 
+def _sample_quality() -> dict:
+    # The Rust `DetectionQuality` serde shape: every key, `null` when unset.
+    return {
+        "noise_sigma": 1.25,
+        "covariance_coverage": 1.0,
+        "median_sigma_px": 0.125,
+        "p95_sigma_px": 0.25,
+        "local_residual_count": 12,
+        "local_residual_rms_px": 0.5,
+        "variance_factor_count": 10,
+        "variance_factor": None,
+    }
+
+
 def _sample_chessboard_result() -> dict:
     # Schema matches `serde_json::to_value(
     # calib_targets_chessboard::ChessboardDetection)` byte-for-byte.
@@ -377,6 +391,7 @@ def _sample_chessboard_result() -> dict:
             }
         ],
         "cell_size": 41.5,
+        "quality": _sample_quality(),
     }
 
 
@@ -411,6 +426,7 @@ def _sample_charuco_result() -> dict:
             "matrix": [[1, 0], [0, 1]],
             "translation": [0, 0],
         },
+        "quality": _sample_quality(),
     }
 
 
@@ -431,6 +447,7 @@ def _sample_marker_board_result() -> dict:
             "matrix": [[1, 0], [0, 1]],
             "translation": [1, 2],
         },
+        "quality": _sample_quality(),
     }
 
 
@@ -462,6 +479,7 @@ def _sample_puzzleboard_result() -> dict:
             "master_origin_row": 5,
             "master_origin_col": 4,
         },
+        "quality": _sample_quality(),
     }
 
 
