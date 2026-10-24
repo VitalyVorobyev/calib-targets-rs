@@ -1,5 +1,5 @@
 /**
- * The demo's screenshot suite: every sample, detected, plus the Generate tab.
+ * The demo's local screenshot suite (`e2e/screens.spec.ts`); CI runs `playwright.ci.config.ts`.
  *
  *     bun run test:screens                 # compare against the local baseline
  *     bun run test:screens --update-snapshots
@@ -16,6 +16,7 @@ const PORT = 5175;
 
 export default defineConfig({
   testDir: "./e2e",
+  testMatch: "screens.spec.ts",
   snapshotPathTemplate: "{testDir}/.state/screenshots/{arg}{ext}",
   fullyParallel: false,
   workers: 1,

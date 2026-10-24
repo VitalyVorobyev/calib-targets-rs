@@ -3,10 +3,11 @@
   // verbatimModuleSyntax, bundler resolution) come from @vitavision/config-ts.
   "extends": "@vitavision/config-ts/tsconfig.json",
   "compilerOptions": {
-    // The wasm-bindgen glue relies on top-level await (see vite.config.ts).
     "target": "ESNext",
-    "useDefineForClassFields": true,
+    "lib": ["ESNext", "DOM", "DOM.Iterable", "WebWorker"],
+    "resolveJsonModule": true,
+    "noUncheckedSideEffectImports": true,
     "types": ["vite/client", "node"]
   },
-  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts", "eslint.config.js"]
+  "include": ["src", "e2e", "vite.config.ts", "playwright.config.ts", "playwright.ci.config.ts"]
 }

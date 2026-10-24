@@ -1,5 +1,9 @@
 /**
- * One screenshot per bundled sample after detection, the Generate tab, and a generated target.
+ * Local screenshot suite: every sample detected, in both themes, the Generate tab, and a phone.
+ * Not run in CI (see `smoke.spec.ts` for that); the baselines are local files.
+ *
+ *     bun run test:screens --update-snapshots   # capture the baseline
+ *     bun run test:screens                      # compare against it
  */
 
 import { expect, test, type Page } from "@playwright/test";
@@ -14,46 +18,45 @@ const SAMPLES = [
 ];
 
 /** The detection time ("23.3 ms") is measured, so it differs on every run. */
-const timing = (page: Page) => [page.getByText(/^\d+(\.\d+)? ms$/)];
+const timing = (page: Page) => [page.getByText(/^\d+(\.\d+)? ms$/), page.getByText(/^detect\b/)];
 
-async function settled(page: Page) {
-  await page.waitForLoadState("networkidle");
-  await expect(page.getByRole("button", { name: "Detecting…" })).toHaveCount(0, { timeout: 60_000 });
+async function open(page: Page, theme: "light" | "dark") {
+  await page.addInitScript((value) => localStorage.setItem("ct-demo-theme", value), theme);
+  await page.goto("/");
+  await expect(page.getByText("WASM ready")).toBeVisible({ timeout: 60_000 });
 }
 
-test("initial", async ({ page }) => {
-  await page.goto("/");
-  await settled(page);
-  await expect(page).toHaveScreenshot("initial.png", { timeout: 30_000 });
-});
+async function detect(page: Page, sample: string) {
+  await page.getByRole("button", { name: sample, exact: true }).click();
+  await page.getByRole("button", { name: "Detect", exact: true }).click();
+  await expect(page.getByText(/^(\d+ corners|No detection)$/)).toBeVisible({ timeout: 60_000 });
+}
 
-for (const sample of SAMPLES) {
-  test(`sample ${sample}`, async ({ page }) => {
-    await page.goto("/");
-    await settled(page);
-    await page.getByRole("button", { name: sample, exact: true }).click();
-    await settled(page);
-    // The "Detect" tab shares the name; the action is the last one in the panel.
-    await page.getByRole("button", { name: "Detect", exact: true }).last().click();
-    await settled(page);
-    const name = sample.toLowerCase().replace(/[^a-z]+/g, "-").replace(/-$/, "");
-    await expect(page).toHaveScreenshot(`sample-${name}.png`, { timeout: 30_000, mask: timing(page) });
+const slug = (text: string) =>
+  text
+    .toLowerCase()
+    .replace(/[^a-z]+/g, "-")
+    .replace(/-$/, "");
+
+for (const theme of ["light", "dark"] as const) {
+  for (const sample of SAMPLES) {
+    test(`${theme} sample ${sample}`, async ({ page }) => {
+      await open(page, theme);
+      await detect(page, sample);
+      await expect(page).toHaveScreenshot(`${theme}-${slug(sample)}.png`, { mask: timing(page) });
+    });
+  }
+
+  test(`${theme} generate tab`, async ({ page }) => {
+    await open(page, theme);
+    await page.getByRole("tab", { name: "Generate" }).click();
+    await expect(page).toHaveScreenshot(`${theme}-generate.png`);
   });
 }
 
-test("generate tab", async ({ page }) => {
-  await page.goto("/");
-  await settled(page);
-  await page.getByRole("button", { name: "generate", exact: false }).first().click();
-  await expect(page).toHaveScreenshot("generate.png", { timeout: 30_000 });
-});
-
-test("generated target", async ({ page }) => {
-  await page.goto("/");
-  await settled(page);
-  await page.getByRole("button", { name: "generate", exact: false }).first().click();
-  await page.getByRole("button", { name: "Generate & load" }).click();
-  await expect(page.getByRole("button", { name: "Generating…" })).toHaveCount(0, { timeout: 60_000 });
-  await settled(page);
-  await expect(page).toHaveScreenshot("generated.png", { timeout: 30_000, mask: timing(page) });
+test("phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await open(page, "light");
+  await detect(page, "Chessboard");
+  await expect(page).toHaveScreenshot("phone.png", { mask: timing(page) });
 });

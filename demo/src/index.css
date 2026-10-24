@@ -1,0 +1,23 @@
+@import "tailwindcss";
+/* The vitavision design system, in the order the lab-ui READMEs give: fonts and tokens first,
+   then each package's own layer. Every stylesheet declares its own `@source`. */
+@import "@vitavision/ui/fonts.css";
+@import "@vitavision/ui/styles.css";
+@import "@vitavision/stage2d/styles.css";
+@import "@vitavision/overlays/styles.css";
+@import "@vitavision/workbench/styles.css";
+@import "@vitavision/forms/styles.css";
+
+@layer base {
+  html,
+  body,
+  #root {
+    margin: 0;
+    height: 100%;
+  }
+
+  body {
+    background-color: var(--ground);
+    color: var(--fg);
+  }
+}

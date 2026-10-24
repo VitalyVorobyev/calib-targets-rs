@@ -13,7 +13,7 @@ machine: detection happens in the WASM module loaded into this page.
   title="calib-targets WebAssembly playground"
   loading="lazy"
   allow="clipboard-read; clipboard-write"
-  style="width: 100%; height: 900px; border: 1px solid #ddd; border-radius: 4px;">
+  style="width: 100%; height: 80vh; min-height: 560px; max-height: 900px; border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 6px;">
 </iframe>
 
 <noscript>The interactive playground requires JavaScript and WebAssembly.</noscript>
@@ -22,14 +22,14 @@ machine: detection happens in the WASM module loaded into this page.
 
 | Surface | Description |
 |---|---|
-| **Image input** | Drop or browse a file; or pick a bundled public sample (chessboard, ChArUco, marker board, PuzzleBoard); or generate a synthetic target on-the-fly in WASM (Generate tab). |
-| **Target family** | Switch between corner detection and the four target detectors (Chessboard, ChArUco, Marker board, PuzzleBoard). |
-| **Board geometry** | For ChArUco, marker, and PuzzleBoard targets: configure rows, cols, and (ChArUco) ArUco dictionary directly in the panel. |
-| **Core params** | Override `min_corner_strength`, `min_labeled_corners`, and `max_components` — the three params shared across all detector families. |
-| **Multi-config sweep** | Toggle `detect_*_best` to run the built-in 3-config preset and keep the best result. |
-| **Overlays** | Red corners, light-blue grid edges, yellow origin ring, and green far-corner ring drawn in image pixel coordinates. Toggled per-layer. |
-| **Zoom / pan** | Scroll to zoom (up to 32×, pixel-crisp above 4×), drag to pan, double-click to fit. Hover a corner for an (i, j) / id / score tooltip. |
-| **Synthetic generation** | `render_*_png` WASM functions produce a full-resolution target PNG; loading it auto-configures the matching detector. |
+| **Image input** | Drop an image anywhere on the page or browse for one; pick a bundled public sample (chessboard, ChArUco, marker board, PuzzleBoard); or generate a synthetic target in WASM (Generate tab). |
+| **Target** | Corners only, Chessboard, ChArUco, Marker board or PuzzleBoard. The board geometry (rows and columns, ArUco dictionary, marker size) sits right under it. |
+| **Detector settings** | The ChESS corner detector (threshold, refiner, upscaling, position uncertainty) and each detector's parameters, as forms generated from the JSON Schemas shipped in the npm package. |
+| **Multi-config sweep** | Run the built-in presets and keep the best result. Optional "detect on every change" switch; otherwise press Detect. Detection runs in a Web Worker and can be cancelled. |
+| **Result** | Corner count, timing, ChArUco marker count, the PuzzleBoard decode summary (bit error rate, edges matched, master origin), marker-board circle matches, and a sortable corner table. Click a corner, in the image or the table, for its `(i, j)`, id, score and uncertainty. Download the raw result as JSON. |
+| **Overlays** | Corners, the lattice edges with `(i, j)` labels, ArUco marker quads, marker-board circles, PuzzleBoard edge bits and, when the result carries a position covariance, uncertainty ellipses drawn at a stated multiple of 1σ. Toggle each from the layers menu. |
+| **Zoom / pan** | Scroll to zoom, drag to pan, double-click to fit; `+`, `-`, `0` (fit), `1` (100 %) and the arrow keys work with the image focused. |
+| **Generate** | Chessboard, ChArUco, marker board, PuzzleBoard or PuzzlePole, at a chosen square size and DPI. Rows and columns are labelled by what they count (inner corners or squares). The target loads as the image with the detector set to the same board; download it as PNG, SVG, JSON or DXF. |
 
 ## Running locally
 

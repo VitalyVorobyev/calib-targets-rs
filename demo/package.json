@@ -7,31 +7,38 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "test:screens": "playwright test",
-    "lint": "eslint .",
-    "check": "tsc -b"
+    "check": "tsc -b",
+    "lint": "oxlint --max-warnings 0",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "test:e2e": "playwright test --config playwright.ci.config.ts",
+    "test:screens": "playwright test"
   },
   "dependencies": {
     "@vitavision/calib-targets": "file:./pkg",
+    "@vitavision/forms": "^0.8.3",
+    "@vitavision/overlays": "^0.3.0",
+    "@vitavision/stage2d": "^0.14.0",
+    "@vitavision/ui": "^0.14.0",
+    "@vitavision/workbench": "^0.3.2",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.6.3",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "@vitavision/config-eslint": "^0.1.0",
-    "@vitavision/config-ts": "^0.1.0",
+    "@vitavision/config-oxlint": "^0.1.0",
+    "@vitavision/config-ts": "^0.2.0",
     "@vitejs/plugin-react": "^6.1.1",
-    "esbuild": "^0.28.0",
-    "eslint": "^10.11.0",
-    "rollup": "^4",
-    "typescript": "^6.0.3",
-    "typescript-eslint": "^8.70.1",
-    "vite": "^8.3.1",
-    "vite-plugin-top-level-await": "^1.6.0",
-    "vite-plugin-wasm": "^3.6.0"
+    "oxfmt": "0.71.0",
+    "oxlint": "1.86.0",
+    "oxlint-tsgolint": "7.0.2003",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1"
   },
   "packageManager": "bun@1.4.2"
 }

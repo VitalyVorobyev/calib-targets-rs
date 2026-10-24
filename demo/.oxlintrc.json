@@ -1,0 +1,13 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "extends": ["./node_modules/@vitavision/config-oxlint/oxlintrc.json"],
+  "options": { "reportUnusedDisableDirectives": "error" },
+  "ignorePatterns": ["pkg/**", "dist/**", "e2e/.state/**", "test-results/**", "playwright-report/**"],
+  "overrides": [
+    {
+      // Gate G5.1: in src/, colour comes from the @vitavision/ui design tokens.
+      "files": ["src/**"],
+      "rules": { "vitavision/tokens-only": "error" }
+    }
+  ]
+}

@@ -1,90 +1,55 @@
-// Calib Targets Demo — top-level shell.
-//
-// Fully static: no backend, no network calls beyond loading bundled sample
-// images and the WASM module itself. Detection runs entirely in the browser.
+// The demo: detect calibration targets, or generate one, entirely in the browser.
+// Fully static: no backend. Detection runs in the WASM module inside a worker.
 
-import { useEffect, useState } from "react";
-import { Workspace } from "./views/Workspace";
-import { initialize, isReady } from "./lib/detector";
+import { AppShell } from "@vitavision/workbench";
 
-export default function App() {
-  const [ready, setReady] = useState(isReady());
-  const [initError, setInitError] = useState<string | null>(null);
+import { Header } from "./Header";
+import { Inspector } from "./Inspector";
+import { StatusLine } from "./StatusLine";
+import { useMediaQuery } from "./lib/useMediaQuery";
+import { AppProvider } from "./state/AppContext";
+import { Viewer } from "./viewer/Viewer";
 
-  useEffect(() => {
-    if (isReady()) return;
-    initialize()
-      .then(() => setReady(true))
-      .catch((e: unknown) =>
-        setInitError(e instanceof Error ? e.message : String(e)),
-      );
-  }, []);
-
-  if (initError) {
+function Layout() {
+  const wide = useMediaQuery("(min-width: 768px)");
+  if (wide) {
     return (
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          height: "100%",
-          flexDirection: "column",
-          gap: "var(--s3)",
-          color: "var(--err)",
-          padding: "var(--s6)",
-          textAlign: "center",
-        }}
-      >
-        <strong>Failed to load WASM module</strong>
-        <span style={{ color: "var(--text-muted)", fontSize: 12 }}>{initError}</span>
-      </div>
+      <AppShell
+        className="h-full"
+        header={
+          <div className="border-b border-line bg-surface">
+            <Header />
+          </div>
+        }
+        main={<Viewer />}
+        right={<Inspector />}
+        rightLabel="Inspector"
+        rightSize={{ defaultSize: 360, minSize: 300, maxSize: "50%" }}
+        storageKey="ct-demo-panels"
+        bottom={<StatusLine />}
+      />
     );
   }
-
+  // A phone: the image on top, the inspector scrolling beneath it.
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      {/* Header */}
-      <header
-        style={{
-          flexShrink: 0,
-          display: "flex",
-          alignItems: "center",
-          gap: "var(--s4)",
-          padding: "0 var(--s5)",
-          height: 44,
-          background: "var(--bg1)",
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <span
-          style={{
-            fontWeight: 700,
-            fontSize: 13,
-            letterSpacing: "0.02em",
-            display: "flex",
-            alignItems: "center",
-            gap: "var(--s2)",
-          }}
-        >
-          <span style={{ color: "var(--accent)" }}>◇</span>
-          calib-targets
-        </span>
-        <span style={{ color: "var(--text-faint)", fontSize: 12 }}>
-          WebAssembly playground
-        </span>
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: "var(--s2)" }}>
-          {ready ? (
-            <span className="chip ok">WASM ready</span>
-          ) : (
-            <span className="chip warn">loading…</span>
-          )}
-        </div>
+    <div className="flex h-full flex-col">
+      <header className="border-b border-line bg-surface">
+        <Header />
       </header>
-
-      {/* Workspace fills the rest */}
-      <div style={{ flex: 1, minHeight: 0 }}>
-        <Workspace ready={ready} />
-      </div>
+      <main className="relative h-[46dvh] shrink-0 border-b border-line">
+        <Viewer />
+      </main>
+      <aside aria-label="Inspector" className="min-h-0 flex-1 overflow-y-auto bg-surface">
+        <Inspector />
+      </aside>
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AppProvider>
+      <Layout />
+    </AppProvider>
   );
 }
