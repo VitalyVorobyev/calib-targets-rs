@@ -29,6 +29,16 @@ Defined in `.cargo/config.toml`:
 | `cargo studio` | `cargo run --release -p calib-targets-studio --` — launch the detection studio |
 | `cargo xtask` | `cargo run --package xtask --` |
 
+Ground-truth accuracy suite (synthetic renders with exactly known corners;
+markdown + JSON to `bench_results/accuracy/`, local-only; exits non-zero on any
+wrong label). The quick subset also runs in `cargo test -p calib-targets-bench`:
+
+```bash
+cargo bench-run accuracy            # full grid, both refiners
+cargo bench-run accuracy --quick    # the integration-test subset
+cargo bench-run accuracy --family marker-board --refiner saddle-point
+```
+
 ## Run a single example
 
 ```bash

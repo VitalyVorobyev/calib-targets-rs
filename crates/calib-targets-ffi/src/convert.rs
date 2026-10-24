@@ -12,20 +12,20 @@ use crate::error::{FfiError, FfiResult};
 use crate::types::{
     ct_charuco_board_spec_t, ct_charuco_detector_params_t, ct_chess_config_t,
     ct_chessboard_advanced_t, ct_chessboard_corner_t, ct_chessboard_params_t,
-    ct_circle_match_params_t, ct_circle_polarity_t, ct_circle_score_params_t, ct_dictionary_id_t,
-    ct_grid_alignment_t, ct_grid_coords_t, ct_grid_transform_t, ct_labeled_corner_t,
-    ct_marker_board_layout_t, ct_marker_board_params_t, ct_marker_circle_spec_t,
-    ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t, ct_optional_u32_t, ct_point2f_t,
-    ct_position_covariance_t, ct_puzzleboard_decode_config_t, ct_puzzleboard_params_t,
-    ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t, ct_puzzleboard_spec_t,
-    ct_puzzleboard_symmetry_mode_t, ct_scan_decode_config_t, ct_uncertainty_t, ct_upscale_config_t,
-    CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100,
-    CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50,
-    CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250,
-    CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000,
-    CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100,
-    CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50,
-    CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
+    ct_circle_match_params_t, ct_circle_polarity_t, ct_circle_score_params_t,
+    ct_detection_quality_t, ct_dictionary_id_t, ct_grid_alignment_t, ct_grid_coords_t,
+    ct_grid_transform_t, ct_labeled_corner_t, ct_marker_board_layout_t, ct_marker_board_params_t,
+    ct_marker_circle_spec_t, ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t,
+    ct_optional_u32_t, ct_point2f_t, ct_position_covariance_t, ct_puzzleboard_decode_config_t,
+    ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t,
+    ct_puzzleboard_spec_t, ct_puzzleboard_symmetry_mode_t, ct_scan_decode_config_t,
+    ct_uncertainty_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE,
+    CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250,
+    CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000,
+    CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100,
+    CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50,
+    CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250,
+    CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
     CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
     CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
     CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
@@ -44,7 +44,9 @@ use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::chessboard::{
     ChessboardAdvancedTuning, ChessboardCorner, ChessboardParams as ChessboardDetectorParams,
 };
-use calib_targets::core::{Coord, GridAlignment, LabeledCorner, PositionCovariance};
+use calib_targets::core::{
+    Coord, DetectionQuality, GridAlignment, LabeledCorner, PositionCovariance,
+};
 use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::{
     CellCoords, CircleMatchParams, CirclePolarity, CircleScoreParams, MarkerBoardDetectError,
@@ -913,6 +915,19 @@ fn position_covariance_to_ffi(
 /// `Some(v)` becomes `ct_optional_f32_t::some(v)`; `None` becomes
 /// `ct_optional_f32_t::none()`. Used to carry
 /// `ChessboardDetection::cell_size` across the C ABI.
+pub(crate) fn detection_quality_to_ffi(q: &DetectionQuality) -> ct_detection_quality_t {
+    ct_detection_quality_t {
+        noise_sigma: option_f32_to_ffi(q.noise_sigma),
+        covariance_coverage: q.covariance_coverage,
+        median_sigma_px: option_f32_to_ffi(q.median_sigma_px),
+        p95_sigma_px: option_f32_to_ffi(q.p95_sigma_px),
+        local_residual_count: q.local_residual_count,
+        local_residual_rms_px: option_f32_to_ffi(q.local_residual_rms_px),
+        variance_factor_count: q.variance_factor_count,
+        variance_factor: option_f32_to_ffi(q.variance_factor),
+    }
+}
+
 pub(crate) fn option_f32_to_ffi(value: Option<f32>) -> ct_optional_f32_t {
     match value {
         Some(v) => ct_optional_f32_t::some(v),

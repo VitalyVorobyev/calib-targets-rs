@@ -2,8 +2,8 @@ use serde::{Deserialize, Serialize};
 
 use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{
-    default_chess_config, Coord, DetectorConfig, GridAlignment, LabeledCorner, PositionCovariance,
-    TargetDetection, TargetKind,
+    default_chess_config, Coord, DetectionQuality, DetectorConfig, GridAlignment, LabeledCorner,
+    PositionCovariance, TargetDetection, TargetKind,
 };
 use nalgebra::Point2;
 
@@ -298,12 +298,25 @@ pub struct MarkerBoardDetection {
     /// Grid alignment to the known board layout; `None` when alignment
     /// could not be resolved.
     pub alignment: Option<GridAlignment>,
+    /// How well [`Self::corners`] are localized, measured on the delivered
+    /// corners. See [`DetectionQuality`].
+    /// [`noise_sigma`](DetectionQuality::noise_sigma) is set when the detector
+    /// ran the corner pass itself ([`MarkerBoardDetector::detect`](crate::MarkerBoardDetector::detect)).
+    #[serde(default)]
+    pub quality: DetectionQuality,
 }
 
 impl MarkerBoardDetection {
-    /// Create a result from its typed corners and optional grid alignment.
+    /// Create a result from its typed corners and optional grid alignment,
+    /// measuring its [`quality`](Self::quality).
     pub fn new(corners: Vec<MarkerBoardCorner>, alignment: Option<GridAlignment>) -> Self {
-        Self { corners, alignment }
+        let labeled: Vec<LabeledCorner> =
+            corners.iter().map(MarkerBoardCorner::to_labeled).collect();
+        Self {
+            quality: DetectionQuality::from_corners(&labeled),
+            corners,
+            alignment,
+        }
     }
 
     pub(crate) fn from_target_detection(

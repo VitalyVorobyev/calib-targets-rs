@@ -1,7 +1,8 @@
 //! Detector output types.
 
 use calib_targets_core::{
-    Coord, GridAlignment, LabeledCorner, PositionCovariance, TargetDetection, TargetKind,
+    Coord, DetectionQuality, GridAlignment, LabeledCorner, PositionCovariance, TargetDetection,
+    TargetKind,
 };
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -150,16 +151,26 @@ pub struct PuzzleBoardDetection {
     pub alignment: GridAlignment,
     /// Compact decode quality summary.
     pub decode: PuzzleBoardDecodeInfo,
+    /// How well [`Self::corners`] are localized, measured on the delivered
+    /// corners. See [`DetectionQuality`].
+    /// [`noise_sigma`](DetectionQuality::noise_sigma) is set when the detector
+    /// ran the corner pass itself ([`PuzzleBoardDetector::detect`](crate::PuzzleBoardDetector::detect)).
+    #[serde(default)]
+    pub quality: DetectionQuality,
 }
 
 impl PuzzleBoardDetection {
-    /// Create a result from its typed corners, alignment, and decode summary.
+    /// Create a result from its typed corners, alignment, and decode summary,
+    /// measuring its [`quality`](Self::quality).
     pub fn new(
         corners: Vec<PuzzleBoardCorner>,
         alignment: GridAlignment,
         decode: PuzzleBoardDecodeInfo,
     ) -> Self {
+        let labeled: Vec<LabeledCorner> =
+            corners.iter().map(PuzzleBoardCorner::to_labeled).collect();
         Self {
+            quality: DetectionQuality::from_corners(&labeled),
             corners,
             alignment,
             decode,

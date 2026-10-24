@@ -27,7 +27,9 @@ use crate::detector::consensus::EdgeConsensus;
 use crate::detector::decode::{decode_fixed_hard, decode_fixed_soft, BoardRect, CodeGeometry};
 use crate::detector::edge_sampling::sample_all_edges;
 use crate::detector::{PuzzleBoardDecodeInfo, PuzzleBoardScoringMode};
-use calib_targets_chessboard::{ChessCorner, ChessboardCorner, ChessboardDetector};
+use calib_targets_chessboard::{
+    detect_corner_frame, ChessCorner, ChessboardCorner, ChessboardDetector,
+};
 use calib_targets_core::{GrayImageView, LabeledCorner};
 
 /// Detects PuzzlePole targets.
@@ -57,12 +59,18 @@ impl PuzzlePoleDetector {
     }
 
     /// Detect a pole in an image.
+    ///
+    /// [`Self::detect_with_corners`] over this detector's own corner pass,
+    /// whose noise level it records on the result's
+    /// [`quality`](PuzzlePoleDetection::quality).
     pub fn detect(
         &self,
         image: &GrayImageView<'_>,
     ) -> Result<PuzzlePoleDetection, PuzzlePoleDetectError> {
-        let corners = self.detect_corners(image);
-        self.detect_with_corners(image, &corners)
+        let frame = detect_corner_frame(image, &self.params.chess);
+        let mut result = self.detect_with_corners(image, &frame.corners)?;
+        result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+        Ok(result)
     }
 
     /// Detect a pole from an already-computed corner cloud.

@@ -16,8 +16,10 @@ import type {
   CharucoBoardSpec,
   CharucoCorner,
   ChessboardCorner,
+  ChessboardDetection,
   ChessConfig,
   Corner,
+  DetectionQuality,
   LabeledCorner,
   MarkerBoardCorner,
   PositionCovariance,
@@ -288,4 +290,32 @@ export const puzzleBoardCorner: PuzzleBoardCorner = {
   id: 109737,
   target_position: [90, 1095],
   score: 0.9,
+};
+
+// Every detection result carries its localization quality; unavailable
+// statistics are `null`, counts are numbers.
+export const quality: DetectionQuality = {
+  noise_sigma: 1.4,
+  covariance_coverage: 1.0,
+  median_sigma_px: 0.12,
+  p95_sigma_px: 0.2,
+  local_residual_count: 40,
+  local_residual_rms_px: 0.25,
+  variance_factor_count: 40,
+  variance_factor: 1.3,
+};
+export const unmeasured: DetectionQuality = {
+  noise_sigma: null,
+  covariance_coverage: 0,
+  median_sigma_px: null,
+  p95_sigma_px: null,
+  local_residual_count: 0,
+  local_residual_rms_px: null,
+  variance_factor_count: 0,
+  variance_factor: null,
+};
+export const chessboardDetection: ChessboardDetection = {
+  corners: [chessboardCorner],
+  cell_size: 20.0,
+  quality,
 };

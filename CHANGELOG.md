@@ -10,9 +10,10 @@ see [Older releases](#older-releases) at the bottom for the index.
 ## Unreleased
 
 Moves to `chess-corners` 1.6, exposes its new corner-detector knobs on every
-binding, and reports each corner's position covariance on every detection
-result. Corner positions, labels and ids are unchanged. The C ABI moves to
-6.0.0 (`ct_chess_config_t` and the two corner structs grow).
+binding, reports each corner's position covariance on every detection result,
+and summarises every detection's localization quality. Corner positions, labels
+and ids are unchanged. The C ABI moves to 6.0.0 (`ct_chess_config_t`, the two
+corner structs and the four result headers grow).
 
 ### Added
 
@@ -42,6 +43,36 @@ result. Corner positions, labels and ids are unchanged. The C ABI moves to
   `has_position_covariance` + `position_covariance`.
 - WASM typings declare the Radon strategy (`RadonConfig`, `RadonRefiner`,
   `PeakFitMode`) and `PuzzleBoardAdvancedTuning.edge_consensus`.
+- **Per-detection localization quality.** `ChessboardDetection`,
+  `CharucoDetection`, `PuzzleBoardDetection`, `PuzzlePoleDetection` and
+  `MarkerBoardDetection` gain `quality: DetectionQuality`
+  (`calib_targets_core::DetectionQuality`, re-exported by every detector crate
+  and the facade): the frame's `noise_sigma`, `covariance_coverage`,
+  `median_sigma_px` / `p95_sigma_px`, and a leave-one-out local check —
+  each corner with at least six of its eight grid neighbours is predicted from
+  them alone (the intersection of the lines through its opposite neighbours),
+  giving `local_residual_rms_px` and a robust variance factor
+  `variance_factor` (σ̂₀², the residuals whitened by the corner's and the
+  prediction's covariance) with their corner counts. Report-only: nothing gates
+  on it. `noise_sigma` is set when the detector ran the corner pass itself
+  (every image-level `detect`, `diagnose` and `*_best` entry point), `None` for
+  `*_with_corners`. A PuzzlePole reports the covariance statistics only (the
+  local check presumes a planar target). Serialized under `quality`; JSON
+  without it still reads. `DetectionQuality::from_corners` /
+  `from_covariances` measure any corner set. Measuring costs a few µs per frame.
+  Python: `DetectionQuality` dataclass and a `quality` field on every detection
+  dataclass. WASM typings: `DetectionQuality` and the field on every detection.
+  C ABI: `ct_detection_quality_t`, appended as `quality` to
+  `ct_chessboard_result_t`, `ct_charuco_result_t`, `ct_marker_board_result_t`
+  and `ct_puzzleboard_result_t`. Book: new page "Corner uncertainty & detection
+  quality".
+- **Ground-truth accuracy suite** (`bench accuracy [--quick]`, not published):
+  renders every family's printed board with exactly known corners
+  (16 × 16 supersampling, lens blur, noise, 8-bit quantisation) over cell size,
+  rotation, tilt, blur, noise and distortion, and scores recall, wrong labels,
+  RMS error, bias and the covariances' variance factor against the truth. A
+  quick subset runs in `cargo test` as a regression gate. Summary on the book's
+  uncertainty page.
 
 ### Changed
 
@@ -57,15 +88,30 @@ result. Corner positions, labels and ids are unchanged. The C ABI moves to
 - ChArUco corners re-detected near a marker can move by a fraction of a pixel:
   `chess-corners` 1.5 re-centres its saddle-point refiner. Labels and ids are
   unchanged.
+- The Python `detect_chessboard` / `detect_chessboard_all`, the WASM
+  `detect_chessboard*`, `detect_marker_board` and `diagnose_*`, and the C
+  chessboard detector now run the corner pass through the same front end as
+  the facade, so their results know the frame's noise level. Output is
+  otherwise unchanged.
 - **C ABI 6.0.0**: `ct_chess_config_t` appends `noise_sigma`
   (`ct_optional_f32_t`) and `uncertainty` (`ct_uncertainty_t`). Both are safe to
   zero-initialise. `ct_labeled_corner_t` and `ct_chessboard_corner_t` append
   `has_position_covariance` and `position_covariance`, so caller-allocated
-  corner arrays must be rebuilt against the new header.
+  corner arrays must be rebuilt against the new header. The four result headers
+  append `quality` (`ct_detection_quality_t`).
 - ChArUco `detect_with_corners` reads the uncertainty settings of
   `params.chess` for the corners it re-detects, and without a supplied
   `noise_sigma` estimates the frame's noise once per call when it re-detects
   one; `detect` reuses its own corner pass's estimate.
+
+### Known issues
+
+- **Marker boards can be labelled in the wrong frame when their circles are not
+  resolved** (measured on synthetic boards with 8 px squares and strong blur,
+  disks ≈ 4 px across): the circle alignment accepts a coincidental match among
+  circle-free candidates and every identified corner is off by whole squares.
+  A fix is in progress; keep the circles well resolved until then. Found by the
+  new accuracy suite; no other family is affected.
 
 ### Fixed
 

@@ -17,6 +17,9 @@ if chess is not None:
         _cov: ct.PositionCovariance | None = _corners[0].position_covariance
         if _cov is not None:
             _sigma: float = _cov.sigma_max_px()
+    _quality: ct.DetectionQuality = chess.quality
+    _vf: float | None = _quality.variance_factor
+    _local: int = _quality.local_residual_count
 
 board = ct.CharucoBoardSpec(
     rows=3,

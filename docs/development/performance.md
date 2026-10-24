@@ -63,14 +63,33 @@ largest *owned* costs are the dense-board grid build and, on marker-dense
 boards, decode.
 
 Per-stage p50 (ms) on the four public report frames (`full_stage_timing`, M4
-Pro, 100 reps — the numbers the published report renders):
+Pro, 200 reps, `chess-corners` 1.6 with the default `Propagated` covariance
+tier):
 
 | Frame | px | corner detect | grid build | decode | end-to-end |
 |---|---|---:|---:|---:|---:|
-| `mid.png` (chessboard) | 1024×576 | **0.86** | 0.33 | — | 1.19 |
-| `small.png` (ChArUco) | 720×540 | 0.89 | 0.70 | **0.95** | 2.53 |
-| `oblique.png` (PuzzleBoard) | 640×480 | 0.68 | **1.62** | 1.03 | 3.33 |
-| `large.png` (ChArUco) | 2048×1536 | **4.51** | 3.39 | 2.23 | 10.13 |
+| `mid.png` (chessboard) | 1024×576 | **1.09** | 0.35 | — | 1.45 |
+| `small.png` (ChArUco) | 720×540 | 1.28 | 0.83 | **1.21** | 3.32 |
+| `oblique.png` (PuzzleBoard) | 640×480 | 1.01 | **1.70** | 0.92 | 3.62 |
+| `large.png` (ChArUco) | 2048×1536 | **5.37** | 3.69 | 2.43 | 11.50 |
+
+The published report (`.github/pages/performance/`) still shows the pre-1.6
+run until `scripts/gen-perf-data.sh` is re-run.
+
+**Covariance and quality cost.** Corner detection with the covariance on
+(`Uncertainty::Propagated`, the default) against `Off`, median of 100 runs:
+`mid.png` 1.09 vs 0.96 ms, `small.png` 1.28 vs 0.92, `oblique.png` 0.99 vs 0.72,
+`large.png` 5.27 vs 4.70 — a per-frame noise estimate plus a per-corner
+Jacobian, paid for every raw corner, including the ones the grid builder later
+discards. The upstream API asks that would let the workspace pay only for
+labelled corners are [backlog B-4](backlog.md#b-4). Measuring the per-detection
+`DetectionQuality` (covariance statistics plus the leave-one-out local check)
+costs 3–19 µs per frame on the same images (≈ 0.02–0.05 µs per labelled
+corner) — under 0.5 % of end-to-end even where a compound detector measures
+both its chessboard stage and its final corner set. An explicit 8-parameter
+homography fit per corner, the first implementation, cost ≈ 2 µs per corner
+(up to 10 % of a PuzzleBoard frame) and was replaced by the equivalent
+opposite-neighbour line intersection.
 
 The oblique, corner-dense PuzzleBoard frame drives an outsized grid build for
 its size (Tier 3). The `small.png` grid-build and decode figures include the

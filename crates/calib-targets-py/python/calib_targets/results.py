@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from .config import PuzzlePoleSpec
@@ -140,6 +140,61 @@ class PositionCovariance:
         from ._convert_out import position_covariance_from_dict
 
         return position_covariance_from_dict(data)
+
+
+@dataclass(slots=True)
+class DetectionQuality:
+    """How well a detection's corners are localized, measured on the corners
+    it delivered (``DetectionQuality`` in Rust).
+
+    The covariance statistics read the corners' :class:`PositionCovariance`.
+    The local check predicts every corner that has at least six of its eight
+    grid neighbours from those neighbours alone (the intersection of the lines
+    through its opposite neighbours, the corner left out) and compares the
+    residual with the covariance the corner and the prediction carry. Errors a
+    whole view shares (lens model, target, defocus) move neighbours together
+    and cancel, so they are outside both the covariance and this check.
+
+    ``variance_factor`` (σ̂₀²) ≈ 1 means the covariances describe the local
+    scatter, < 1 that they are conservative, > 1 that they are overconfident
+    or something they do not model is at work; on real images expect values
+    above 1. It is a robust estimate (``median(z) / ln 2`` of the whitened
+    residuals ``z = rᵀ C⁻¹ r / 2``) and a frame-comparable number, not a
+    pass/fail test.
+
+    Every optional field is ``None`` when unavailable: ``noise_sigma`` when the
+    detector did not run the corner pass itself (``*_with_corners``) or the
+    noise estimate declined; the σ statistics when no corner carries a
+    covariance; the local statistics when no corner qualifies.
+    """
+
+    #: Image noise (gray levels, 1σ) the covariances were computed with.
+    noise_sigma: float | None = None
+    #: Fraction of delivered corners carrying a covariance, in ``[0, 1]``.
+    covariance_coverage: float = 0.0
+    #: Median per-corner σ along the least certain direction, px.
+    median_sigma_px: float | None = None
+    #: 95th-percentile (nearest rank) per-corner σ, px.
+    p95_sigma_px: float | None = None
+    #: Corners with a complete enough neighbourhood for the local check.
+    local_residual_count: int = 0
+    #: RMS leave-one-out residual length over those corners, px.
+    local_residual_rms_px: float | None = None
+    #: Corners in ``variance_factor`` (every covariance it needs present).
+    variance_factor_count: int = 0
+    #: Robust variance factor σ̂₀² of the whitened leave-one-out residuals.
+    variance_factor: float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        from ._convert_out import detection_quality_to_dict
+
+        return detection_quality_to_dict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> DetectionQuality:
+        from ._convert_out import detection_quality_from_dict
+
+        return detection_quality_from_dict(data)
 
 
 @dataclass(slots=True)
@@ -312,6 +367,8 @@ class ChessboardDetectionResult:
 
     corners: list[ChessboardCorner]
     cell_size: float | None = None
+    #: Localization quality of ``corners`` (see :class:`DetectionQuality`).
+    quality: DetectionQuality = field(default_factory=DetectionQuality)
 
     def to_dict(self) -> dict[str, Any]:
         from ._convert_out import chessboard_detection_result_to_dict
@@ -436,6 +493,8 @@ class CharucoDetection:
     corners: list[CharucoCorner]
     markers: list[MarkerDetection]
     alignment: GridAlignment
+    #: Localization quality of ``corners`` (see :class:`DetectionQuality`).
+    quality: DetectionQuality = field(default_factory=DetectionQuality)
 
     @property
     def detection(self) -> TargetDetection:
@@ -503,6 +562,8 @@ class MarkerBoardDetection:
 
     corners: list[MarkerBoardCorner]
     alignment: GridAlignment | None
+    #: Localization quality of ``corners`` (see :class:`DetectionQuality`).
+    quality: DetectionQuality = field(default_factory=DetectionQuality)
 
     @property
     def detection(self) -> TargetDetection:
@@ -626,6 +687,8 @@ class PuzzleBoardDetection:
     corners: list[PuzzleBoardCorner]
     alignment: GridAlignment
     decode: PuzzleBoardDecodeInfo
+    #: Localization quality of ``corners`` (see :class:`DetectionQuality`).
+    quality: DetectionQuality = field(default_factory=DetectionQuality)
 
     @property
     def detection(self) -> TargetDetection:
@@ -700,6 +763,10 @@ class PuzzlePoleDetection:
     #: The pole that was found. Echoed back so a caller holding only the result
     #: can still convert a corner id to a position without carrying the params.
     spec: PuzzlePoleSpec
+    #: Localization quality of ``corners`` (see :class:`DetectionQuality`):
+    #: covariance statistics only — the local check presumes a planar target,
+    #: so its fields stay unset on a pole.
+    quality: DetectionQuality = field(default_factory=DetectionQuality)
 
     @property
     def detection(self) -> TargetDetection:

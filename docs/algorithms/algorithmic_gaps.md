@@ -61,7 +61,8 @@ layer, not a second copy of this initial merge.
 ## Gaps and follow-ups
 
 The pipeline ships zero wrong labels on the workspace's regression
-datasets. Every gap below is **open**. A gap that gets closed is
+datasets; the synthetic ground-truth suite has found one wrong-label defect,
+in the marker-board alignment (Gap 26). Every gap below is **open**. A gap that gets closed is
 deleted from this file — what the pipeline *does* belongs in the stage
 maps above, and what changed belongs in the changelog.
 
@@ -145,17 +146,34 @@ crate should not be called 1.0 while that is true.
 **Fix.** An API-surface pass over `expert` specifically: what is genuinely a
 building block, what leaked out of a refactor, and what should be `#[doc(hidden)]`.
 
-### Gap 23 — The global projective fit is a diagnostic approximation
+### Gap 23 — The global projective fit is a diagnostic approximation — **narrowed**
 
 Under strong lens distortion no single homography represents the board, so the
 global projective fit is an approximation and its residual is a diagnostic
 signal rather than a gate. The chessboard's final geometry check is deliberately
-local for that reason and does not produce a second global-fit residual — so
-there is no global number to compare across frames, by design.
+local for that reason and does not produce a second global-fit residual.
 
-**Fix.** None needed as a defect; recorded so the absence of a global residual
-is not read as an oversight. See the architectural-direction note below on why
-precision at the frontier stays local.
+**What exists now.** Every detection carries a frame-comparable number that is
+*not* a global residual: `DetectionQuality::{local_residual_rms_px,
+variance_factor}` (`calib-targets-core/src/quality.rs`). Each corner with at
+least six of its eight grid neighbours is predicted, leave-one-out, as the
+intersection of the lines through its opposite neighbours (exact under any
+homography), and the residual is whitened by the corner's and the prediction's
+covariance. It is report-only — nothing gates on it — and it is local by
+construction, so lens-model, target and other view-shared errors cancel instead
+of being charged to the corners.
+
+**What stays open.** (i) There is still no *global* residual, by design; the
+local factor does not replace one where a global model is wanted (a calibration
+does that). (ii) The local predictor bends with the grid only to first order:
+at k₁ = 0.15 (synthetic, 16 px cells) the residual has a ≈ 0.035 px RMS floor
+from the lines' curvature (local RMS 0.041 px against a true 0.019 px with
+SaddlePoint), so for very precise corners the local factor reads high (0.28 vs
+a true 0.07). (iii) A localizer bias that is smooth across the
+board is partly absorbed by the neighbours, so the local factor reads low
+against the truth (CenterOfMass on the synthetic chessboards: median 0.16 vs a
+true 0.27). Both are measured by `bench accuracy`. (iv) Non-planar targets
+(PuzzlePole) skip the local check; a cylinder-aware predictor would close that.
 
 ### Gap 24 — Straight-line validation on a curved target — **measured, not observed**
 
@@ -225,6 +243,39 @@ azimuth. Same shape as the window-floor sweep, and it belongs in
 and a multi-pole scene is an explicit per-spec loop in the caller's code rather
 than something reached by accident. The tutorial states the limit where a user
 would meet it.
+
+### Gap 26 — Marker-board alignment accepts circles it cannot see — **open, wrong labels**
+
+**The defect.** When the three circle markers are not resolved, the marker-board
+detector can still accept a circle alignment — and then every corner it gives an
+`id` / `target_position` is wrong, by one or more whole squares. Measured by the
+synthetic ground-truth suite: 8 px cells with a lens blur of σ 1.5 px (the disks
+are 4 px across before blur). Four of the 16 such conditions produce wrong
+labels (CenterOfMass: one condition, 34 corners; SaddlePoint: three conditions,
+106 corners); every other marker-board condition, and every other family, has
+none. The chessboard stage's relative labels are correct in all of them; only the
+absolute frame is wrong.
+
+**Mechanism (from `MarkerBoardDetector::diagnose`).** With the disks unresolved,
+the circle scorer's candidates carry no circle evidence: all of them score
+≈ ±(the square's own contrast) — e.g. twelve candidates between 42.5 and 43.6 on
+a 43-level contrast, none on the true circle cells. The frame search then finds
+an L-shaped triple of these with the right polarity pattern by coincidence —
+`inliers = 3, runner_up = 2, ambiguous = false` — and accepts a wrong rotation
+and translation (e.g. a 90° turn on an upright board). Neighbouring conditions
+come out `3 vs 3` or `2 vs 2` and are refused as ambiguous; which way a frame
+falls is chance.
+
+**The missing criterion.** A candidate must *evidence a disk*: its score must
+exceed, by a margin set by the noise, what an empty square of the same polarity
+scores under the same scorer. Today a plain square scores like a disk, so three
+inliers out of a dozen evidence-free candidates is a coincidence the
+inlier-margin gate cannot see. Tightening that margin would be tuning; the fix
+is the evidence test.
+
+**Reproduce.** `cargo run -p calib-targets-bench --release --bin bench --
+accuracy --family marker-board` exits non-zero and lists the conditions in
+`bench_results/accuracy/accuracy.md` (local-only).
 
 ---
 

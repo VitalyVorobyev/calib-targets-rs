@@ -39,6 +39,66 @@ pub(crate) enum Cmd {
     /// time over the dataset and emit a recall/precision/speed delta table
     /// (markdown + JSON) to bench_results/. Local-only output.
     Ablate(AblateArgs),
+    /// Ground-truth accuracy suite: render every detector family's board
+    /// through a grid of imaging conditions with exactly known corners and
+    /// score recall, wrong labels, RMS error, bias and the covariances'
+    /// variance factor. Writes markdown + JSON to bench_results/accuracy/
+    /// (local-only); exits non-zero on any wrong label.
+    Accuracy(AccuracyArgs),
+}
+
+#[derive(Args)]
+pub(crate) struct AccuracyArgs {
+    /// Run the small subset the integration test runs instead of the full grid.
+    #[arg(long)]
+    pub(crate) quick: bool,
+    /// Refiner(s) to score (comma-separated or repeated). Default: both.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    pub(crate) refiner: Vec<RefinerArg>,
+    /// Families to run (comma-separated or repeated). Default: all four.
+    #[arg(long, value_enum, value_delimiter = ',')]
+    pub(crate) family: Vec<FamilyArg>,
+    /// Worker threads (one geometry each). Default: available parallelism.
+    #[arg(long)]
+    pub(crate) threads: Option<usize>,
+    /// Output directory (workspace-relative unless absolute).
+    /// Default `bench_results/accuracy`.
+    #[arg(long)]
+    pub(crate) out: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub(crate) enum RefinerArg {
+    CenterOfMass,
+    SaddlePoint,
+}
+
+impl From<RefinerArg> for calib_targets_bench::accuracy::Refiner {
+    fn from(value: RefinerArg) -> Self {
+        match value {
+            RefinerArg::CenterOfMass => Self::CenterOfMass,
+            RefinerArg::SaddlePoint => Self::SaddlePoint,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub(crate) enum FamilyArg {
+    Chessboard,
+    Charuco,
+    Puzzleboard,
+    MarkerBoard,
+}
+
+impl From<FamilyArg> for calib_targets_bench::accuracy::families::Family {
+    fn from(value: FamilyArg) -> Self {
+        match value {
+            FamilyArg::Chessboard => Self::Chessboard,
+            FamilyArg::Charuco => Self::Charuco,
+            FamilyArg::Puzzleboard => Self::PuzzleBoard,
+            FamilyArg::MarkerBoard => Self::MarkerBoard,
+        }
+    }
 }
 
 #[derive(Args)]

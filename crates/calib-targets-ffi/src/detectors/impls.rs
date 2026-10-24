@@ -21,12 +21,13 @@ use crate::{
     alignment_to_ffi, chessboard_corner_to_ffi, convert_charuco_detector_params,
     convert_chess_config, convert_chessboard_params, convert_marker_board_params,
     convert_puzzleboard_params, copy_output_slice, ct_charuco_detector_t, ct_chessboard_detector_t,
-    ct_marker_board_detector_t, ct_puzzleboard_detector_t, labeled_corner_to_ffi,
-    map_charuco_create_error, map_charuco_detect_error, map_marker_board_detect_error,
-    map_puzzleboard_create_error, map_puzzleboard_detect_error, marker_detection_to_ffi,
-    option_f32_to_ffi, require_mut_ref, require_ref, validate_output_buffer, write_json_string,
-    write_optional_result, write_required_len, CharucoDetector, ChessboardDetector, FfiError,
-    FfiResult, MarkerBoardDetector, PreparedGrayImage, PuzzleBoardDetector,
+    ct_marker_board_detector_t, ct_puzzleboard_detector_t, detection_quality_to_ffi,
+    labeled_corner_to_ffi, map_charuco_create_error, map_charuco_detect_error,
+    map_marker_board_detect_error, map_puzzleboard_create_error, map_puzzleboard_detect_error,
+    marker_detection_to_ffi, option_f32_to_ffi, require_mut_ref, require_ref,
+    validate_output_buffer, write_json_string, write_optional_result, write_required_len,
+    CharucoDetector, ChessboardDetector, FfiError, FfiResult, MarkerBoardDetector,
+    PreparedGrayImage, PuzzleBoardDetector,
 };
 use std::ffi::c_char;
 
@@ -135,9 +136,9 @@ pub(super) unsafe fn chessboard_detector_detect_impl(
     // SAFETY: caller contract: `args.image` points to a valid `ct_gray_image_u8_t` struct.
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess);
+    let frame = prepared.detect_corner_frame(&detector.chess);
 
-    let Some(detection) = detector.detector.detect(&corners) else {
+    let Some(detection) = detector.detector.detect(&frame.corners) else {
         // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
         // pointers per the caller contract; null is handled inside the helpers.
         unsafe {
@@ -155,6 +156,7 @@ pub(super) unsafe fn chessboard_detector_detect_impl(
     let result = ct_chessboard_result_t {
         corners_len: corners_out.len(),
         cell_size: option_f32_to_ffi(detection.cell_size),
+        quality: detection_quality_to_ffi(&detection.quality.with_noise_sigma(frame.noise.sigma())),
     };
 
     // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
@@ -227,6 +229,7 @@ pub(super) unsafe fn charuco_detector_detect_impl(
         },
         markers_len: markers_out.len(),
         alignment: alignment_to_ffi(detection.alignment),
+        quality: detection_quality_to_ffi(&detection.quality),
     };
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
@@ -306,6 +309,7 @@ pub(super) unsafe fn marker_board_detector_detect_impl(
             .alignment
             .map(alignment_to_ffi)
             .unwrap_or_default(),
+        quality: detection_quality_to_ffi(&detection.quality),
     };
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
@@ -380,6 +384,7 @@ pub(super) unsafe fn puzzleboard_detector_detect_impl(
         dot_dissent_rate: detection.decode.dot_dissent_rate,
         master_origin_row: detection.decode.master_origin_row,
         master_origin_col: detection.decode.master_origin_col,
+        quality: detection_quality_to_ffi(&detection.quality),
     };
 
     // SAFETY: output pointers are valid per caller contract; null is handled inside helpers.
@@ -411,15 +416,16 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
     let detector = unsafe { require_ref(args.detector, "args.detector")? };
     let image = unsafe { require_ref(args.image, "args.image")? };
     let prepared = PreparedGrayImage::from_descriptor(image)?;
-    let corners = prepared.detect_corners(&detector.chess);
+    let frame = prepared.detect_corner_frame(&detector.chess);
 
-    let detections = detector.detector.detect_all(&corners);
+    let detections = detector.detector.detect_all(&frame.corners);
 
     let results_out: Vec<ct_chessboard_result_t> = detections
         .iter()
         .map(|d| ct_chessboard_result_t {
             corners_len: d.corners.len(),
             cell_size: option_f32_to_ffi(d.cell_size),
+            quality: detection_quality_to_ffi(&d.quality.with_noise_sigma(frame.noise.sigma())),
         })
         .collect();
     let corners_out: Vec<ct_chessboard_corner_t> = detections

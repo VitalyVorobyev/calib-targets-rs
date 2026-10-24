@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
+use calib_targets::DetectionQuality;
 use serde::{Deserialize, Serialize};
 
 use crate::baseline::Baseline;
@@ -35,6 +36,62 @@ pub struct PerImageReport {
     /// written before this field existed still deserialize.
     #[serde(default)]
     pub structural_precision: StructuralPrecision,
+    /// The detection's localization-quality summary (noise level, covariance
+    /// coverage and σ, local leave-one-out residual and variance factor).
+    /// Report-only: never compared against the baseline. `None` when there
+    /// was no detection or the engine reports none.
+    #[serde(default)]
+    pub quality: Option<DetectionQuality>,
+}
+
+/// Per-dataset aggregate of the per-image [`DetectionQuality`] fields: the
+/// median over the images that report each one, and how many do.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct QualitySummary {
+    /// Images whose detection carries a quality summary.
+    pub images: usize,
+    /// Median frame noise level (gray levels), over images that know it.
+    pub noise_sigma: Option<f32>,
+    /// Images with a known noise level.
+    pub noise_known: usize,
+    /// Median covariance coverage.
+    pub covariance_coverage: Option<f32>,
+    /// Median of the per-image median σ (px).
+    pub median_sigma_px: Option<f32>,
+    /// Median per-image local leave-one-out residual RMS (px).
+    pub local_residual_rms_px: Option<f32>,
+    /// Median per-image robust variance factor.
+    pub variance_factor: Option<f32>,
+    /// Images with a variance factor.
+    pub variance_factor_images: usize,
+}
+
+impl QualitySummary {
+    /// Aggregate the quality rows of a run.
+    pub fn from_rows(per_image: &[PerImageReport]) -> Self {
+        let rows: Vec<&DetectionQuality> = per_image
+            .iter()
+            .filter_map(|r| r.quality.as_ref())
+            .collect();
+        let pick = |f: &dyn Fn(&DetectionQuality) -> Option<f32>| -> (Option<f32>, usize) {
+            let mut v: Vec<f32> = rows.iter().filter_map(|q| f(q)).collect();
+            let n = v.len();
+            v.sort_by(f32::total_cmp);
+            (v.get(n / 2).copied(), n)
+        };
+        let (noise_sigma, noise_known) = pick(&|q| q.noise_sigma);
+        let (variance_factor, variance_factor_images) = pick(&|q| q.variance_factor);
+        Self {
+            images: rows.len(),
+            noise_sigma,
+            noise_known,
+            covariance_coverage: pick(&|q| Some(q.covariance_coverage)).0,
+            median_sigma_px: pick(&|q| q.median_sigma_px).0,
+            local_residual_rms_px: pick(&|q| q.local_residual_rms_px).0,
+            variance_factor,
+            variance_factor_images,
+        }
+    }
 }
 
 /// Aggregate counters + latency percentiles over a whole run.
@@ -52,6 +109,9 @@ pub struct Summary {
     pub p95_ms: f64,
     /// Worst per-image detection latency, milliseconds.
     pub max_ms: f64,
+    /// Localization-quality aggregate over the run (report-only).
+    #[serde(default)]
+    pub quality: QualitySummary,
 }
 
 /// Top-level run report written to `bench_results/`.
@@ -116,6 +176,7 @@ pub fn compute_report(outcome: &RunOutcome, baseline: Option<&Baseline>) -> PerI
         labelled_count,
         diff_vs_baseline: diff,
         structural_precision: precision,
+        quality: outcome.quality,
     }
 }
 
@@ -139,6 +200,7 @@ pub fn make_summary(per_image: &[PerImageReport], elapsed: &[f64]) -> Summary {
         p50_ms: p50,
         p95_ms: p95,
         max_ms: maxv,
+        quality: QualitySummary::from_rows(per_image),
     }
 }
 

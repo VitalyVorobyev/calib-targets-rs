@@ -73,4 +73,6 @@ pub use link_check::{
 // directly.
 pub use calib_targets_aruco::{builtins, resolve_dictionary, Dictionary};
 pub use calib_targets_chessboard::ChessCorner;
-pub use calib_targets_core::{GrayImageView, GridAlignment, GridTransform, PositionCovariance};
+pub use calib_targets_core::{
+    DetectionQuality, GrayImageView, GridAlignment, GridTransform, PositionCovariance,
+};

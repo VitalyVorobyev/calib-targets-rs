@@ -12,6 +12,7 @@ from .results import (
     ChessboardDebug,
     ChessboardDetectionResult,
     CellCoords,
+    DetectionQuality,
     CircleCandidate,
     CircleMatch,
     Coord,
@@ -212,6 +213,69 @@ def _covariance_from(obj: Mapping[str, Any]) -> PositionCovariance | None:
     # Optional on input: payloads written before the field existed omit it.
     value = obj.get("position_covariance")
     return position_covariance_from_dict(value) if value is not None else None
+
+
+def _optional_float(value: Any, ctx: str) -> float | None:
+    return None if value is None else _to_float(value, ctx)
+
+
+def detection_quality_to_dict(value: DetectionQuality) -> dict[str, Any]:
+    def opt(v: float | None) -> float | None:
+        return None if v is None else float(v)
+
+    return {
+        "noise_sigma": opt(value.noise_sigma),
+        "covariance_coverage": float(value.covariance_coverage),
+        "median_sigma_px": opt(value.median_sigma_px),
+        "p95_sigma_px": opt(value.p95_sigma_px),
+        "local_residual_count": int(value.local_residual_count),
+        "local_residual_rms_px": opt(value.local_residual_rms_px),
+        "variance_factor_count": int(value.variance_factor_count),
+        "variance_factor": opt(value.variance_factor),
+    }
+
+
+_QUALITY_KEYS = {
+    "noise_sigma",
+    "covariance_coverage",
+    "median_sigma_px",
+    "p95_sigma_px",
+    "local_residual_count",
+    "local_residual_rms_px",
+    "variance_factor_count",
+    "variance_factor",
+}
+
+
+def detection_quality_from_dict(data: Mapping[str, Any]) -> DetectionQuality:
+    # Every key is optional on input, as on the Rust side (`serde(default)`).
+    obj = _ensure_mapping(data, "DetectionQuality")
+    _validate_keys(obj, allowed=_QUALITY_KEYS, required=set(), ctx="DetectionQuality")
+    ctx = "DetectionQuality"
+    return DetectionQuality(
+        noise_sigma=_optional_float(obj.get("noise_sigma"), f"{ctx}.noise_sigma"),
+        covariance_coverage=_to_float(
+            obj.get("covariance_coverage", 0.0), f"{ctx}.covariance_coverage"
+        ),
+        median_sigma_px=_optional_float(obj.get("median_sigma_px"), f"{ctx}.median_sigma_px"),
+        p95_sigma_px=_optional_float(obj.get("p95_sigma_px"), f"{ctx}.p95_sigma_px"),
+        local_residual_count=_to_int(
+            obj.get("local_residual_count", 0), f"{ctx}.local_residual_count"
+        ),
+        local_residual_rms_px=_optional_float(
+            obj.get("local_residual_rms_px"), f"{ctx}.local_residual_rms_px"
+        ),
+        variance_factor_count=_to_int(
+            obj.get("variance_factor_count", 0), f"{ctx}.variance_factor_count"
+        ),
+        variance_factor=_optional_float(obj.get("variance_factor"), f"{ctx}.variance_factor"),
+    )
+
+
+def _quality_from(obj: Mapping[str, Any]) -> DetectionQuality:
+    # Optional on input: payloads written before the field existed omit it.
+    value = obj.get("quality")
+    return detection_quality_from_dict(value) if value is not None else DetectionQuality()
 
 
 def coord_to_dict(value: Coord) -> dict[str, Any]:
@@ -513,6 +577,7 @@ def chessboard_detection_result_to_dict(value: ChessboardDetectionResult) -> dic
     return {
         "corners": [chessboard_corner_to_dict(item) for item in value.corners],
         "cell_size": value.cell_size,
+        "quality": detection_quality_to_dict(value.quality),
     }
 
 
@@ -525,7 +590,7 @@ def chessboard_detection_result_from_dict(
     obj = _ensure_mapping(data, "ChessboardDetectionResult")
     _validate_keys(
         obj,
-        allowed={"corners", "cell_size"},
+        allowed={"corners", "cell_size", "quality"},
         required={"corners"},
         ctx="ChessboardDetectionResult",
     )
@@ -539,6 +604,7 @@ def chessboard_detection_result_from_dict(
     return ChessboardDetectionResult(
         corners=[chessboard_corner_from_dict(item) for item in corners],
         cell_size=cell_size,
+        quality=_quality_from(obj),
     )
 
 
@@ -724,6 +790,7 @@ def charuco_detection_result_to_dict(value: CharucoDetection) -> dict[str, Any]:
         "corners": [charuco_corner_to_dict(item) for item in value.corners],
         "markers": [marker_detection_to_dict(item) for item in value.markers],
         "alignment": grid_alignment_to_dict(value.alignment),
+        "quality": detection_quality_to_dict(value.quality),
     }
 
 
@@ -735,6 +802,7 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
             "corners",
             "markers",
             "alignment",
+            "quality",
         },
         required={"corners", "markers", "alignment"},
         ctx="CharucoDetection",
@@ -745,6 +813,7 @@ def charuco_detection_result_from_dict(data: Mapping[str, Any]) -> CharucoDetect
         corners=[charuco_corner_from_dict(item) for item in corners],
         markers=[marker_detection_from_dict(item) for item in markers],
         alignment=grid_alignment_from_dict(obj["alignment"]),
+        quality=_quality_from(obj),
     )
 
 
@@ -791,6 +860,7 @@ def marker_board_detection_result_to_dict(
         "alignment": grid_alignment_to_dict(value.alignment)
         if value.alignment is not None
         else None,
+        "quality": detection_quality_to_dict(value.quality),
     }
 
 
@@ -800,7 +870,7 @@ def marker_board_detection_result_from_dict(
     obj = _ensure_mapping(data, "MarkerBoardDetection")
     _validate_keys(
         obj,
-        allowed={"corners", "alignment"},
+        allowed={"corners", "alignment", "quality"},
         required={"corners", "alignment"},
         ctx="MarkerBoardDetection",
     )
@@ -809,6 +879,7 @@ def marker_board_detection_result_from_dict(
     return MarkerBoardDetection(
         corners=[marker_board_corner_from_dict(item) for item in corners],
         alignment=grid_alignment_from_dict(alignment) if alignment is not None else None,
+        quality=_quality_from(obj),
     )
 
 
@@ -943,6 +1014,7 @@ def puzzleboard_detection_result_to_dict(
         "corners": [puzzleboard_corner_to_dict(item) for item in value.corners],
         "alignment": grid_alignment_to_dict(value.alignment),
         "decode": puzzleboard_decode_info_to_dict(value.decode),
+        "quality": detection_quality_to_dict(value.quality),
     }
 
 
@@ -952,7 +1024,7 @@ def puzzleboard_detection_result_from_dict(
     obj = _ensure_mapping(data, "PuzzleBoardDetection")
     _validate_keys(
         obj,
-        allowed={"corners", "alignment", "decode"},
+        allowed={"corners", "alignment", "decode", "quality"},
         required={"corners", "alignment", "decode"},
         ctx="PuzzleBoardDetection",
     )
@@ -961,6 +1033,7 @@ def puzzleboard_detection_result_from_dict(
         corners=[puzzleboard_corner_from_dict(item) for item in corners],
         alignment=grid_alignment_from_dict(obj["alignment"]),
         decode=puzzleboard_decode_info_from_dict(obj["decode"]),
+        quality=_quality_from(obj),
     )
 
 
@@ -1006,23 +1079,27 @@ def puzzlepole_detection_result_to_dict(value: PuzzlePoleDetection) -> dict[str,
         "alignment": grid_alignment_to_dict(value.alignment),
         "decode": puzzleboard_decode_info_to_dict(value.decode),
         "spec": value.spec.to_dict(),
+        "quality": detection_quality_to_dict(value.quality),
     }
 
 
 def puzzlepole_detection_result_from_dict(data: Mapping[str, Any]) -> PuzzlePoleDetection:
     obj = _ensure_mapping(data, "PuzzlePoleDetection")
     keys = {"corners", "alignment", "decode", "spec"}
-    _validate_keys(obj, allowed=keys, required=keys, ctx="PuzzlePoleDetection")
+    _validate_keys(obj, allowed=keys | {"quality"}, required=keys, ctx="PuzzlePoleDetection")
     corners = _to_sequence(obj["corners"], "PuzzlePoleDetection.corners")
     return PuzzlePoleDetection(
         corners=[puzzlepole_corner_from_dict(item) for item in corners],
         alignment=grid_alignment_from_dict(obj["alignment"]),
         decode=puzzleboard_decode_info_from_dict(obj["decode"]),
         spec=PuzzlePoleSpec.from_dict(dict(_ensure_mapping(obj["spec"], "PuzzlePoleDetection.spec"))),
+        quality=_quality_from(obj),
     )
 
 
 __all__ = [
+    "detection_quality_to_dict",
+    "detection_quality_from_dict",
     "coord_to_dict",
     "coord_from_dict",
     "cell_coords_to_dict",

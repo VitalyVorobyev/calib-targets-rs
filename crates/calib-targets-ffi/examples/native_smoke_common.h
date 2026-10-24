@@ -237,4 +237,30 @@ static size_t ct_native_count_valid_covariances(const ct_chessboard_corner_t *co
   return valid;
 }
 
+/* Whether a chessboard result's `quality` is internally consistent and
+ * populated, as it is for a lossless frame detected by the default config:
+ * noise known, covariances on (nearly) every corner, a local check over at
+ * least one corner. */
+static int ct_native_quality_is_sane(const ct_detection_quality_t *q, size_t corners_len) {
+  if (q->noise_sigma.has_value != CT_TRUE || !(q->noise_sigma.value >= 0.0f)) {
+    return 0;
+  }
+  if (!(q->covariance_coverage >= 0.9f && q->covariance_coverage <= 1.0f)) {
+    return 0;
+  }
+  if (q->median_sigma_px.has_value != CT_TRUE || q->p95_sigma_px.has_value != CT_TRUE ||
+      !(q->median_sigma_px.value > 0.0f) || q->p95_sigma_px.value < q->median_sigma_px.value) {
+    return 0;
+  }
+  if (q->local_residual_count == 0 || q->local_residual_count > corners_len ||
+      q->local_residual_rms_px.has_value != CT_TRUE || !(q->local_residual_rms_px.value > 0.0f)) {
+    return 0;
+  }
+  if (q->variance_factor_count == 0 || q->variance_factor_count > q->local_residual_count ||
+      q->variance_factor.has_value != CT_TRUE || !(q->variance_factor.value > 0.0f)) {
+    return 0;
+  }
+  return 1;
+}
+
 #endif

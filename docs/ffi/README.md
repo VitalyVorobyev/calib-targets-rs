@@ -59,6 +59,20 @@ frame): the covariance of `position`, valid when the flag is `CT_TRUE`. It is
 frame's noise estimate declined (typical of JPEG input — set
 `ct_chess_config_t::noise_sigma`).
 
+Every result header ends with `quality` (`ct_detection_quality_t`), the
+detection's localization-quality summary. Each `ct_optional_f32_t` member has
+`has_value == CT_FALSE` when unavailable:
+
+| Field | Meaning |
+|---|---|
+| `noise_sigma` | Image noise (gray levels) the covariances used; unset for `*_with_corners` calls or when the estimate declined. |
+| `covariance_coverage` | Fraction of delivered corners carrying a covariance. |
+| `median_sigma_px`, `p95_sigma_px` | Median / 95th-percentile per-corner σ (least certain direction), px. |
+| `local_residual_count`, `local_residual_rms_px` | Corners with ≥ 6 of 8 grid neighbours; RMS of their leave-one-out residual (corner predicted from its neighbours alone), px. |
+| `variance_factor_count`, `variance_factor` | Robust variance factor σ̂₀² of those residuals whitened by the corner's and the prediction's covariance: ≈ 1 the covariances describe the local scatter, > 1 overconfident (expected on real images). Frame-comparable, not pass/fail. |
+
+See [Corner uncertainty & detection quality](https://vitalyvorobyev.github.io/calib-targets-rs/book/uncertainty.html).
+
 PuzzleBoard decode knobs live in `ct_puzzleboard_decode_config_t`:
 `search_mode` (`CT_PUZZLEBOARD_SEARCH_MODE_{FULL,FIXED_BOARD}`), `scoring_mode`
 (`CT_PUZZLEBOARD_SCORING_MODE_{HARD_WEIGHTED,SOFT_LOG_LIKELIHOOD}`), and

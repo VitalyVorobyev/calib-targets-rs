@@ -7,7 +7,7 @@ use crate::types::{MarkerBoardDetection, MarkerBoardParams};
 
 use nalgebra::Point2;
 
-use calib_targets_chessboard::ChessCorner;
+use calib_targets_chessboard::{detect_corner_frame, ChessCorner};
 use calib_targets_chessboard::{
     ChessboardDetection, ChessboardDetector as ChessDetector, ChessboardParamsError,
 };
@@ -60,10 +60,13 @@ impl MarkerBoardDetector {
     /// configured by [`MarkerBoardParams::chess`](crate::MarkerBoardParams::chess).
     ///
     /// This is the ergonomic entry point: hand it an image and it does the
-    /// whole pipeline. It is exactly
+    /// whole pipeline. It gives the result of
     /// `self.detect_with_corners(image, &self.detect_corners(image))` — reach
     /// for [`Self::detect_with_corners`] when you already have a corner cloud
     /// (a custom upstream, or one shared across detectors).
+    ///
+    /// Running the corner pass itself, it also knows the frame's noise level
+    /// and records it on the result's [`quality`](MarkerBoardDetection::quality).
     ///
     /// # Errors
     ///
@@ -72,7 +75,10 @@ impl MarkerBoardDetector {
         &self,
         image: &GrayImageView<'_>,
     ) -> Result<MarkerBoardDetection, MarkerBoardDetectError> {
-        self.detect_with_corners(image, &self.detect_corners(image))
+        let frame = detect_corner_frame(image, &self.params.chess);
+        let mut result = self.detect_with_corners(image, &frame.corners)?;
+        result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+        Ok(result)
     }
 
     /// Full detection from a pre-detected corner cloud, using image-space
@@ -107,7 +113,12 @@ impl MarkerBoardDetector {
         Result<MarkerBoardDetection, MarkerBoardDetectError>,
         MarkerBoardDiagnostics,
     ) {
-        self.diagnose_with_corners(image, &self.detect_corners(image))
+        let frame = detect_corner_frame(image, &self.params.chess);
+        let (mut result, diagnostics) = self.diagnose_with_corners(image, &frame.corners);
+        if let Ok(result) = &mut result {
+            result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+        }
+        (result, diagnostics)
     }
 
     /// Full detection using image-space circle scoring, additionally

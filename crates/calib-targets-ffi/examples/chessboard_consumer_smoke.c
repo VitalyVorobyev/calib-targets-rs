@@ -161,6 +161,14 @@ int main(int argc, char **argv) {
       goto cleanup;
     }
   }
+  if (!ct_native_quality_is_sane(&result.quality, corners_len)) {
+    fprintf(stderr,
+            "unexpected detection quality: coverage=%f local=%zu variance_factor=%f\n",
+            (double)result.quality.covariance_coverage,
+            result.quality.local_residual_count,
+            (double)result.quality.variance_factor.value);
+    goto cleanup;
+  }
 
   exit_code = 0;
 

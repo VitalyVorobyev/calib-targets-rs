@@ -12,7 +12,8 @@ use serde::{Deserialize, Serialize};
 use super::PuzzlePoleSpec;
 use crate::detector::PuzzleBoardDecodeInfo;
 use calib_targets_core::{
-    Coord, GridAlignment, LabeledCorner, PositionCovariance, TargetDetection, TargetKind,
+    Coord, DetectionQuality, GridAlignment, LabeledCorner, PositionCovariance, TargetDetection,
+    TargetKind,
 };
 
 /// One decoded corner on a PuzzlePole.
@@ -115,10 +116,17 @@ pub struct PuzzlePoleDetection {
     /// The pole the decode was run against. Carried because `grid` and `id`
     /// cannot be interpreted without it.
     pub spec: PuzzlePoleSpec,
+    /// How well [`Self::corners`] are localized: the covariance statistics
+    /// of [`DetectionQuality::from_covariances`]. The local leave-one-out
+    /// check presumes a planar target, so its fields stay unset on a pole.
+    /// [`noise_sigma`](DetectionQuality::noise_sigma) is set when the detector
+    /// ran the corner pass itself ([`PuzzlePoleDetector::detect`](crate::PuzzlePoleDetector::detect)).
+    #[serde(default)]
+    pub quality: DetectionQuality,
 }
 
 impl PuzzlePoleDetection {
-    /// Assemble a detection.
+    /// Assemble a detection, measuring its [`quality`](Self::quality).
     #[must_use]
     pub fn new(
         corners: Vec<PuzzlePoleCorner>,
@@ -126,7 +134,10 @@ impl PuzzlePoleDetection {
         decode: PuzzleBoardDecodeInfo,
         spec: PuzzlePoleSpec,
     ) -> Self {
+        let labeled: Vec<LabeledCorner> =
+            corners.iter().map(PuzzlePoleCorner::to_labeled).collect();
         Self {
+            quality: DetectionQuality::from_covariances(&labeled),
             corners,
             alignment,
             decode,

@@ -138,8 +138,9 @@ strip = false
 # the algorithm crates' own code in the test profile so `cargo test` is fast
 # WITHOUT weakening coverage: `opt-level` is the only change, so debug-assertions
 # and overflow-checks stay ON, and the heavy external deps are untouched (they
-# stay cached, no recompile). Bindings / studio / bench / facade are excluded —
-# their tests are not compute-bound.
+# stay cached, no recompile). Bindings / studio / facade are excluded — their
+# tests are not compute-bound. The bench crate is included for its ground-truth
+# renderer (`tests/accuracy.rs` supersamples every image 16 × 16).
 [profile.test.package.projective-grid]
 opt-level = 3
 [profile.test.package.calib-targets-core]
@@ -153,4 +154,6 @@ opt-level = 3
 [profile.test.package.calib-targets-puzzleboard]
 opt-level = 3
 [profile.test.package.calib-targets-marker]
+opt-level = 3
+[profile.test.package.calib-targets-bench]
 opt-level = 3

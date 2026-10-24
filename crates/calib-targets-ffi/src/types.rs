@@ -241,6 +241,41 @@ pub struct ct_position_covariance_t {
     pub yy: f32,
 }
 
+/// Per-detection localization quality (`DetectionQuality` in Rust).
+///
+/// Covariance statistics over the delivered corners, plus the local
+/// leave-one-out check: each corner with at least six of its eight grid
+/// neighbours is predicted from them alone (the intersection of the lines
+/// through its opposite neighbours), and the residual is whitened by the corner's and the
+/// prediction's covariance. `variance_factor` ≈ 1 means the covariances
+/// describe the local scatter, > 1 that they are overconfident (expected on
+/// real images); a frame-comparable number, not a pass/fail test.
+///
+/// Every `ct_optional_f32_t` member is unset when unavailable: `noise_sigma`
+/// when the detector did not run the corner pass itself or the estimate
+/// declined, the σ statistics when no corner carries a covariance, the local
+/// statistics when no corner qualifies.
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct ct_detection_quality_t {
+    /// Image noise (gray levels, 1σ) the covariances were computed with.
+    pub noise_sigma: ct_optional_f32_t,
+    /// Fraction of delivered corners carrying a covariance, `[0, 1]`.
+    pub covariance_coverage: f32,
+    /// Median per-corner σ along the least certain direction, px.
+    pub median_sigma_px: ct_optional_f32_t,
+    /// 95th-percentile (nearest rank) per-corner σ, px.
+    pub p95_sigma_px: ct_optional_f32_t,
+    /// Corners with a complete enough neighbourhood for the local check.
+    pub local_residual_count: usize,
+    /// RMS leave-one-out residual length over those corners, px.
+    pub local_residual_rms_px: ct_optional_f32_t,
+    /// Corners in `variance_factor` (every covariance it needs present).
+    pub variance_factor_count: usize,
+    /// Robust variance factor σ̂₀² of the whitened leave-one-out residuals.
+    pub variance_factor: ct_optional_f32_t,
+}
+
 /// One detected labeled corner.
 ///
 /// `position_covariance` is valid when `has_position_covariance` is
@@ -326,6 +361,8 @@ pub struct ct_chessboard_result_t {
     /// `has_value == CT_TRUE` carries the pitch; `CT_FALSE` means the
     /// detector did not record one (e.g. an empty / failed detection).
     pub cell_size: ct_optional_f32_t,
+    /// Localization quality of this detection's corners.
+    pub quality: ct_detection_quality_t,
 }
 
 /// ChArUco detection header.
@@ -335,6 +372,8 @@ pub struct ct_charuco_result_t {
     pub detection: ct_target_detection_t,
     pub markers_len: usize,
     pub alignment: ct_grid_alignment_t,
+    /// Localization quality of the delivered corners.
+    pub quality: ct_detection_quality_t,
 }
 
 /// Marker-board detection header.
@@ -351,6 +390,8 @@ pub struct ct_marker_board_result_t {
     pub detection: ct_target_detection_t,
     pub has_alignment: u32,
     pub alignment: ct_grid_alignment_t,
+    /// Localization quality of the delivered corners.
+    pub quality: ct_detection_quality_t,
 }
 
 /// PuzzleBoard detection header and compact decode quality summary.
@@ -381,6 +422,8 @@ pub struct ct_puzzleboard_result_t {
     pub dot_dissent_rate: f32,
     pub master_origin_row: i32,
     pub master_origin_col: i32,
+    /// Localization quality of the delivered corners.
+    pub quality: ct_detection_quality_t,
 }
 
 /// Center-of-mass refiner configuration.

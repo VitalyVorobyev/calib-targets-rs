@@ -16,8 +16,17 @@ These conventions are used throughout the workspace. They are not optional and s
 
 ## Sampling and pixel centers
 
-- Warping and sampling should be consistent about pixel centers.
-- When in doubt, treat sample locations as `(x + 0.5, y + 0.5)` in pixel space.
+- **Image coordinates put pixel centres at integers.** Pixel `(x, y)` is centred
+  at `(x, y)` and covers `[x − ½, x + ½) × [y − ½, y + ½)`. Every detected
+  position uses this convention: a corner on the boundary between pixel columns
+  15 and 16 is reported at `x = 15.5`. (OpenCV uses the same convention.)
+- The bilinear samplers (`sample_bilinear*`) take image coordinates in this
+  convention: sampling at integer `(x, y)` returns pixel `(x, y)` exactly.
+- Rectified views are the exception that needs the `+ 0.5`: a rectified pixel
+  `(x, y)` covers `[x, x + 1)` in rectified space, so `warp_perspective_gray`
+  samples its centre at `(x + 0.5, y + 0.5)` before mapping it into the image.
+- To convert a position to "area" coordinates, where pixel `x` covers
+  `[x, x + 1)` (some renderers and rasterizers), add `0.5` to each coordinate.
 
 ## Orientation angles
 
