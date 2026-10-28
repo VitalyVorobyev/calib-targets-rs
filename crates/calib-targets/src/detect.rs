@@ -515,10 +515,11 @@ pub fn detect_charuco_best(
 /// labels the most corners with the highest mean decode confidence.
 ///
 /// Each config's own [`PuzzleBoardParams::chess`] front-end is honoured, so a
-/// sweep may mix corner front-ends (e.g. a single-scale pass alongside an
-/// `UpscaleConfig::Fixed(2)` pass — as [`PuzzleBoardParams::sweep_for_board`]
-/// does). Corner detection is deduplicated across configs that share a front-
-/// end, so the common all-same-`chess` sweep pays for exactly one corner pass.
+/// caller's sweep may mix corner front-ends (e.g. a single-scale pass alongside
+/// an `UpscaleConfig::Fixed(2)` pass). Corner detection is deduplicated across
+/// configs that share a front-end, so a sweep whose configs all share one
+/// `chess` — as [`PuzzleBoardParams::sweep_for_board`]'s do — pays for exactly
+/// one corner pass.
 /// Configs are tried in the given order; a later config replaces the current
 /// best only when it is strictly better, so the first best result wins ties.
 ///

@@ -106,6 +106,19 @@ pub(crate) struct Redetector<'a> {
 pub(crate) struct Redetected {
     pub position: Point2<f32>,
     pub position_covariance: Option<PositionCovariance>,
+    /// The ChESS response at the re-detected peak — what a front-end corner
+    /// carries as its `score`.
+    pub response: f32,
+}
+
+impl Redetected {
+    /// Make `corner` this measurement: position, covariance and score all
+    /// describe the re-detected corner, not the one it replaces.
+    fn adopt_into(&self, corner: &mut LabeledCorner) {
+        corner.position = self.position;
+        corner.position_covariance = self.position_covariance;
+        corner.score = self.response;
+    }
 }
 
 impl<'a> Redetector<'a> {
@@ -153,6 +166,7 @@ impl<'a> Redetector<'a> {
             .map(|c| Redetected {
                 position: Point2::new(c.x, c.y),
                 position_covariance: c.position_covariance.map(PositionCovariance::from),
+                response: c.response,
             })
     }
 
@@ -418,11 +432,12 @@ pub(crate) fn validate_and_fix_corners(
         out[slot] = if claimed {
             None
         } else {
-            // The re-detection is the corner's measurement now: its position
-            // and that position's covariance replace the rejected ones.
+            // The re-detection is the corner's measurement now: its position,
+            // covariance and score replace the rejected corner's. A stale
+            // score would misrank this corner wherever duplicates are
+            // resolved by score.
             out[slot].take().map(|mut c| {
-                c.position = found.position;
-                c.position_covariance = found.position_covariance;
+                found.adopt_into(&mut c);
                 c
             })
         };
@@ -478,6 +493,21 @@ fn roi_half_px_at(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_re_detection_replaces_position_covariance_and_score() {
+        let mut corner = LabeledCorner::new(Point2::new(10.0, 20.0), 80.0)
+            .with_position_covariance(Some(PositionCovariance::new(0.5, 0.0, 0.5)));
+        let found = Redetected {
+            position: Point2::new(12.5, 19.0),
+            position_covariance: Some(PositionCovariance::new(0.01, 0.002, 0.02)),
+            response: 210.0,
+        };
+        found.adopt_into(&mut corner);
+        assert_eq!(corner.position, found.position);
+        assert_eq!(corner.position_covariance, found.position_covariance);
+        assert_eq!(corner.score, 210.0);
+    }
 
     #[test]
     fn recover_gc0_rotation_0() {

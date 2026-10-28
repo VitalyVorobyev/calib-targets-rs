@@ -9,6 +9,7 @@ use calib_targets::chessboard::{
 use calib_targets::detect::{gray_view, DetectorConfig};
 use calib_targets::DetectionQuality;
 use calib_targets_core::axis_estimate_to_next;
+use chess_corners::Uncertainty;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
 use projective_grid::{
     detect_grid_all, DetectionParams, DetectionRequest, Evidence, GridDetection, LatticeKind,
@@ -117,9 +118,10 @@ pub fn run_snap(
 ) -> Result<RunOutcome, std::io::Error> {
     let (snap, origin) = extract_snap(img, entry, k)?;
     let upscaled = upscale_snap(snap, entry.upscale);
+    let chess_cfg = corner_config_for_fed_image(chess_cfg, entry.upscale);
 
     let started = Instant::now();
-    let frame = detect_corner_frame(&gray_view(&upscaled), chess_cfg);
+    let frame = detect_corner_frame(&gray_view(&upscaled), &chess_cfg);
     // The stable `ChessboardDetection` carries `cell_size`, so the pipeline
     // baseline reads it straight off the hot `detect()` path — no
     // `DebugFrame` needed here (overlays still use one separately).
@@ -144,6 +146,21 @@ pub fn run_snap(
         quality,
         fed_image: upscaled,
     })
+}
+
+/// The corner config to run on the fed image.
+///
+/// An upscaled snap is resampled here, before the corner detector sees it:
+/// interpolation correlates the noise of neighbouring pixels, so the white-noise
+/// covariance model — and the noise estimate behind it — would be wrong, and
+/// in upscaled-pixel units besides. `chess-corners` refuses a covariance for
+/// its own `upscale` for the same reason; this does the same for ours.
+fn corner_config_for_fed_image(chess_cfg: &DetectorConfig, upscale: u32) -> DetectorConfig {
+    if upscale > 1 {
+        chess_cfg.with_uncertainty(Uncertainty::Off)
+    } else {
+        *chess_cfg
+    }
 }
 
 fn upscale_snap(snap: GrayImage, upscale: u32) -> GrayImage {
@@ -269,5 +286,52 @@ fn extract_snap(
         Ok((view, (x0, 0)))
     } else {
         Ok((full.clone(), (0, 0)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::dataset::ImageKind;
+    use calib_targets::detect::default_chess_config;
+
+    fn entry(upscale: u32) -> DatasetEntry {
+        DatasetEntry {
+            path: "testdata/small0.png".to_string(),
+            kind: ImageKind::Public,
+            note: String::new(),
+            upscale,
+            stitched: None,
+            dataset: "test".to_string(),
+            min_labelled: None,
+        }
+    }
+
+    fn quality(upscale: u32) -> DetectionQuality {
+        let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/small0.png");
+        let img = load_entry_image(&path).expect("public test image");
+        let outcome = run_snap(
+            &img,
+            &entry(upscale),
+            0,
+            &ChessboardParams::default(),
+            &default_chess_config(),
+            Engine::Pipeline,
+        )
+        .expect("snap");
+        outcome.quality.expect("the board is detected")
+    }
+
+    /// A snap the bench resamples itself reports no covariance and no noise
+    /// level: both would describe interpolated pixels.
+    #[test]
+    fn an_upscaled_snap_reports_no_covariance() {
+        let native = quality(1);
+        assert_eq!(native.covariance_coverage, 1.0);
+        assert!(native.noise_sigma.is_some());
+
+        let upscaled = quality(2);
+        assert_eq!(upscaled.covariance_coverage, 0.0);
+        assert_eq!(upscaled.noise_sigma, None);
     }
 }

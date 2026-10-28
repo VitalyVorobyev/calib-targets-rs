@@ -184,6 +184,8 @@ class UpscaleConfig:
 
     Mirrors ``chess_corners::UpscaleConfig``: ``Disabled`` (bare string
     ``"disabled"``) or ``Fixed(factor)`` for factor in ``{2, 3, 4}``.
+    Positions stay in input-image pixels; an upscaled pass reports no
+    ``position_covariance`` (interpolated pixels carry correlated noise).
     """
 
     kind: str = "disabled"

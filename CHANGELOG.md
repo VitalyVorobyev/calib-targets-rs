@@ -134,7 +134,20 @@ corner structs and the four result headers grow).
   delivered now, each with its id.
 - `MarkerBoardDiagnostics::inliers` now runs parallel to the delivered corners;
   it was in the chessboard stage's order while the corners were sorted.
-
+- **A re-measured ChArUco corner kept the rejected corner's `score`.** When a
+  corner is re-detected near its marker-predicted position, its `position`
+  and `position_covariance` were replaced but its `score` was not, so
+  duplicate resolution by score could favour the wrong measurement. The score
+  is now the re-detection's ChESS response.
+- **The topological grid builder's cell-size estimate depended on hash
+  order**: an `f32` mean summed in `HashMap` iteration order, which varies
+  between processes, fed the validation thresholds. It now sums in a fixed
+  order; results are unchanged on the regression datasets.
+- **The bench and studio reported covariances for images they had upscaled
+  themselves.** A dataset entry's `upscale` resamples the snap before the
+  corner detector sees it, so the noise is correlated and the covariance (and
+  `DetectionQuality`) described interpolated pixels. Those snaps now run with
+  the covariance off, as the corner detector's own `upscale` does.
 - **WASM `diagnose_*` functions returned ES `Map`s**, not the plain objects
   their typings declare: `result.result` / `result.diagnostics` were
   unreachable without `.get(...)`. Every WASM function now returns plain

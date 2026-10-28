@@ -48,7 +48,7 @@ than the full master.
 
 | Symptom | Likely stage | What it means / knob to try |
 |---|---|---|
-| No grid components | Stage 0 (chessboard) | Sparse / empty corner cloud — see the [chessboard failure modes](pipeline_chessboard.md#failure-modes). On small, low-resolution boards set the corner front-end's `chess.upscale` (`UpscaleConfig::Fixed`). |
+| No grid components | Stage 0 (chessboard) | Sparse / empty corner cloud — see the [chessboard failure modes](pipeline_chessboard.md#failure-modes). On small, low-resolution boards set the corner front-end's `chess.upscale` (`UpscaleConfig::Fixed`); corners then carry no position covariance. |
 | `NotEnoughEdges` | Stage 2–3 | Too few high-confidence edge bits survived. Lower `decode.min_bit_confidence`; check that interior dots are resolved at this image scale. |
 | Every hypothesis over BER | Stage 4 (`HardWeighted`) | Board too small or too noisy. Raise `decode.max_bit_error_rate`, or switch to `SoftLogLikelihood` (more robust on ambiguous fragments). |
 | Small / ambiguous decode margin | Stage 4 (`SoftLogLikelihood`) | Near-symmetric fragment or few high-confidence bits. Capture a larger fragment; the margin gate is *correctly* refusing a coin-flip. |
