@@ -1,8 +1,9 @@
 //! Regression gate on the ground-truth accuracy suite's quick subset.
 //!
 //! Renders every family's board under the four quick conditions with fixed
-//! seeds, runs both refiners, and checks the detection contract and the
-//! measured accuracy:
+//! seeds — plus, for the marker board, a fifth guard condition whose disks are
+//! blurred below resolution — runs both refiners, and checks the detection
+//! contract and the measured accuracy:
 //!
 //! - **zero wrong labels**, every family, every refiner — the contract;
 //! - detections, recall, worst RMS error and worst variance factor against
@@ -20,8 +21,9 @@
 use calib_targets_bench::accuracy::families::Family;
 use calib_targets_bench::accuracy::{quick_conditions, run, summarize, Refiner};
 
-/// `(family, refiner, min detected of 4, min mean recall, max RMSE px,
-/// max σ̂₀² truth)` — measured values in the comments.
+/// `(family, refiner, min detected of the family's quick conditions — 4, or 5
+/// for the marker board — min mean recall, max RMSE px, max σ̂₀² truth)` —
+/// measured values in the comments.
 const BOUNDS: [(Family, Refiner, usize, f64, f64, f64); 8] = [
     // 4/4, recall 1.000, RMSE 0.202, σ̂₀² 1.78
     (
@@ -70,21 +72,23 @@ const BOUNDS: [(Family, Refiner, usize, f64, f64, f64); 8] = [
         0.137,
         2.18,
     ),
-    // 3/4, recall 0.750, RMSE 0.203, σ̂₀² 1.80
+    // 3/5, recall 0.600, RMSE 0.203, σ̂₀² 1.80 (the unresolved-disk guard
+    // condition declines; it delivered wrong labels before the empty-square
+    // evidence test)
     (
         Family::MarkerBoard,
         Refiner::CenterOfMass,
         3,
-        0.70,
+        0.55,
         0.259,
         2.75,
     ),
-    // 3/4, recall 0.750, RMSE 0.049, σ̂₀² 0.30
+    // 3/5, recall 0.600, RMSE 0.049, σ̂₀² 0.30
     (
         Family::MarkerBoard,
         Refiner::SaddlePoint,
         3,
-        0.70,
+        0.55,
         0.066,
         0.50,
     ),

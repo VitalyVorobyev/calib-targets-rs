@@ -61,8 +61,8 @@ layer, not a second copy of this initial merge.
 ## Gaps and follow-ups
 
 The pipeline ships zero wrong labels on the workspace's regression
-datasets; the synthetic ground-truth suite has found one wrong-label defect,
-in the marker-board alignment (Gap 26). Every gap below is **open**. A gap that gets closed is
+datasets and on every condition of the synthetic ground-truth suite. Every gap
+below is **open**. A gap that gets closed is
 deleted from this file — what the pipeline *does* belongs in the stage
 maps above, and what changed belongs in the changelog.
 
@@ -244,38 +244,31 @@ and a multi-pole scene is an explicit per-spec loop in the caller's code rather
 than something reached by accident. The tutorial states the limit where a user
 would meet it.
 
-### Gap 26 — Marker-board alignment accepts circles it cannot see — **open, wrong labels**
+### Gap 27 — Boundary recovery labels the board's outer-edge T-junctions — **open, measured**
 
-**The defect.** When the three circle markers are not resolved, the marker-board
-detector can still accept a circle alignment — and then every corner it gives an
-`id` / `target_position` is wrong, by one or more whole squares. Measured by the
-synthetic ground-truth suite: 8 px cells with a lens blur of σ 1.5 px (the disks
-are 4 px across before blur). Four of the 16 such conditions produce wrong
-labels (CenterOfMass: one condition, 34 corners; SaddlePoint: three conditions,
-106 corners); every other marker-board condition, and every other family, has
-none. The chessboard stage's relative labels are correct in all of them; only the
-absolute frame is wrong.
+On the public `testdata/markerboard.png` (22 × 22 inner corners, seen whole)
+the chessboard detector delivers 485 corners: all 484 inner corners plus a
+T-junction on the board's top edge at `(724.4, 63.1)`, where a black and a white
+outer square meet the margin. It is not an X-junction. Trace
+(`trace_topological_detection`): ChESS strength 44.8, axis σ 0.23 / 0.22 rad
+(inside the 15° admission), touches no Delaunay quad, and is attached by the
+**axis-aware recovery booster** (`recovery_additions`, not geometry-only) at
+the lattice row one past the board. It lies 2.6 px (0.06 of the 43 px step)
+off the quadratic extrapolation of its column — on the lattice, but not an
+inner corner, and localised by a T-junction response.
 
-**Mechanism (from `MarkerBoardDetector::diagnose`).** With the disks unresolved,
-the circle scorer's candidates carry no circle evidence: all of them score
-≈ ±(the square's own contrast) — e.g. twelve candidates between 42.5 and 43.6 on
-a 43-level contrast, none on the true circle cells. The frame search then finds
-an L-shaped triple of these with the right polarity pattern by coincidence —
-`inliers = 3, runner_up = 2, ambiguous = false` — and accepts a wrong rotation
-and translation (e.g. a 90° turn on an upright board). Neighbouring conditions
-come out `3 vs 3` or `2 vs 2` and are refused as ambiguous; which way a frame
-falls is chance.
+Effect: a plain chessboard detection carries one extra row-end point; an
+absolute-label detector maps it outside the board. The marker board now drops
+every corner outside its `rows` × `cols` extent, which is where this surfaced
+(it shipped as `(8, -1)`); ChArUco and PuzzleBoard have not been checked for
+the same corner.
 
-**The missing criterion.** A candidate must *evidence a disk*: its score must
-exceed, by a margin set by the noise, what an empty square of the same polarity
-scores under the same scorer. Today a plain square scores like a disk, so three
-inliers out of a dozen evidence-free candidates is a coincidence the
-inlier-margin gate cannot see. Tightening that margin would be tuning; the fix
-is the evidence test.
-
-**Reproduce.** `cargo run -p calib-targets-bench --release --bin bench --
-accuracy --family marker-board` exits non-zero and lists the conditions in
-`bench_results/accuracy/accuracy.md` (local-only).
+**Fix.** The booster attaches a corner on position and axes alone, and both
+are consistent here. What separates the two is structural: an X-junction has
+opposite sectors of equal colour, a T-junction has one side uniform. A recovery
+predicate on that sector symmetry — not on a strength ratio, which would be a
+threshold fitted to this frame — closes the gap; it needs the image, or a
+symmetry descriptor from the corner detector.
 
 ---
 

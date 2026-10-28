@@ -126,8 +126,8 @@ reported covariances (mean form); **local σ̂₀²** is the detection's own
 | ChArUco | SaddlePoint | 56 / 80 | 0.67 | 0.025 / 0.058 | 0.10 | 0.16 |
 | PuzzleBoard | CenterOfMass | 58 / 80 | 0.72 | 0.282 / 0.507 | 3.79 | 1.69 |
 | PuzzleBoard | SaddlePoint | 51 / 80 | 0.63 | 0.050 / 0.391 | 0.33 | 0.29 |
-| Marker board | CenterOfMass | 47 / 80 | 0.58 | 0.079 / 0.209 | 0.29 | 0.21 |
-| Marker board | SaddlePoint | 51 / 80 | 0.62 | 0.024 / 0.172 | 0.09 | 0.21 |
+| Marker board | CenterOfMass | 48 / 80 | 0.60 | 0.075 / 0.209 | 0.25 | 0.19 |
+| Marker board | SaddlePoint | 48 / 80 | 0.60 | 0.018 / 0.049 | 0.06 | 0.19 |
 
 What the table shows:
 
@@ -144,14 +144,14 @@ What the table shows:
   at 24 px for ChArUco. The refiner changes which corners are found as well as
   where: SaddlePoint loses some recall on the smallest PuzzleBoard and ChArUco
   cells.
-- **Known defect:** at 8 px cells with σ 1.5 px blur the marker board's three
-  circles are not resolved, and the circle alignment can still accept a wrong
-  board frame, mislabelling the corners it identifies. A fix is in progress;
-  until then keep the circles well resolved (they were 8 px across or more in
-  every clean condition).
+- **Marker boards decline when their circles are not resolved.** At 8 px
+  cells the three disks are 4 px across, and no 8 px condition identifies the
+  board: a disk must move its square's reading at least half the
+  black-to-white range away from what a disk-free square of the same colour
+  reads in the same image (under blur an empty square reads like a disk of its
+  own colour). Every 16 px condition identifies it, under both refiners.
 
-Every other condition — and every condition of the other three families — has
-zero wrong labels.
+Every condition of every family has zero wrong labels.
 
 Reproduce with
 `cargo run -p calib-targets-bench --release --bin bench -- accuracy` (full grid,

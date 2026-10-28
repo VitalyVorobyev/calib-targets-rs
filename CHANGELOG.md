@@ -12,7 +12,9 @@ see [Older releases](#older-releases) at the bottom for the index.
 Moves to `chess-corners` 1.6, exposes its new corner-detector knobs on every
 binding, reports each corner's position covariance on every detection result,
 and summarises every detection's localization quality. Corner positions, labels
-and ids are unchanged. The C ABI moves to 6.0.0 (`ct_chess_config_t`, the two
+and ids are unchanged, except that the marker-board detector no longer labels a
+board whose circles it cannot see, nor delivers corners off the board. The C ABI
+moves to 6.0.0 (`ct_chess_config_t`, the two
 corner structs and the four result headers grow).
 
 ### Added
@@ -103,17 +105,35 @@ corner structs and the four result headers grow).
   `params.chess` for the corners it re-detects, and without a supplied
   `noise_sigma` estimates the frame's noise once per call when it re-detects
   one; `detect` reuses its own corner pass's estimate.
-
-### Known issues
-
-- **Marker boards can be labelled in the wrong frame when their circles are not
-  resolved** (measured on synthetic boards with 8 px squares and strong blur,
-  disks ≈ 4 px across): the circle alignment accepts a coincidental match among
-  circle-free candidates and every identified corner is off by whole squares.
-  A fix is in progress; keep the circles well resolved until then. Found by the
-  new accuracy suite; no other family is affected.
+- **Marker-board circle candidates are judged against an empty square.** A
+  `CircleCandidate`'s `contrast` is now how far its disk-minus-ring reading
+  (`score`, unchanged) departs from what a disk-free square of the same colour
+  reads in the same image, and its `polarity` is the sign of that departure.
+  Candidates are ranked by that contrast and must reach half the black-to-white
+  range the scorer sees on the grid; `CircleScoreParams::min_contrast` is an
+  absolute floor under that bar. On a sharp board the values barely move.
+  Candidates need a grid with at least seven squares of each colour.
 
 ### Fixed
+
+- **Marker boards were labelled in the wrong frame when their circles were not
+  resolved** (synthetic boards with 8 px squares and a 1.5 px blur, disks 4 px
+  across): under blur every empty square reads a disk-to-ring difference of its
+  own colour — the ring picks up the neighbouring squares — so circle-free
+  squares became candidates, the frame search found a coincidental match among
+  them, and every identified corner was off by whole squares. Judged against
+  what a disk-free square of the same colour reads, empty squares stay within
+  5 % of the black-to-white range and resolved disks read 58–97 %, so the
+  detector now declines these boards. It also identifies two blurred 16 px
+  conditions it used to refuse as ambiguous. The accuracy suite has no wrong
+  labels in any family.
+- **Marker-board corners off the board were delivered**, labelled outside the
+  board's `rows` × `cols` extent — negative on the low side — and without an
+  id. On the public marker-board sample, a T-junction where the outer squares
+  meet the margin came back as `(8, -1)`. Only the board's inner corners are
+  delivered now, each with its id.
+- `MarkerBoardDiagnostics::inliers` now runs parallel to the delivered corners;
+  it was in the chessboard stage's order while the corners were sorted.
 
 - **WASM `diagnose_*` functions returned ES `Map`s**, not the plain objects
   their typings declare: `result.result` / `result.diagnostics` were

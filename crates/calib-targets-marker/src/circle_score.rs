@@ -45,7 +45,14 @@ pub struct CircleScoreParams {
     /// Ring radius multiplier relative to circle radius (e.g. 1.6)
     #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub ring_radius_mul: f32,
-    /// Minimum absolute contrast (0..255 scale) to accept
+    /// Absolute floor (0..255 scale) on a candidate's
+    /// [`contrast`](CircleCandidate::contrast) — its departure from what a
+    /// disk-free square of the same colour reads.
+    ///
+    /// The relative bar — half the black-to-white range the scorer sees on the
+    /// grid — is not a knob: see [`CircleCandidate::contrast`]. This floor
+    /// only matters on a low-contrast image, where half that range is itself
+    /// small.
     #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 255.0)))]
     pub min_contrast: f32,
     /// Samples on disk perimeter / ring perimeter (per radius)
@@ -77,11 +84,33 @@ pub struct CircleCandidate {
     pub center_img: Point2<f32>,
     /// Detected cell coordinates (top-left corner indices).
     pub cell: CellCoords,
-    /// Whether the candidate reads as a white or black disk.
+    /// Whether the candidate reads as a white or black disk: the sign of its
+    /// departure from what a disk-free square of its colour reads (see
+    /// [`Self::contrast`]), not of the raw [`Self::score`].
     pub polarity: CirclePolarity,
-    /// Match score (higher is better) — disk-vs-ring contrast confidence.
+    /// The raw reading: disk-minus-ring level difference at the chosen
+    /// centre, on the `0..255` scale (positive when the centre is brighter).
+    ///
+    /// Not evidence on its own — under blur every *empty* square reads a
+    /// difference of its own colour's sign, because the ring picks up the
+    /// neighbouring squares. [`Self::contrast`] is the reading the detector
+    /// ranks and gates on.
     pub score: f32,
-    /// Absolute disk-to-ring intensity contrast on the `0..255` scale.
+    /// Disk contrast on the `0..255` scale: how far [`Self::score`] departs
+    /// from what a disk-free square of the same colour reads in the same
+    /// image.
+    ///
+    /// That reference is the median reading over every scored square of the
+    /// colour, kept only where it points toward the colour itself: under blur
+    /// an empty square reads like a disk of its own colour, because the ring
+    /// picks up the neighbouring squares, and that is all an empty square can
+    /// do. A typical reading toward the *opposite* colour is a printed centred
+    /// feature — an `inner_square_rel` inset — that the shape gate refuses on
+    /// its own, so it is not subtracted. The reference carries the blur and
+    /// scale of this very frame. A kept
+    /// candidate's contrast is at least half the black-to-white range the
+    /// scorer sees on the grid: the disk must move its cell's reading past the
+    /// midpoint between a disk-free square and a fully printed disk.
     pub contrast: f32,
     /// How square-like the candidate is: the strongest 4-fold angular
     /// modulation found on any probe ring that is *not* explained as the
@@ -159,135 +188,229 @@ const PROBE_MAX_PATCH_FRAC: f32 = 0.48;
 /// magnitude over anything round.
 const MAX_SQUARENESS: f32 = 0.20;
 
-/// Score a circle in one chess square given its 4 image corners.
+/// The fraction of the black-to-white range a disk must move its cell's
+/// reading to count as seen.
 ///
-/// Input corners must be TL,TR,BR,BL in image space. `diameter_frac` is the
-/// printed disk diameter as a fraction of the square side — every radius the
-/// scorer uses is relative to it, so it comes from the board layout
-/// ([`crate::MarkerBoardSpec::circle_diameter_rel`]) rather than from a
-/// separate tuning knob that could disagree with what was printed.
-pub(crate) fn score_circle_in_square(
-    img: &GrayImageView<'_>,
-    square_corners_img: &[Point2<f32>; 4], // TL,TR,BR,BL
-    cell: CellCoords,                      // top-left corner indices (i,j) for this square
-    diameter_frac: f32,
-    params: &CircleScoreParams,
-) -> Option<CircleCandidate> {
-    if !(diameter_frac.is_finite() && diameter_frac > 0.0) {
-        return None;
+/// A definition, not a tuning: one half is the midpoint between the two
+/// printed levels, so a disk clears it when it moves its cell's reading
+/// closer to a fully printed disk than to a disk-free square — the same
+/// midpoint any black/white decision is made at. Measured on the ground-truth
+/// suite's 80 marker-board conditions, empty squares stay at or under `0.05`
+/// of the range, and disks resolved by the optics (16 px squares) read
+/// `0.58..0.97` of it; disks blurred below resolution (`σ` 1.5 px on a 4 px
+/// disk) read `0.26..0.31` and are declined.
+const DISK_RESOLVED_FRAC: f32 = 0.5;
+
+/// Fraction of the acceptance bar a cell's centre reading must reach before
+/// the centre search runs. A disk displaced by at most `center_search_px`
+/// patch pixels still overlaps the centred disk sample by most of its area.
+const PRECHECK_FRAC: f32 = 0.5;
+
+/// Disk and ring mean levels sampled in one cell.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct CellLevels {
+    /// Mean level on the disk sampling circle.
+    pub disk: f32,
+    /// Mean level on the ring sampling band.
+    pub ring: f32,
+}
+
+impl CellLevels {
+    /// Disk-minus-ring difference: the scorer's raw reading.
+    pub fn diff(&self) -> f32 {
+        self.disk - self.ring
     }
-    let s = params.patch_size as f32;
+}
 
-    // Canonical square corners in patch space (TL,TR,BR,BL)
-    let patch_corners = [
-        Point2::new(0.0, 0.0),
-        Point2::new(s, 0.0),
-        Point2::new(s, s),
-        Point2::new(0.0, s),
-    ];
+/// What a disk-free square of one colour reads in the current image: the
+/// reading a disk must depart from.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct EmptySquareReference {
+    /// The raw reading ([`CellLevels::diff`]) of a disk-free square of this
+    /// colour. Under blur it has the colour's own sign — the ring picks up
+    /// the neighbouring squares, so an empty square reads like a disk of its
+    /// own colour.
+    pub level_diff: f32,
+    /// The black-to-white range the scorer sees on the grid: the brightest
+    /// minus the darkest disk or ring level read at any square's centre;
+    /// positive.
+    pub level_range: f32,
+}
 
-    let h_img_from_patch = homography_from_4pt(&patch_corners, square_corners_img)?;
+/// The scorer's fixed geometry: one canonical patch, the disk and ring
+/// sampling radii in it, and the direction table they are sampled along.
+///
+/// `diameter_frac` is the printed disk diameter as a fraction of the square
+/// side — every radius the scorer uses is relative to it, so it comes from
+/// the board layout ([`crate::MarkerBoardSpec::circle_diameter_rel`]) rather
+/// than from a separate tuning knob that could disagree with what was
+/// printed.
+pub(crate) struct DiskProbe {
+    params: CircleScoreParams,
+    /// Nominal circle radius in patch pixels.
+    radius: f32,
+    patch_size: f32,
+    radii: SampleRadii,
+    dirs: Vec<(f32, f32)>,
+}
 
-    // Circle geometry in patch space
-    let r = 0.5 * diameter_frac * s; // circle radius in patch pixels
-    let r_ring = params.ring_radius_mul * r;
-    let ring_half_th = 0.5 * params.ring_thickness_frac * r;
-
-    let center0 = Point2::new(0.5 * s, 0.5 * s);
-    let dirs = build_unit_circle_lut(params.samples)?;
-    let radii = SampleRadii {
-        rad_disk: r * 0.65,
-        r0: r_ring - ring_half_th,
-        r1: r_ring + ring_half_th,
-    };
-
-    const PRECHECK_SAMPLES: usize = 12;
-    const PRECHECK_CONTRAST_FRAC: f32 = 0.5;
-
-    // Quick center precheck to skip full search on low-contrast cells.
-    if params.center_search_px > 0 && params.min_contrast > 0.0 {
-        let stride = (dirs.len() / PRECHECK_SAMPLES).max(1);
-        let sample_params = SampleParams {
-            radii,
-            dirs: &dirs,
-            stride,
-        };
-        let (mean_disk, mean_ring) =
-            sample_disk_and_ring(img, &h_img_from_patch, center0, &sample_params)?;
-        let precheck_contrast = (mean_disk - mean_ring).abs();
-        if precheck_contrast < params.min_contrast * PRECHECK_CONTRAST_FRAC {
+impl DiskProbe {
+    /// `None` when the disk size or the sampling parameters are degenerate.
+    pub fn new(diameter_frac: f32, params: &CircleScoreParams) -> Option<Self> {
+        if !(diameter_frac.is_finite() && diameter_frac > 0.0) {
             return None;
         }
+        let patch_size = params.patch_size as f32;
+        let radius = 0.5 * diameter_frac * patch_size;
+        let r_ring = params.ring_radius_mul * radius;
+        let ring_half_th = 0.5 * params.ring_thickness_frac * radius;
+        Some(Self {
+            params: *params,
+            radius,
+            patch_size,
+            radii: SampleRadii {
+                rad_disk: radius * 0.65,
+                r0: r_ring - ring_half_th,
+                r1: r_ring + ring_half_th,
+            },
+            dirs: build_unit_circle_lut(params.samples)?,
+        })
     }
 
-    // Evaluate a few centers around middle; pick best by |contrast|
-    let mut best: Option<(Point2<f32>, f32, f32)> = None; // (center_patch, mean_disk, mean_ring)
+    /// The homography carrying the canonical patch onto one square, given the
+    /// square's image corners in TL, TR, BR, BL order.
+    pub fn rectify(&self, square_corners_img: &[Point2<f32>; 4]) -> Option<Homography> {
+        let s = self.patch_size;
+        let patch_corners = [
+            Point2::new(0.0, 0.0),
+            Point2::new(s, 0.0),
+            Point2::new(s, s),
+            Point2::new(0.0, s),
+        ];
+        homography_from_4pt(&patch_corners, square_corners_img)
+    }
 
-    for dy in -params.center_search_px..=params.center_search_px {
-        for dx in -params.center_search_px..=params.center_search_px {
-            let c = Point2::new(center0.x + dx as f32, center0.y + dy as f32);
+    fn centre(&self) -> Point2<f32> {
+        Point2::new(0.5 * self.patch_size, 0.5 * self.patch_size)
+    }
 
-            let sample_params = SampleParams {
-                radii,
-                dirs: &dirs,
-                stride: 1,
-            };
-            let (mean_disk, mean_ring) =
-                sample_disk_and_ring(img, &h_img_from_patch, c, &sample_params)?;
+    fn levels_at(
+        &self,
+        img: &GrayImageView<'_>,
+        h_img_from_patch: &Homography,
+        centre: Point2<f32>,
+    ) -> Option<CellLevels> {
+        let sample_params = SampleParams {
+            radii: self.radii,
+            dirs: &self.dirs,
+            stride: 1,
+        };
+        let (disk, ring) = sample_disk_and_ring(img, h_img_from_patch, centre, &sample_params)?;
+        Some(CellLevels { disk, ring })
+    }
 
-            let contrast = (mean_disk - mean_ring).abs();
-            if best.map(|b| contrast > (b.1 - b.2).abs()).unwrap_or(true) {
-                best = Some((c, mean_disk, mean_ring));
+    fn squareness_at(
+        &self,
+        img: &GrayImageView<'_>,
+        h_img_from_patch: &Homography,
+        centre: Point2<f32>,
+        contrast: f32,
+    ) -> Option<f32> {
+        measure_squareness(
+            img,
+            h_img_from_patch,
+            centre,
+            &ProbeGeometry {
+                radius: self.radius,
+                patch_size: self.patch_size,
+                contrast,
+            },
+        )
+    }
+
+    /// The disk and ring levels at the square's centre — the measurement the
+    /// reference is built from.
+    pub fn levels_at_centre(
+        &self,
+        img: &GrayImageView<'_>,
+        h_img_from_patch: &Homography,
+    ) -> Option<CellLevels> {
+        self.levels_at(img, h_img_from_patch, self.centre())
+    }
+
+    /// Score one square for a disk, against what a disk-free square of its
+    /// colour reads.
+    ///
+    /// `centre` is [`Self::levels_at_centre`] for this square. The disk contrast
+    /// ([`CircleCandidate::contrast`]) is the departure of the reading from
+    /// `reference`, and its sign is the disk's polarity. Accepts when that
+    /// contrast reaches both half the grid's black-to-white range and
+    /// `min_contrast`, *and* the shape gate is silent.
+    pub fn score(
+        &self,
+        img: &GrayImageView<'_>,
+        h_img_from_patch: &Homography,
+        cell: CellCoords,
+        centre: CellLevels,
+        reference: &EmptySquareReference,
+    ) -> Option<CircleCandidate> {
+        let departure = |levels: CellLevels| levels.diff() - reference.level_diff;
+        let bar = self
+            .params
+            .min_contrast
+            .max(DISK_RESOLVED_FRAC * reference.level_range);
+        if departure(centre).abs() < PRECHECK_FRAC * bar {
+            return None;
+        }
+
+        // Evaluate a few centres around the middle; keep the one that departs
+        // furthest from the reference.
+        let centre0 = self.centre();
+        let mut best = (centre0, centre);
+        let search = self.params.center_search_px;
+        for dy in -search..=search {
+            for dx in -search..=search {
+                if dx == 0 && dy == 0 {
+                    continue;
+                }
+                let c = Point2::new(centre0.x + dx as f32, centre0.y + dy as f32);
+                let levels = self.levels_at(img, h_img_from_patch, c)?;
+                if departure(levels).abs() > departure(best.1).abs() {
+                    best = (c, levels);
+                }
             }
         }
-    }
+        let (c_patch, levels) = best;
+        let signed = departure(levels);
+        let contrast = signed.abs();
+        if contrast < bar {
+            return None;
+        }
 
-    let (c_patch, mean_disk, mean_ring) = best?;
+        // Shape gate. Everything above measures a *level* difference and would
+        // accept any centred blob of roughly the right size — which is how a
+        // white `inner_square_rel` inset came to be scored as a white disk on
+        // every black square (issue #96). A disk is radially symmetric about
+        // the cell centre at every radius; an axis-aligned square is not.
+        let squareness = self.squareness_at(img, h_img_from_patch, c_patch, contrast)?;
+        if squareness > MAX_SQUARENESS {
+            return None;
+        }
 
-    let diff = mean_disk - mean_ring; // >0 => disk brighter than ring
-    let contrast = diff.abs();
-
-    if contrast < params.min_contrast {
-        return None;
-    }
-
-    // Shape gate. Everything above measures a *level* difference and would
-    // accept any centred blob of roughly the right size — which is how a white
-    // `inner_square_rel` inset came to be scored as a white disk on every black
-    // square of a marker board (issue #96). A disk is radially symmetric about
-    // the cell centre at every radius; an axis-aligned square is not.
-    let squareness = measure_squareness(
-        img,
-        &h_img_from_patch,
-        c_patch,
-        &ProbeGeometry {
-            radius: r,
-            patch_size: s,
+        let polarity = if signed > 0.0 {
+            CirclePolarity::White
+        } else {
+            CirclePolarity::Black
+        };
+        Some(CircleCandidate {
+            center_img: h_img_from_patch.apply(c_patch),
+            cell,
+            polarity,
+            score: levels.diff(),
             contrast,
-        },
-    )?;
-    if squareness > MAX_SQUARENESS {
-        return None;
+            squareness,
+        })
     }
-
-    let polarity = if diff > 0.0 {
-        CirclePolarity::White
-    } else {
-        CirclePolarity::Black
-    };
-    let score = diff; // signed score; magnitude = strength
-
-    // Map chosen center to image space
-    let center_img = h_img_from_patch.apply(c_patch);
-
-    Some(CircleCandidate {
-        center_img,
-        cell,
-        polarity,
-        score,
-        contrast,
-        squareness,
-    })
 }
 
 fn build_unit_circle_lut(samples: usize) -> Option<Vec<(f32, f32)>> {
@@ -475,13 +598,15 @@ mod tests {
             Point2::new(s, s),
             Point2::new(0.0, s),
         ];
-        score_circle_in_square(
-            &view,
-            &corners,
-            CellCoords { i: 0, j: 0 },
-            0.5,
-            &CircleScoreParams::default(),
-        )
+        let probe = DiskProbe::new(0.5, &CircleScoreParams::default()).expect("probe");
+        let h = probe.rectify(&corners).expect("identity homography");
+        // A hard-edged uniform square reads a zero disk-to-ring difference.
+        let reference = EmptySquareReference {
+            level_diff: 0.0,
+            level_range: 255.0,
+        };
+        let centre = probe.levels_at_centre(&view, &h).expect("centre levels");
+        probe.score(&view, &h, CellCoords { i: 0, j: 0 }, centre, &reference)
     }
 
     fn disk(radius: f32) -> Option<CircleCandidate> {

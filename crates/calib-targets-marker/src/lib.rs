@@ -2,9 +2,12 @@
 //!
 //! Pipeline overview:
 //! - Detect a chessboard grid from ChESS corners (partial boards are allowed).
-//! - Score circular markers per-cell in image space.
+//! - Score circular markers per cell in image space, against what a disk-free
+//!   square of the same colour reads in the same image — a disk blurred below
+//!   resolution is declined, not guessed.
 //! - Match circle candidates to the known layout and estimate the grid offset.
-//! - Return typed marker-board corners with optional board alignment.
+//! - Return the board's inner corners as typed marker-board corners, each with
+//!   its board-canonical id, plus the board alignment.
 //!
 //! ## Quickstart
 //!

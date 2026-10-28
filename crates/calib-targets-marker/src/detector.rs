@@ -12,7 +12,8 @@ use calib_targets_chessboard::{
     ChessboardDetection, ChessboardDetector as ChessDetector, ChessboardParamsError,
 };
 use calib_targets_core::{
-    cell_to_corner_alignment, CornerMap, GrayImageView, GridAlignment, TargetDetection, TargetKind,
+    cell_to_corner_alignment, CornerMap, GrayImageView, GridAlignment, LabeledCorner,
+    TargetDetection, TargetKind,
 };
 
 /// Marker board detector: chessboard + three circle markers.
@@ -240,7 +241,7 @@ impl MarkerBoardDetector {
     ) -> (MarkerBoardDetection, MarkerBoardDiagnostics) {
         let (target, inliers) = chessboard_detection_to_target(&chess);
         let mut detection = relabel_as_marker(target);
-        self.apply_board_frame(&mut detection, alignment);
+        let inliers = self.apply_board_frame(&mut detection, inliers, alignment);
         (
             MarkerBoardDetection::from_target_detection(detection, Some(alignment)),
             MarkerBoardDiagnostics {
@@ -254,59 +255,67 @@ impl MarkerBoardDetector {
         )
     }
 
-    /// Relabel every corner into the board frame, then attach the
-    /// board-canonical id and physical position to the ones that land inside
-    /// the board.
-    fn apply_board_frame(&self, detection: &mut TargetDetection, alignment: GridAlignment) {
-        for corner in &mut detection.corners {
-            if let Some(grid) = &mut corner.grid {
-                let g = alignment.apply(*grid);
-                grid.u = g.u;
-                grid.v = g.v;
-            }
-        }
-
-        let Some((cols, rows)) = i32::try_from(self.params.board.cols)
-            .ok()
-            .zip(i32::try_from(self.params.board.rows).ok())
-        else {
-            return;
-        };
+    /// Relabel every corner into the board frame, keep only the ones that are
+    /// inner corners of the board, and attach their board-canonical id and
+    /// physical position.
+    ///
+    /// The layout fixes the board's extent: inner corners exist at
+    /// `0..cols` × `0..rows` and nowhere else. A grid corner the frame places
+    /// outside that range is therefore not an inner corner of this board — at
+    /// the board's edge it is the T-junction where the outer squares meet the
+    /// margin, a lattice point the printed pattern does not make an X-corner
+    /// of — and delivering it would ship a label outside the board, negative
+    /// on the low side. It is dropped. Every delivered corner carries an `id`.
+    ///
+    /// `inliers` runs parallel to `detection.corners` (each corner's index in
+    /// the input corner slice); the returned list runs parallel to the
+    /// filtered, sorted corners.
+    fn apply_board_frame(
+        &self,
+        detection: &mut TargetDetection,
+        inliers: Vec<usize>,
+        alignment: GridAlignment,
+    ) -> Vec<usize> {
+        let cols = i32::try_from(self.params.board.cols).unwrap_or(i32::MAX);
+        let rows = i32::try_from(self.params.board.rows).unwrap_or(i32::MAX);
         let cell_size = self
             .params
             .board
             .cell_size
             .filter(|s| s.is_finite() && *s > 0.0);
-        for corner in &mut detection.corners {
-            let Some(grid) = corner.grid else {
-                continue;
-            };
-            if grid.u < 0 || grid.v < 0 || grid.u >= cols || grid.v >= rows {
-                continue;
-            }
-            corner.id = (grid.v as u32)
-                .checked_mul(self.params.board.cols)
-                .and_then(|base| base.checked_add(grid.u as u32));
-            if let Some(size) = cell_size {
-                // Inner corner `(u, v)` sits one full square in from the
-                // board's outer corner, which is where board space starts —
-                // the same origin the printable spec's `resolved_points`
-                // measures from.
-                corner.target_position = Some(Point2::new(
-                    (grid.u + 1) as f32 * size,
-                    (grid.v + 1) as f32 * size,
-                ));
-            }
-        }
 
-        detection.corners.sort_by(|a, b| {
-            // INVARIANT: every corner reaching this stage came from the
-            // chessboard detector with a grid coordinate, and the relabelling
-            // above preserves it.
-            let ga = a.grid.unwrap();
-            let gb = b.grid.unwrap();
-            (ga.v, ga.u).cmp(&(gb.v, gb.u))
-        });
+        let mut kept: Vec<(LabeledCorner, usize)> = std::mem::take(&mut detection.corners)
+            .into_iter()
+            .zip(inliers)
+            .filter_map(|(mut corner, input_index)| {
+                // INVARIANT: every corner reaching this stage came from the
+                // chessboard detector with a grid coordinate.
+                let grid = alignment.apply(corner.grid?);
+                if !((0..cols).contains(&grid.u) && (0..rows).contains(&grid.v)) {
+                    return None;
+                }
+                corner.grid = Some(grid);
+                corner.id = (grid.v as u32)
+                    .checked_mul(self.params.board.cols)
+                    .and_then(|base| base.checked_add(grid.u as u32));
+                if let Some(size) = cell_size {
+                    // Inner corner `(u, v)` sits one full square in from the
+                    // board's outer corner, which is where board space starts —
+                    // the same origin the printable spec's `resolved_points`
+                    // measures from.
+                    corner.target_position = Some(Point2::new(
+                        (grid.u + 1) as f32 * size,
+                        (grid.v + 1) as f32 * size,
+                    ));
+                }
+                Some((corner, input_index))
+            })
+            .collect();
+
+        kept.sort_by_key(|(corner, _)| corner.grid.map(|g| (g.v, g.u)));
+        let (corners, inliers) = kept.into_iter().unzip();
+        detection.corners = corners;
+        inliers
     }
 }
 
@@ -353,4 +362,70 @@ fn relabel_as_marker(mut detection: TargetDetection) -> TargetDetection {
 
 fn build_corner_map(det: &ChessboardDetection) -> CornerMap {
     det.corners.iter().map(|c| (c.grid, c.position)).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{CellCoords, CirclePolarity, MarkerBoardSpec, MarkerCircleSpec};
+    use calib_targets_core::{Coord, GRID_TRANSFORMS_C4};
+
+    fn detector() -> MarkerBoardDetector {
+        let circles = [
+            MarkerCircleSpec::new(CellCoords { i: 0, j: 0 }, CirclePolarity::White),
+            MarkerCircleSpec::new(CellCoords { i: 1, j: 0 }, CirclePolarity::Black),
+            MarkerCircleSpec::new(CellCoords { i: 1, j: 1 }, CirclePolarity::White),
+        ];
+        let board = MarkerBoardSpec::new(3, 4, circles).with_cell_size(10.0);
+        MarkerBoardDetector::new(MarkerBoardParams::for_board(board)).expect("valid params")
+    }
+
+    /// A grid corner the frame places off the board — the markerboard sample's
+    /// top-edge T-junction landed at `(8, -1)` — is not an inner corner of the
+    /// board and is not delivered; every delivered corner carries an id, and
+    /// the provenance list stays parallel to the corners after the filter and
+    /// the sort.
+    #[test]
+    fn corners_off_the_board_are_not_delivered() {
+        // (grid, input index); the board has 4 columns and 3 rows of corners.
+        let grid = [
+            ((3, 2), 10),
+            ((-1, 0), 11),
+            ((0, 0), 12),
+            ((4, 0), 13),
+            ((2, 1), 14),
+            ((0, 3), 15),
+            ((1, -1), 16),
+        ];
+        let corners = grid
+            .iter()
+            .map(|&((u, v), _)| {
+                LabeledCorner::new(Point2::new(u as f32, v as f32), 1.0).with_grid(Coord::new(u, v))
+            })
+            .collect();
+        let mut detection = TargetDetection::new(TargetKind::CheckerboardMarker, corners);
+        let inliers = grid.iter().map(|&(_, index)| index).collect();
+        let identity = GRID_TRANSFORMS_C4[0].with_translation([0, 0]);
+
+        let inliers = detector().apply_board_frame(&mut detection, inliers, identity);
+
+        let delivered: Vec<_> = detection
+            .corners
+            .iter()
+            .map(|c| (c.grid.map(|g| (g.u, g.v)), c.id))
+            .collect();
+        assert_eq!(
+            delivered,
+            vec![
+                (Some((0, 0)), Some(0)),
+                (Some((2, 1)), Some(6)),
+                (Some((3, 2)), Some(11)),
+            ]
+        );
+        assert_eq!(inliers, vec![12, 14, 10]);
+        assert_eq!(
+            detection.corners[2].target_position,
+            Some(Point2::new(40.0, 30.0))
+        );
+    }
 }

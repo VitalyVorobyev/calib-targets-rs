@@ -377,7 +377,7 @@
           "x-unit": "px"
         },
         "min_contrast": {
-          "description": "Minimum absolute contrast (0..255 scale) to accept",
+          "description": "Absolute floor (0..255 scale) on a candidate's\n`contrast` — its departure from what a\ndisk-free square of the same colour reads.\n\nThe relative bar — half the black-to-white range the scorer sees on the\ngrid — is not a knob: see `CircleCandidate::contrast`. This floor\nonly matters on a low-contrast image, where half that range is itself\nsmall.",
           "format": "float",
           "maximum": 255.0,
           "minimum": 0.0,

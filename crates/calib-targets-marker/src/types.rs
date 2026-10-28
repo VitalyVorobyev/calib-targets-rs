@@ -293,7 +293,13 @@ impl CircleMatch {
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MarkerBoardDetection {
-    /// Labelled checkerboard corners.
+    /// The board's inner corners that were found, sorted by `(v, u)`.
+    ///
+    /// Every corner's grid label lies within `0..cols` × `0..rows` of
+    /// [`MarkerBoardSpec`] and carries its board-canonical `id`: a grid corner
+    /// the board frame places off the board — such as the T-junction where
+    /// the outer squares meet the margin — is not one of the board's corners
+    /// and is not delivered.
     pub corners: Vec<MarkerBoardCorner>,
     /// Grid alignment to the known board layout; `None` when alignment
     /// could not be resolved.
