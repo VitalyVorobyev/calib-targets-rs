@@ -175,10 +175,7 @@ use projective_grid::expert::geometry::estimate_homography;
 let transform = GridTransform::identity(LatticeKind::Square)
     .with_translation([12, 7]);
 let board_coord = transform.apply(Coord::new(2, 3));
-# let _: Option<projective_grid::expert::lattice::PredictedPosition<f32>> = None;
-# let _ = predict_grid_position::<f32>;
-# let _ = estimate_homography::<f32>;
-# assert_eq!(board_coord, Coord::new(14, 10));
+assert_eq!(board_coord, Coord::new(14, 10));
 ```
 
 `GridTransform` is the single affine integer-grid mapping used by D4/D6

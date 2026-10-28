@@ -137,14 +137,19 @@ simply fails to decode — a miss, never a wrong label.
   a confidence-weighted tie-break. Simpler and faster than the soft scorer
   and used as a sweep fallback, but less robust on noisy data.
 
-```rust,no_run
-# use calib_targets::{detect, puzzleboard::{PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode, PuzzleBoardSpec}};
-# fn demo() -> Result<(), Box<dyn std::error::Error>> {
-let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
-let mut params = PuzzleBoardParams::for_board(spec);
-params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
-params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
-# Ok(()) }
+```rust
+use calib_targets::puzzleboard::{
+    PuzzleBoardParams, PuzzleBoardScoringMode, PuzzleBoardSearchMode, PuzzleBoardSpec,
+};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
+    let mut params = PuzzleBoardParams::for_board(spec);
+    params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
+    params.decode.scoring_mode = PuzzleBoardScoringMode::SoftLogLikelihood;
+    // ... then pass `params` to `detect::detect_puzzleboard`.
+    Ok(())
+}
 ```
 
 ## Tuning difficult cases

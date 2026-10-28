@@ -45,7 +45,7 @@ which is layered over the production path (so it reflects what `detect()`
 actually does) and reports per-corner usability plus the labelled
 components:
 
-```rust,ignore
+```rust,no_run
 use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_chessboard::{trace_topological, ChessboardParams};
 # let img: image::GrayImage = todo!();

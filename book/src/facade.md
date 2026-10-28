@@ -63,10 +63,24 @@ would have produced on its own. The one case that genuinely wants
 `detect_with_corners`: running a single corner pass across several target
 detectors on the same image, rather than paying for it once per detector.
 
-```rust,ignore
+```rust,no_run
+# use calib_targets::aruco::builtins;
+# use calib_targets::charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams};
+# use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let img = calib_targets::image::open("frame.png")?.to_luma8();
+# let view = calib_targets::detect::gray_view(&img);
+# let charuco_detector = CharucoDetector::new(CharucoParams::for_board(
+#     CharucoBoardSpec::new(5, 7, 20.0, 0.75, builtins::DICT_4X4_50),
+# ))?;
+# let puzzle_detector =
+#     PuzzleBoardDetector::new(PuzzleBoardParams::for_board(PuzzleBoardSpec::new(10, 10, 12.0)?))?;
 let corners = charuco_detector.detect_corners(&view);
 let a = charuco_detector.detect_with_corners(&view, &corners)?;
 let b = puzzle_detector.detect_with_corners(&view, &corners)?;
+# let _ = (a, b);
+# Ok(())
+# }
 ```
 
 `ChessboardDetector` keeps its original, corner-cloud-only shape described

@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     match detection {
-        Some(det) => {
+        Ok(det) => {
             println!("detected {} corners", det.corners.len());
             for c in &det.corners {
                 // position: sub-pixel (x, y) in pixels; grid: (u, v) lattice index
@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     c.position.x, c.position.y, c.grid.u, c.grid.v);
             }
         }
-        None => println!("no board detected"),
+        Err(err) => println!("no board detected: {err}"),
     }
     Ok(())
 }
@@ -119,11 +119,21 @@ robustness/precision trade-off (balanced, tighter for clean boards, looser
 for distorted views):
 
 ```rust,no_run
-let detection = detect::detect_chessboard_best(
-    &img,
-    &detect::default_chess_config(),
-    &ChessboardParams::sweep_default(),
-);
+use calib_targets::chessboard::ChessboardParams;
+use calib_targets::detect;
+use image::ImageReader;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+
+    let detection = detect::detect_chessboard_best(
+        &img,
+        &detect::default_chess_config(),
+        &ChessboardParams::sweep_default(),
+    )?;
+    println!("detected {} corners", detection.corners.len());
+    Ok(())
+}
 ```
 
 The other targets follow the same shape — `detect_charuco`,

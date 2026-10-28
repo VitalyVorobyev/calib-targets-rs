@@ -15,13 +15,14 @@ cells (markers, dots) in board space:
 ![Mesh rectification](img/mesh_rectified_small.png)
 *Per-cell mesh rectification of the same frame.*
 
-```rust,ignore
+```rust,no_run
 use calib_targets::chessboard::{
     rectify_from_chessboard_result, rectify_mesh_from_grid, ChessboardParams,
 };
 use calib_targets::detect::{default_chess_config, detect_chessboard, gray_view};
 use calib_targets::LabeledCorner;
 
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
 let img = image::open("testdata/mid.png")?.to_luma8();
 let det = detect_chessboard(&img, &default_chess_config(), &ChessboardParams::default())?;
 let src = gray_view(&img);
@@ -38,6 +39,9 @@ let corners: Vec<LabeledCorner> = det
     .collect();
 let inliers: Vec<usize> = (0..corners.len()).collect();
 let mesh = rectify_mesh_from_grid(&src, &corners, &inliers, 60.0)?;
+# let _ = mesh;
+# Ok(())
+# }
 ```
 
 `RectifiedBoardView` also carries both homographies (`h_img_from_rect`,

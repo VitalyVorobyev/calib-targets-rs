@@ -24,11 +24,12 @@ Algorithm deep-dive: [book chapter][book-chapter].
 
 ## Quickstart
 
-```rust,ignore
+```rust
 use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 
 fn detect_one(corners: &[ChessCorner]) {
-    let det = ChessboardDetector::new(ChessboardParams::default());
+    // `new` validates the params, so it is fallible.
+    let det = ChessboardDetector::new(ChessboardParams::default()).expect("valid params");
     if let Some(d) = det.detect(corners) {
         println!("labelled {} corners", d.corners.len());
         for c in &d.corners {
@@ -40,7 +41,7 @@ fn detect_one(corners: &[ChessCorner]) {
 
 // Multi-component (e.g. ChArUco markers split the grid into islands):
 fn detect_multi(corners: &[ChessCorner]) {
-    let det = ChessboardDetector::new(ChessboardParams::default());
+    let det = ChessboardDetector::new(ChessboardParams::default()).expect("valid params");
     for (k, comp) in det.detect_all(corners).iter().enumerate() {
         println!("component {k}: {} corners", comp.corners.len());
     }

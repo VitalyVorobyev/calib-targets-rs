@@ -90,6 +90,16 @@ jobs:
         # in the root Cargo.toml.
         run: cargo test --workspace --all-targets
 
+      - name: doctests (incl. README and book snippets)
+        # `--all-targets` above selects lib/bin/test/bench/example targets and
+        # therefore skips doctests entirely. This step runs them, including
+        # the harness in `crates/calib-targets/src/doc_snippets.rs` that
+        # compiles every Rust block of README.md, the crate READMEs and
+        # book/src/. The facade features are named explicitly because the
+        # troubleshooting page needs them (the workspace build would unify
+        # them in anyway through the bench crate).
+        run: cargo test --workspace --doc --features calib-targets/diagnostics,calib-targets/tracing
+
   book:
     # `docs.yml` builds the book, but only on push to `main` — so a broken
     # `SUMMARY.md`, a dangling `{{#include}}`, or a missing image reached

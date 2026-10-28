@@ -90,6 +90,9 @@ assert_cmd.workspace = true
 criterion.workspace = true
 log.workspace = true
 predicates.workspace = true
+# Only for compiling the `projective-grid` snippets of the Markdown docs
+# (`src/doc_snippets.rs`); the facade itself does not depend on it.
+projective-grid.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 tempfile.workspace = true
