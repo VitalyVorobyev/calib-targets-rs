@@ -237,9 +237,13 @@ The grid pitch in pixels is carried on `ChessboardDetection::cell_size`
 
 ## 7. Quickstart
 
-```rust,ignore
+```rust
 use calib_targets_chessboard::{ChessCorner, ChessboardDetector, ChessboardParams};
 
+# fn main() {
+#     detect(&[]);
+#     detect_multi(&[]);
+# }
 fn detect(corners: &[ChessCorner]) {
     let params = ChessboardParams::default();
     // `ChessboardDetector::new` validates params and is fallible: it returns

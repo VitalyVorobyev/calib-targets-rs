@@ -90,7 +90,7 @@ detect, and read the recovered labels. This is the body of
 [`examples/hello_grid.rs`][hello-grid] — run it with
 `cargo run -p projective-grid --example hello_grid`.
 
-```rust,ignore
+```rust
 use nalgebra::Point2;
 use projective_grid::{
     detect_grid, DetectionParams, DetectionRequest, Evidence, LatticeKind, LocalAxis,

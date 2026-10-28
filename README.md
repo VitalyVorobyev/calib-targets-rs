@@ -28,7 +28,7 @@ per target, with a shared corner vocabulary.
 |---|---|
 | **Chessboard** | Plain checkerboard. Detector returns labelled corner positions with `(0, 0)` rebased to the visual top-left. No markers; corners are not individually identified. |
 | **ChArUco** | Chessboard with ArUco markers in white squares. Each labelled corner gets a globally-unique ID derived from the surrounding markers; partial views decode. |
-| **PuzzleBoard** | Self-identifying chessboard with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood evidence is available through diagnostics for downstream consistency checks. |
+| **PuzzleBoard** | Self-identifying chessboard ([Stelldinger 2024](https://arxiv.org/abs/2409.20127)) with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood evidence is available through diagnostics for downstream consistency checks. |
 | **PuzzlePole** | The PuzzleBoard pattern wrapped round a cylinder ([Zach & Stelldinger 2025](https://arxiv.org/abs/2511.19448)), so the target is identifiable from a full 360°. The only family here that is not flat, and the only one whose corners carry **3-D** object points — ready for PnP, which stays with the caller. |
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 
@@ -97,7 +97,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     match detection {
-        Some(det) => {
+        Ok(det) => {
             println!("detected {} corners", det.corners.len());
             for c in &det.corners {
                 // position: sub-pixel (x, y) in pixels; grid: (u, v) lattice index
@@ -105,7 +105,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     c.position.x, c.position.y, c.grid.u, c.grid.v);
             }
         }
-        None => println!("no board detected"),
+        Err(err) => println!("no board detected: {err}"),
     }
     Ok(())
 }
@@ -119,11 +119,21 @@ robustness/precision trade-off (balanced, tighter for clean boards, looser
 for distorted views):
 
 ```rust,no_run
-let detection = detect::detect_chessboard_best(
-    &img,
-    &detect::default_chess_config(),
-    &ChessboardParams::sweep_default(),
-);
+use calib_targets::chessboard::ChessboardParams;
+use calib_targets::detect;
+use image::ImageReader;
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let img = ImageReader::open("board.png")?.decode()?.to_luma8();
+
+    let detection = detect::detect_chessboard_best(
+        &img,
+        &detect::default_chess_config(),
+        &ChessboardParams::sweep_default(),
+    )?;
+    println!("detected {} corners", detection.corners.len());
+    Ok(())
+}
 ```
 
 The other targets follow the same shape — `detect_charuco`,

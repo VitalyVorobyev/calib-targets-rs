@@ -60,16 +60,20 @@ use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use image::ImageReader;
 
-let img = ImageReader::open("board.png").unwrap().decode().unwrap().to_luma8();
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 let chess_cfg = default_chess_config();
 let corners = detect_corners(&img, &chess_cfg);
 
 let params = ChessboardParams::default();
-let detector = ChessboardDetector::new(params);
+// `new` validates the params, so it is fallible.
+let detector = ChessboardDetector::new(params)?;
 
 if let Some(detection) = detector.detect(&corners) {
     println!("{} labelled corners", detection.corners.len());
 }
+# Ok(())
+# }
 ```
 
 `ChessboardDetector::detect_all(&corners)` returns every same-board component

@@ -70,6 +70,22 @@ Wrap the features as `Evidence::Oriented2`, bundle them into a
 dimensions are omitted; the detector infers the extent.
 
 ```rust
+# use nalgebra::Point2;
+# use projective_grid::{LocalAxis, OrientedFeature, PointFeature};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let mut features: Vec<OrientedFeature<2>> = Vec::new();
+# for j in 0..3 {
+#     for i in 0..3 {
+#         let x = 60.0 + i as f32 * 40.0 + j as f32 * 6.0;
+#         let y = 50.0 + j as f32 * 40.0;
+#         let point = PointFeature::new(features.len(), Point2::new(x, y));
+#         let axes = [
+#             LocalAxis::new(0.0, Some(0.02)),
+#             LocalAxis::new(std::f32::consts::FRAC_PI_2, Some(0.02)),
+#         ];
+#         features.push(OrientedFeature::new(point, axes));
+#     }
+# }
 use projective_grid::{detect_grid, DetectionRequest, Evidence, LatticeKind};
 
 let request = DetectionRequest::new(
@@ -78,6 +94,8 @@ let request = DetectionRequest::new(
 );
 let detection = detect_grid(request)?;
 assert_eq!(detection.grid().entries().len(), 9);
+# Ok(())
+# }
 ```
 
 `DetectionParams::default()` carries a `max_residual_px` fit gate and runs
@@ -130,6 +148,27 @@ Each `GridEntry` carries:
   when a fit was computed.
 
 ```rust
+# use nalgebra::Point2;
+# use projective_grid::{LocalAxis, OrientedFeature, PointFeature};
+# fn main() -> Result<(), Box<dyn std::error::Error>> {
+# let mut features: Vec<OrientedFeature<2>> = Vec::new();
+# for j in 0..3 {
+#     for i in 0..3 {
+#         let x = 60.0 + i as f32 * 40.0 + j as f32 * 6.0;
+#         let y = 50.0 + j as f32 * 40.0;
+#         let point = PointFeature::new(features.len(), Point2::new(x, y));
+#         let axes = [
+#             LocalAxis::new(0.0, Some(0.02)),
+#             LocalAxis::new(std::f32::consts::FRAC_PI_2, Some(0.02)),
+#         ];
+#         features.push(OrientedFeature::new(point, axes));
+#     }
+# }
+# use projective_grid::{detect_grid, DetectionRequest, Evidence, LatticeKind};
+# let detection = detect_grid(DetectionRequest::new(
+#     LatticeKind::Square,
+#     Evidence::Oriented2(&features),
+# ))?;
 for entry in detection.grid().entries() {
     // coord.u = i, coord.v = j; source_index maps back to the input.
     println!(
@@ -141,6 +180,8 @@ for entry in detection.grid().entries() {
         entry.image_position.y,
     );
 }
+# Ok(())
+# }
 ```
 
 Running it labels all nine features `(0,0)` through `(2,2)` with a

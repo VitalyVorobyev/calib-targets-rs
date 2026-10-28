@@ -34,7 +34,7 @@ The chessboard detector's ChESS corner config is **not** carried inside
 the `detect_chessboard*` facade helpers). If you need to override it,
 call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
 directly and pass the resulting corner cloud into
-`calib_targets::chessboard::ChessboardDetector::new(params).detect(&corners)`.
+`calib_targets::chessboard::ChessboardDetector::new(params)?.detect(&corners)`.
 
 For ChArUco, `CharucoParams.chessboard` is a `ChessboardParams`: a stable
 core of four fields plus an opt-in `advanced` block (see the per-parameter
@@ -52,14 +52,14 @@ multi-config sweep to try several parameter variants and keep the best
 result:
 
 ```rust,no_run
-use calib_targets::detect::{detect_chessboard_best, detect_charuco_best};
+use calib_targets::detect::{default_chess_config, detect_charuco_best, detect_chessboard_best};
 use calib_targets::chessboard::ChessboardParams;
 use calib_targets::charuco::CharucoParams;
 # let img: image::GrayImage = todo!();
 # let board = todo!();
 
 let chess_configs = ChessboardParams::sweep_default();
-let chess_result = detect_chessboard_best(&img, &chess_configs);
+let chess_result = detect_chessboard_best(&img, &default_chess_config(), &chess_configs);
 
 let charuco_configs = CharucoParams::sweep_for_board(&board);
 let charuco_result = detect_charuco_best(&img, &charuco_configs);
@@ -95,7 +95,7 @@ PuzzleBoard `decode.*` knobs sit on their own config structs.
 | Scene has multiple chessboard components | use `detect_chessboard_all` (cap with `max_components`) |
 | Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `geometry_check_local_h_tol_rel` ↑ |
 | Corners falsely labelled (wrong `(i, j)`) | **Do not tune** — file a bug. precision contract forbids this. |
-| `NoMarkers` on blurry ChArUco | `min_border_score` ↓, `multi_threshold: true` |
+| `NoMarkers` on blurry ChArUco | more pixels per square (`chess.upscale`), check `scan.inset_frac` |
 | `AlignmentFailed` (low inlier count) | `min_marker_inliers` ↓ |
 | `DecodeFailed` on PuzzleBoard | `decode.min_bit_confidence` ↓, `decode.max_bit_error_rate` ↑ |
 
@@ -211,22 +211,11 @@ run unconditionally and are no longer configurable.
 
 These parameters live inside `CharucoParams`.
 
-### `min_border_score`
-
-**Default:** `0.75` for ChArUco.
-
-**Guidance:** Minimum contrast score for the black border ring around a marker. Lower
-cautiously to `0.65` for very blurry images. Values below `0.60` risk accepting
-non-marker regions.
-
-### `multi_threshold`
-
-**Default:** `true`.
-
-**Guidance:** When enabled, the decoder tries several Otsu-style binarization thresholds
-until a dictionary match is found. This handles uneven lighting and motion blur at the
-cost of a small speed penalty. Disable only when speed is critical and lighting is
-controlled.
+`scan.min_border_score`, `scan.dedup_by_id` and `scan.multi_threshold` are
+read only by the stand-alone ArUco scanner (`calib_targets_aruco::scan_decode_markers`).
+The ChArUco detector thresholds each cell on its own and scores the bits softly
+against the board's expected markers, so these three have no effect on
+`detect_charuco`; leave them at their defaults.
 
 ### `inset_frac`
 
@@ -264,8 +253,8 @@ Verify against the printed board or the JSON spec used to generate it.
    `trace_topological_detection`'s `chessboard.final_drops`; try a wider
    config). See
    [Troubleshooting](troubleshooting.md) for the full chain.
-4. If **grid found but no ChArUco markers**: enable `multi_threshold`,
-   lower `min_border_score`.
+4. If **grid found but no ChArUco markers**: give the markers more pixels
+   (`chess.upscale` for small squares) and check `scan.inset_frac`.
 5. If **alignment fails**: verify board spec (rows, cols, dictionary,
    `marker_size_rel`).
 6. If you observe **wrong `(i, j)` labels**, that's a precision-

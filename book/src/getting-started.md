@@ -204,6 +204,7 @@ version-matched to the helpers. (A direct `image = "0.25"` dependency still
 works.)
 
 ```rust,no_run
+use calib_targets::aruco::builtins;
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::detect;
 use calib_targets::image::ImageReader;
@@ -216,7 +217,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         7,
         20.0, // mm
         0.75,
-        "DICT_4X4_50".parse()?,
+        builtins::DICT_4X4_50,
     )
     .with_marker_layout(MarkerLayout::OpenCvCharuco);
 
@@ -229,14 +230,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         result.markers.len()
     );
 
-    // Collect point pairs
+    // Collect point pairs: every ChArUco corner carries its board position
+    // (in the units of the board spec, here mm).
     for c in &result.corners {
-        if let Some(tp) = c.target_position {
-            let obj = [tp[0], tp[1], 0.0_f32];
-            let img = c.position;
-            // pass (obj, img) to your calibration solver
-            let _ = (obj, img);
-        }
+        let obj = [c.target_position.x, c.target_position.y, 0.0_f32];
+        let img = c.position;
+        // pass (obj, img) to your calibration solver
+        let _ = (obj, img);
     }
     Ok(())
 }

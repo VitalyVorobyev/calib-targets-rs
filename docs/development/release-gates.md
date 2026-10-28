@@ -10,6 +10,16 @@ the one before:
    labelled or how (below).
 3. **Pre-release** — before tagging (below).
 
+`test --workspace` also compiles every ```` ```rust ```` block of `README.md`,
+the crate READMEs and `book/src/` as doctests, through the harness in
+`crates/calib-targets/src/doc_snippets.rs` (a new page with Rust blocks must be
+registered there; a unit test fails until it is). A snippet that needs an image
+or writes files is `no_run`; `ignore` is only for illustrative listings (struct
+shapes, crate-internal code) that no user could compile. README blocks render on GitHub/crates.io, which do not hide `# `
+lines, so they must be complete as shown; book pages may hide setup lines.
+CI's `--all-targets` test step skips doctests, so a separate `--doc` step runs
+them.
+
 ## Label-moving changes: regression gate
 
 Applies to any change that could alter labels — a detector algorithm, a

@@ -93,6 +93,9 @@ pub mod detect;
 
 pub mod generate;
 
+#[cfg(any(test, doctest))]
+mod doc_snippets;
+
 #[cfg(feature = "cli")]
 #[doc(hidden)]
 pub mod cli;
