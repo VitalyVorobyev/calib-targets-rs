@@ -83,7 +83,7 @@ no trace. The cell size is carried on the result
 
 ## Configuration
 
-[`ChessboardParams`] is a small **stable core** of four knobs plus an
+[`ChessboardParams`] is a small **stable core** of three knobs plus an
 opt-in, unstable [`ChessboardAdvancedTuning`] sub-struct
 ([`ChessboardParams::advanced`]) holding the per-stage tuning knobs for
 the live topological pipeline. Defaults are chosen to post the precision
@@ -93,10 +93,9 @@ The stable core — the knobs a calibration consumer has a basis to set:
 
 | Knob | Effect |
 |---|---|
-| `graph_build_algorithm` | Reserved, single-valued (`Topological`) — the Delaunay + axis-driven cell-test grid builder, used by every target type including ChArUco. |
 | `min_labeled_corners` | Reject too-small detections. |
 | `max_components` | Cap the number of disconnected pieces returned by `detect_all`. |
-| `min_corner_strength` | Drop weak ChESS corners before clustering (`0.0` = off). |
+| `min_corner_strength` | Drop weak ChESS corners before clustering (`0.0` = off). This is the strength floor that binds: the ChESS `threshold` (15 by default) only matters when set above it. |
 
 Everything else is a per-stage tuning knob on [`ChessboardAdvancedTuning`],
 attached via `ChessboardParams::with_advanced(...)` — grouped by pipeline
@@ -117,7 +116,8 @@ configure.
 
 `advanced` is serialized as a nested `"advanced"` object (it is **not**
 flattened) and is omitted entirely when unset; `min_corner_strength` and
-the other three stable knobs stay top-level JSON keys.
+the other two stable knobs stay top-level JSON keys; all three are required
+in JSON.
 
 See the [parameter reference][tuning-chapter] for field-by-field guidance.
 
@@ -125,8 +125,10 @@ See the [parameter reference][tuning-chapter] for field-by-field guidance.
 
 - **Small or blurry board** — too few `ChessCorner`s reach the
   detector. Tune the upstream ChESS corner detector (its
-  `chess-corners` `DetectorConfig` — e.g. lower the corner-response
-  threshold, enable a multiscale pyramid for large frames), then try
+  `chess-corners` `DetectorConfig` — e.g. enable a multiscale pyramid for
+  large frames, or `upscale` for small cells — and lower
+  `min_corner_strength`, the corner-response floor that binds by default),
+  then try
   `ChessboardParams::sweep_default()` which varies clustering/attachment
   tolerances on this crate's side.
 - **Strong perspective / tilted view** — widen `cluster_tol_deg` and
@@ -137,9 +139,8 @@ See the [parameter reference][tuning-chapter] for field-by-field guidance.
   check's per-corner local-H residual is the strictest invariant under
   curvature.
 - **Low-contrast / glare** — glare patches starve the corner detector;
-  adjust the upstream ChESS `DetectorConfig` thresholding (an absolute
-  floor survives glare better than a relative one) so enough corners
-  reach this crate.
+  lower `min_corner_strength` (and the ChESS `threshold`, if you raised it
+  above that floor) so enough corners reach this crate.
 - **Partial occlusion splitting the board into pieces** — use
   `detect_all` rather than `detect`; you get one `ChessboardDetection`
   per connected component, each with its own rebased `(i, j)` axes.

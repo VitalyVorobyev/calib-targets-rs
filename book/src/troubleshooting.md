@@ -122,13 +122,13 @@ marker was decoded inside any cell.
 2. **Correct `marker_size_rel`?** If the sampled region is the wrong fraction of the
    cell, the bit cells will be misaligned. Verify against the board spec.
 
-3. **Blurry image?**
-   - Enable `multi_threshold: true` (already the default for ChArUco).
-   - Lower `min_border_score` to `0.65`–`0.70`.
+3. **Blurry or small markers?** Every cell is thresholded on its own and its bits
+   are scored softly, so there is no border or threshold knob to lower. What helps
+   is resolution: more pixels per marker bit (move closer, or set the corner
+   detector's `upscale` for small cells), and a correct `scan.inset_frac`.
 
-4. **Uneven lighting?** `multi_threshold` handles this automatically. If already enabled,
-   check whether the board surface has specular reflections — these cannot be corrected
-   by thresholding alone.
+4. **Uneven lighting?** Per-cell thresholding already absorbs smooth gradients. Specular
+   reflections inside a marker cannot be corrected by thresholding at all.
 
 5. **Wrong scale?** If `px_per_square` is far from the actual pixel size, the projective
    warp used for cell sampling will produce a very small or very large patch. Adjust
@@ -156,8 +156,9 @@ specification in a geometrically consistent way.
      corners enter the grid, or use `detect_charuco_best` with a sweep.
 
 3. **`inliers` near threshold:**
-   - One or two spurious decodings are pulling the fit off. Raise `min_border_score`
-     slightly to reject low-confidence markers.
+   - The board is barely visible or the markers barely resolved; see the
+     `NoMarkers` checklist above. Do not lower `min_marker_inliers` below what
+     the board guarantees.
 
 ---
 
@@ -165,8 +166,8 @@ specification in a geometrically consistent way.
 
 | Problem | Recommended fix |
 |---|---|
-| Strong blur | Lower `min_border_score` to `0.65`, enable `multi_threshold` |
-| Uneven / gradient lighting | `multi_threshold` (already default) |
+| Strong blur | More pixels per square: move closer, or the corner detector's `upscale` |
+| Uneven / gradient lighting | Nothing to do — markers are thresholded per cell |
 | Strong perspective / wide-angle | Raise `edge_axis_tol_deg` / `attach_axis_tol_deg` / `geometry_check_local_h_tol_rel` on the chessboard side |
 | Partial occlusion | Use `detect_chessboard_all`; for ChArUco, lower `min_marker_inliers` |
 | Multiple same-board components | `detect_chessboard_all`; cap via `max_components` |

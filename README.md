@@ -28,7 +28,7 @@ per target, with a shared corner vocabulary.
 |---|---|
 | **Chessboard** | Plain checkerboard. Detector returns labelled corner positions with `(0, 0)` rebased to the visual top-left. No markers; corners are not individually identified. |
 | **ChArUco** | Chessboard with ArUco markers in white squares. Each labelled corner gets a globally-unique ID derived from the surrounding markers; partial views decode. |
-| **PuzzleBoard** | Self-identifying chessboard with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood evidence is available through diagnostics for downstream consistency checks. |
+| **PuzzleBoard** | Self-identifying chessboard ([Stelldinger 2024](https://arxiv.org/abs/2409.20127)) with edge-midpoint dots encoding a 501 × 501 master pattern. Any visible fragment yields the same absolute corner IDs a full-view decode would. `Full` and `FixedBoard` search modes; soft-log-likelihood evidence is available through diagnostics for downstream consistency checks. |
 | **PuzzlePole** | The PuzzleBoard pattern wrapped round a cylinder ([Zach & Stelldinger 2025](https://arxiv.org/abs/2511.19448)), so the target is identifiable from a full 360°. The only family here that is not flat, and the only one whose corners carry **3-D** object points — ready for PnP, which stays with the caller. |
 | **Marker board** | Plain checkerboard with three large circle markers establishing a unique origin without a dictionary. |
 

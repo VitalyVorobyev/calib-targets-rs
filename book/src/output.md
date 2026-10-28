@@ -1,56 +1,58 @@
 # Understanding Detection Results
 
-This chapter describes the shared corner vocabulary used by the result
-types, explains when optional fields are populated, and gives guidance on
-interpreting `score` values.
+This chapter describes the corner fields every result type shares, what each
+one means per target family, and when the optional ones are populated.
 
 ---
 
-## Shared `TargetDetection`
+## Typed results and the shared `TargetDetection`
 
-```rust,no_run
+Every detector returns a typed result whose `corners` field holds a typed
+corner:
+
+| Family | Result | Corner |
+|---|---|---|
+| Chessboard | `ChessboardDetection` | `ChessboardCorner` |
+| ChArUco | `CharucoDetection` | `CharucoCorner` |
+| PuzzleBoard | `PuzzleBoardDetection` | `PuzzleBoardCorner` |
+| PuzzlePole | `PuzzlePoleDetection` | `PuzzlePoleCorner` |
+| Marker board | `MarkerBoardDetection` | `MarkerBoardCorner` |
+
+A typed corner makes a field non-optional wherever its family always has it —
+a `CharucoCorner` always has a `grid`, an `id` and a `target_position`.
+
+`TargetDetection` is the shared carrier used by serialization, the C ABI and
+the `target_detection()` adapter on every planar result:
+
+```rust,ignore
 pub struct TargetDetection {
     pub kind:    TargetKind,
     pub corners: Vec<LabeledCorner>,
 }
 ```
 
-`TargetDetection` is the shared carrier used by serialization, FFI, and
-adapter methods such as `target_detection()`. The primary Rust, Python,
-and WASM APIs return typed result objects with a top-level `corners`
-field.
+`LabeledCorner` makes every field except `position` and `score` optional, so
+one type fits all families:
 
-`kind` identifies the target type:
+```rust,ignore
+pub struct LabeledCorner {
+    pub position:            Point2<f32>,
+    pub position_covariance: Option<PositionCovariance>, // { xx, xy, yy }, px²
+    pub grid:                Option<Coord>,              // { u, v }
+    pub id:                  Option<u32>,
+    pub target_position:     Option<Point2<f32>>,
+    pub score:               f32,
+}
+```
 
-| Variant | Produced by |
-|---|---|
-| `TargetKind::Chessboard` | `ChessboardDetection::target_detection()` |
-| `TargetKind::Charuco` | `CharucoDetection::target_detection()` |
-| `TargetKind::PuzzleBoard` | `PuzzleBoardDetection::target_detection()` |
-| `TargetKind::CheckerboardMarker` | `MarkerBoardDetection::target_detection()` |
-
-In the shared carrier, `corners` is a `Vec<LabeledCorner>` ordered
-differently per target type:
-- **Chessboard:** row-major order (left-to-right, top-to-bottom by grid coordinates).
-- **ChArUco:** ordered by ascending `id`.
-- **PuzzleBoard:** ordered by detected grid traversal, with absolute master-grid
-  coordinates in `grid`.
-- **Marker board:** ordered by grid coordinates `(i, j)`.
+Corner order:
+- **Chessboard and marker board:** row-major by grid label, `(v, u)` ascending.
+- **ChArUco:** by ascending `id`.
+- **PuzzleBoard:** no guaranteed order; use `id` or `grid`.
 
 ---
 
-## `LabeledCorner` fields
-
-```rust,no_run
-pub struct LabeledCorner {
-    pub position:            [f32; 2],
-    pub position_covariance: Option<PositionCovariance>, // { xx, xy, yy }, px²
-    pub grid:                Option<[i32; 2]>,
-    pub id:              Option<u32>,
-    pub target_position: Option<[f32; 2]>,
-    pub score:           f32,
-}
-```
+## Corner fields
 
 ### `position`
 
@@ -64,17 +66,15 @@ Pixel coordinates of the detected corner in the input image.
 
 ### `position_covariance`
 
-Covariance of `position` in px², in the input image frame: the symmetric
-matrix `[[xx, xy], [xy, yy]]` that the corner detector reports for the
-refined position — image noise propagated through the localizer plus the
-localizer's own systematic error
+Covariance of `position` in px², in the frame of the image the corner detector
+ran on: the symmetric matrix `[[xx, xy], [xy, yy]]` that the corner detector
+reports for the refined position — image noise propagated through the
+localizer plus the localizer's own systematic error
 ([chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html)).
-Every target type carries it, and every typed corner
-(`ChessboardCorner`, `CharucoCorner`, `PuzzleBoardCorner`, `PuzzlePoleCorner`,
-`MarkerBoardCorner`) has the same field. Feed it to a calibration solver as a
-per-point weight, or gate residuals with
-`PositionCovariance::mahalanobis_sq`; `sigma_max_px()` gives a single
-"worst-direction" σ in px.
+Every typed corner has the field. Feed it to a calibration solver as a
+per-point weight. `sigma_max_px()` gives a single "worst-direction" σ in px;
+in Rust, `PositionCovariance::mahalanobis_sq` gates a residual against it
+(elsewhere, compute `dᵀ Σ⁻¹ d` from `xx`, `xy`, `yy`).
 
 It is `None` (`null` in JSON / Python / JS, `has_position_covariance == 0` in
 C) when no covariance was measured:
@@ -86,121 +86,120 @@ C) when no covariance was measured:
 | The frame's noise estimate declined (typical of JPEG input) | Supply `noise_sigma`, measured on your camera's images. |
 | A saddle-point refinement did not converge for that corner | Give the corner a low weight or leave it out. |
 
-Positions are identical whether or not the covariance is computed. A ChArUco
-corner that the detector re-measures near its marker-predicted position
-carries the covariance of that re-measurement.
+A covariance is only as good as its white-noise assumption. If *you* resample
+or blur the image before detection (resizing it, or `calib_targets::preprocess`),
+neighbouring pixels share noise and the reported covariance is too small; it is
+also in the resampled image's pixels, not the original's. Prefer the detector's
+own `upscale`, which reports none rather than a wrong one.
+
+Positions are identical whether or not the covariance is computed.
+
+**ChArUco re-measured corners.** A ChArUco corner whose position disagrees with
+the one its markers predict is re-measured near the prediction, with the
+SaddlePoint refiner whatever the configured front-end refiner. Its `position`
+and `position_covariance` are that re-measurement's, so one detection can mix
+corners from two localizers, each with its own bias and covariance model.
 
 Every detection result also has a `quality` field summarising the delivered
 corners' covariances and how well they describe the corners' local scatter;
 see [Corner uncertainty & detection quality](uncertainty.md).
 
-### `grid` — `(i, j)`
+### `grid` — `(u, v)`
 
-Integer corner coordinates within the detected grid.
+Integer corner coordinates. `u` runs along grid `i` (rightward), `v` along
+grid `j` (downward). What the origin means depends on the family:
 
-- `i` = column index (increases right).
-- `j` = row index (increases downward).
-- Origin: **top-left corner of the detected region** (not necessarily the top-left of
-  the physical board — the detector does not know board orientation).
+| Family | Frame of `grid` |
+|---|---|
+| Chessboard | The detected region, rebased so the labelled minimum is `(0, 0)` at the visual top-left. A plain chessboard has no physical origin to align to. |
+| ChArUco | The board's inner-corner grid, fixed by the decoded markers. |
+| PuzzleBoard | The 501 × 501 master pattern, absolute — the same corner gets the same label in any view. |
+| Marker board | The board's inner-corner grid, fixed by the three circles: `0..cols` × `0..rows`. |
 
-Always populated for chessboard and marker board detections. Populated for ChArUco when
-a board spec is provided (i.e., when alignment succeeds).
+Labels are never negative.
 
 ### `id`
 
-Logical marker corner ID. **ChArUco only.**
+Logical corner ID, unique on the board:
 
-Each inner corner of a ChArUco board is shared by two squares and is assigned a unique
-integer ID by the board specification. This ID is identical to the one used by OpenCV's
-`aruco::CharucoBoard`. For chessboard and marker board detections, `id` is always
-`None`.
+| Family | `id` |
+|---|---|
+| Chessboard | None — corners are not individually identified. |
+| ChArUco | The board's corner ID, identical to OpenCV's `aruco::CharucoBoard`. |
+| PuzzleBoard | Master-pattern ID, `v * 501 + u`. |
+| Marker board | `v * cols + u` in the board frame. |
 
 ### `target_position`
 
-Real-world position of the corner in board units (typically millimeters when `cell_size`
-is given in mm).
+Position of the corner on the physical target, in the unit of the board's
+`cell_size` (millimetres when `cell_size` is in mm).
 
-| Target type | When populated |
-|---|---|
-| Chessboard | **Never** (no physical size in `ChessboardParams`) |
-| ChArUco | Always when `board.cell_size > 0` and alignment succeeds |
-| PuzzleBoard | Always when decode succeeds |
-| Marker board | Only when `board.cell_size > 0` and alignment succeeds |
+| Family | When populated | Origin |
+|---|---|---|
+| Chessboard | Never (no physical size in `ChessboardParams`) | — |
+| ChArUco | Always | The board's outer corner: inner corner `(0, 0)` is at `(cell_size, cell_size)`. |
+| PuzzleBoard | Always | The master pattern's corner `(0, 0)`, so `(u * cell_size, v * cell_size)` — independent of the board's declared origin. |
+| Marker board | When `board.cell_size` is set | The board's outer corner, as for ChArUco. |
+| PuzzlePole | Not used — see `surface_position` / `object_position` | — |
 
-Use `target_position` directly as the object-space point for camera calibration (pass
-alongside the corresponding `position` as the image-space point).
+Use `target_position` directly as the object-space point for camera
+calibration, alongside `position` as the image-space point.
 
 ### `score`
 
-A `0..1` quality score for this corner's associated marker decode. Higher is better.
-
-The score blends the **border contrast** of the surrounding marker border ring and a
-**Hamming penalty** based on the number of bit errors when matching to the dictionary.
-For chessboard corners (no marker), `score` reflects the ChESS corner response
-strength, normalised to `0..1`.
-
-**Interpretation:**
-
-| Score range | Meaning |
-|---|---|
-| ≥ 0.90 | High-confidence detection — use with confidence |
-| 0.75–0.90 | Acceptable — watch for occasional false matches |
-| < 0.75 | Treat with caution; upstream sampling may be poor |
-
-Corners with `score < min_border_score` are filtered out before being returned, so
-scores below that threshold will not appear in the output.
+The ChESS corner response (`strength`) of the corner the position came from:
+raw and unnormalized, higher is stronger. It is the same quantity for every
+family, comparable within one image rather than across images, and it is not a
+decode or marker confidence — those live on the family's own result
+(`MarkerDetection::score` for ChArUco markers, `PuzzleBoardDecodeInfo` for the
+PuzzleBoard decode). A re-measured ChArUco corner keeps the score of the corner
+it replaced.
 
 ---
 
-## ChArUco-Specific: `CharucoDetection`
+## ChArUco-specific: `CharucoDetection`
 
-`detect_charuco` returns `CharucoDetection` rather than a bare `TargetDetection`:
-
-```rust,no_run
+```rust,ignore
 pub struct CharucoDetection {
     pub corners:   Vec<CharucoCorner>,
     pub markers:   Vec<MarkerDetection>,
-    pub alignment: GridAlignment, // alias of the canonical GridTransform
+    pub alignment: GridAlignment,
+    pub quality:   DetectionQuality,
 }
 ```
 
 ### `markers`
 
-Raw list of decoded ArUco markers, one per cell that passed decoding. Each
+The decoded ArUco markers, one per cell that passed decoding. Each
 `MarkerDetection` carries:
 
-- `id`: decoded dictionary ID.
-- `border_score`: the contrast score for the border ring (maps to `score` in
-  `LabeledCorner` for marker-anchored corners).
-- `code`: the raw decoded bit pattern (before dictionary lookup).
-- `rotation`: 0/1/2/3 clockwise 90° rotations applied to normalise the marker.
+- `id`: dictionary ID.
+- `gc`: the marker's cell in grid coordinates.
+- `rotation`: 0–3 quarter turns that align the observed bits with the
+  dictionary entry.
+- `hamming`: bit errors against the matched dictionary entry.
+- `score`: decode score (higher is better).
+- `border_score`: fraction of the border cells that read as black.
+- `code`: the observed inner bits (row-major, black = 1).
 
 ### `alignment`
 
-When not `None`, carries the affine/homographic mapping between board-grid coordinates
-and image-pixel coordinates. Populated when at least `min_marker_inliers` markers
-agree on a consistent geometric transformation. Use this to project additional board
-points into the image without re-running detection.
+The integer grid transform — one of the eight square symmetries plus a
+translation — that carries the detected grid's labels onto the board's. It is
+not a pixel mapping; to project board points into the image, fit a homography
+to the `(target_position, position)` pairs.
 
 ---
 
 ## FAQ
 
-**Q: Why are `grid` coordinates not always the same as the printed board coordinates?**
+**Q: Why do chessboard `grid` labels not match the printed board?**
 
-The detector builds the grid from scratch without knowing which corner is the
-board's physical origin. For plain chessboards and marker boards, the `(0, 0)`
-origin is the **top-left of the detected region in the image**, not necessarily
-the physical board corner. Use `id` (ChArUco or PuzzleBoard) or
-`target_position` to obtain board-canonical positions.
+A plain chessboard carries no orientation mark, so the detector labels the
+region it sees from its visual top-left. Use a ChArUco, PuzzleBoard or marker
+board when labels must be board-canonical.
 
 **Q: Can I use `target_position` directly for `solvePnP`?**
 
-Yes. Pair each `LabeledCorner.position` (image point) with the corresponding
-`LabeledCorner.target_position` (object point) and pass them to `solvePnP` or your
-calibration solver. Filter to corners where `target_position.is_some()` first.
-
-**Q: What is a normal `score` for a well-printed board under good lighting?**
-
-Typical values are `0.88`–`0.97`. Scores consistently below `0.80` suggest image
-blur, poor print quality, or an incorrect `inset_frac`.
+Yes. Pair each corner's `position` (image point) with its `target_position`
+(object point) and pass them to `solvePnP` or your calibration solver.

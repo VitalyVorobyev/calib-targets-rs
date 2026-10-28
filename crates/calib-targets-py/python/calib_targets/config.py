@@ -666,8 +666,11 @@ class ChessConfig:
         # Default (absolute 15.0):
         cfg = ChessConfig()
 
-        # Lower threshold for blurry boards:
-        cfg = ChessConfig(threshold=8.0)
+        # The ChESS threshold only binds above the chessboard detector's
+        # own floor (ChessboardParams.min_corner_strength, default 33);
+        # lower that floor for weak corners. Raise this one to discard
+        # weak responses before the corner refiner runs:
+        cfg = ChessConfig(threshold=40.0)
 
         # Loosen non-maximum suppression:
         cfg = ChessConfig(detection=DetectionParams(nms_radius=3))

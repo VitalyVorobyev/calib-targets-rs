@@ -101,7 +101,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 - **Image** — `&GrayImageView` (or `image::GrayImage` via the facade).
 - **Corners** — ChESS X-junction corners (facade runs corner detection
   for you).
-- [`MarkerBoardSpec`] — `rows` × `cols` squares, three [`MarkerCircleSpec`]
+- [`MarkerBoardSpec`] — `rows` × `cols` **inner corners** (not squares, unlike ChArUco and PuzzleBoard), three [`MarkerCircleSpec`]
   entries (cell + polarity), `circle_diameter_rel` (the printed disc
   diameter as a fraction of the square side — every radius the circle
   scorer probes is relative to it), and optional `cell_size` (mm) that
