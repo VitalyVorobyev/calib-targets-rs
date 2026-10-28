@@ -74,6 +74,12 @@ fn output_corners_carry_the_covariance_of_their_measurement() {
                         "{name}: corner {} must keep its front-end covariance",
                         c.id
                     );
+                    assert_eq!(
+                        c.score.to_bits(),
+                        src.strength.to_bits(),
+                        "{name}: corner {} must keep its front-end score",
+                        c.id
+                    );
                     carried_with_cov += usize::from(c.position_covariance.is_some());
                 }
                 None => {

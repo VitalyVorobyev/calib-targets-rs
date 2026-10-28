@@ -19,7 +19,9 @@ pub struct CharucoParams {
     /// to pre-upscale low-resolution board crops (`UpscaleConfig::Fixed`)
     /// whose corners would otherwise fall inside the ChESS ring margin —
     /// the common failure mode on small ChArUco cutouts. Corner positions are
-    /// always reported in input-image pixels regardless.
+    /// always reported in input-image pixels regardless; an upscaled pass
+    /// reports no position covariance (interpolated pixels carry correlated
+    /// noise).
     ///
     /// This is the *main* detection pass; the local re-detection of individual
     /// suspicious corners runs on separate, internal fixed defaults.

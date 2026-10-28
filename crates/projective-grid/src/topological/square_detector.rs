@@ -912,10 +912,14 @@ fn estimate_cell_size(
 ) -> f32 {
     use crate::lattice::SQUARE_CARDINAL_OFFSETS;
 
+    // Sorted: this is an `f32` sum, and hash order would leak the process's
+    // `RandomState` into the validate thresholds built on it.
+    let mut coords: Vec<Coord> = labelled.keys().copied().collect();
+    coords.sort_unstable();
     let mut sum = 0.0_f32;
     let mut count: usize = 0;
-    for (&coord, &idx) in labelled {
-        let here = positions[idx];
+    for coord in coords {
+        let here = positions[labelled[&coord]];
         for offset in &SQUARE_CARDINAL_OFFSETS {
             let neigh = Coord::new(coord.u + offset.u, coord.v + offset.v);
             if let Some(&n_idx) = labelled.get(&neigh) {
@@ -937,6 +941,32 @@ fn estimate_cell_size(
 mod tests {
     use super::*;
     use crate::feature::{LocalAxis, PointFeature};
+
+    /// The cell size feeds the validate thresholds, so it must not depend on
+    /// hash order: every fresh `HashMap` draws its own `RandomState`.
+    #[test]
+    fn estimate_cell_size_is_independent_of_hash_order() {
+        // Irrational-ish jitter so the f32 sum is order-sensitive.
+        let mut positions = Vec::new();
+        let mut cells = Vec::new();
+        for v in 0..15 {
+            for u in 0..15 {
+                let k = (u * 15 + v) as f32;
+                positions.push(Point2::new(
+                    20.0 * u as f32 + 0.37 * (1.3 * k).sin(),
+                    20.0 * v as f32 + 0.41 * (0.7 * k).cos(),
+                ));
+                cells.push(Coord::new(u, v));
+            }
+        }
+        let build = || -> std::collections::HashMap<Coord, usize> {
+            cells.iter().enumerate().map(|(i, &c)| (c, i)).collect()
+        };
+        let first = estimate_cell_size(&build(), &positions).to_bits();
+        for _ in 0..32 {
+            assert_eq!(estimate_cell_size(&build(), &positions).to_bits(), first);
+        }
+    }
 
     fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>> {
         let origin = 50.0_f32;

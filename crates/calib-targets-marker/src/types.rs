@@ -166,7 +166,9 @@ pub struct MarkerBoardParams {
     /// pass coarse-to-fine (`MultiscaleConfig::Pyramid`) on large frames, or
     /// to pre-upscale low-resolution boards (`UpscaleConfig::Fixed`) whose
     /// corners would otherwise fall inside the ChESS ring margin. Corner
-    /// positions are always reported in input-image pixels regardless.
+    /// positions are always reported in input-image pixels regardless; an
+    /// upscaled pass reports no position covariance (interpolated pixels
+    /// carry correlated noise).
     ///
     /// Every whole-image entry point runs this front-end over the input image
     /// to produce the corner cloud:
