@@ -117,7 +117,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 | Field | Meaning |
 |---|---|
-| `corners: Vec<MarkerBoardCorner>` | Labelled inner corners, `(i, j)` grid, optional `id`, optional `target_position` in mm, and `score`. |
+| `corners: Vec<MarkerBoardCorner>` | The board's inner corners that were found: `(i, j)` grid within `0..cols` × `0..rows`, `id`, optional `target_position` in mm (set when `cell_size` is), and `score`. A grid corner the board frame places off the board is not delivered. |
 | `alignment: Option<GridAlignment>` | Canonical affine `GridTransform` (under the semantic alias) aligning chessboard `(i, j)` to the layout frame. Always `Some` on a successful `detect` / `detect_with_corners` — the three-circles-can't-be-placed case is now the typed `Err(MarkerBoardDetectError::AlignmentFailed { .. })` rather than an `Ok` result with `alignment: None`. |
 
 `MarkerBoardDetectError` is `#[non_exhaustive]` and distinguishes
@@ -165,7 +165,7 @@ are a known-good starting point.
 | Group | Key knobs | Effect |
 |---|---|---|
 | Chessboard | `chessboard: ChessboardParams` | Upstream corner/grid detector. Tune there first. |
-| Circle scoring | `circle_score.patch_size`, `ring_thickness_frac`, `min_contrast`, `samples` | Image-space disc + ring contrast check per cell, followed by a shape gate that rejects anything whose level set is not a centred disc. Raise `patch_size` (default 64) if cells are larger than ~30 px; drop to 32 for small cells. Raise `min_contrast` to suppress false positives in glare regions. The disc *size* is not here — it is `board.circle_diameter_rel`, so it cannot disagree with what was printed. |
+| Circle scoring | `circle_score.patch_size`, `ring_thickness_frac`, `min_contrast`, `samples` | Image-space disc + ring reading per cell, judged against what a disc-free square of the same colour reads in the same image: a disc must move its cell's reading at least half the grid's black-to-white range, then pass a shape gate that rejects anything whose level set is not a centred disc. Discs blurred below resolution are declined, not guessed. Raise `patch_size` (default 64) if cells are larger than ~30 px; drop to 32 for small cells. `min_contrast` is an absolute floor under the half-range bar, for low-contrast images. The disc *size* is not here — it is `board.circle_diameter_rel`, so it cannot disagree with what was printed. |
 | Circle match | `match_params.max_candidates_per_polarity`, `min_offset_inliers` | Frame sweep over the four rotations. `min_offset_inliers` defaults to `3` — the whole layout; lowering it trades the never-a-wrong-frame guarantee for recall on a board with an occluded marker. Raise `max_candidates_per_polarity` (default 6) for busy backgrounds. |
 
 ## Tuning difficult cases
@@ -177,8 +177,11 @@ are a known-good starting point.
   no grid was found at all). Visualise
   `MarkerBoardDiagnostics::circle_candidates` (from a `diagnose` /
   `diagnose_with_corners` call) to see what the scorer saw; each
-  candidate carries a `squareness` reading, which is what the shape gate
-  measured.
+  candidate carries its `contrast` against an empty square of its colour
+  and a `squareness` reading, which is what the two gates measured. No
+  candidates at all usually means the discs are smaller or blurrier than
+  the camera resolves (on synthetic boards, 8 px discs are found and 4 px
+  discs under a 1.5 px blur are not): move closer or print larger discs.
 - **Circles found but the frame is ambiguous** — `AlignmentAmbiguous`
   means two board frames explain the circles equally well. Either the
   layout is rotationally symmetric (choose cells whose rotations differ)

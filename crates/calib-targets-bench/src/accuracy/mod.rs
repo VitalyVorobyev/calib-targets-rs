@@ -208,9 +208,16 @@ pub fn quick_conditions(families: &[Family]) -> Vec<Condition> {
         (0, 45.0, 0.0, 0.5, 4.0, 0.0),
         (1, 0.0, 0.0, 1.5, 1.0, K1),
     ];
+    // The marker board's precision guard: small cells under the heavier blur,
+    // where the 4 px disks are smeared below resolution and an empty square
+    // reads like a disk unless its score is judged against what an empty
+    // square of the same colour scores. This condition delivered wrong labels
+    // before that test existed; it must now decline or label correctly.
+    let marker_guard = (0, 8.0, 30.0, 1.5, 1.0, 0.0);
     let mut out = Vec::new();
     for &family in families {
-        for (level, rotation_deg, tilt_deg, blur_px, noise, k1) in picks {
+        let guard = (family == Family::MarkerBoard).then_some(marker_guard);
+        for (level, rotation_deg, tilt_deg, blur_px, noise, k1) in picks.into_iter().chain(guard) {
             let cell_px = cell_levels(family)[level];
             out.push(Condition {
                 family,
@@ -570,7 +577,7 @@ mod tests {
     #[test]
     fn grid_sizes() {
         assert_eq!(full_conditions(&[Family::Chessboard]).len(), 64 + 16);
-        assert_eq!(quick_conditions(&Family::ALL).len(), 16);
+        assert_eq!(quick_conditions(&Family::ALL).len(), 17);
     }
 
     #[test]
