@@ -1,4 +1,5 @@
 import json
+import math
 import subprocess
 import sys
 from pathlib import Path
@@ -96,7 +97,7 @@ def test_chess_config_default_matches_rust_shape() -> None:
         "strategy": {
             "chess": {
                 "ring": "canonical",
-                "refiner": {"center_of_mass": {"radius": 2}},
+                "center_of_mass": {"radius": 2},
             }
         },
         "threshold": 15.0,
@@ -105,25 +106,54 @@ def test_chess_config_default_matches_rust_shape() -> None:
         "upscale": "disabled",
         "orientation_method": "ring_fit",
         "merge_radius": 3.0,
-        "noise_sigma": None,
-        "uncertainty": "propagated",
+        "refiner": None,
+        "uncertainty": "off",
     }
     assert cfg.to_dict() == expected
     assert calib_targets.ChessConfig.from_dict(expected).to_dict() == expected
 
 
 def test_chess_config_uncertainty_knobs_round_trip() -> None:
-    cfg = calib_targets.ChessConfig(
-        noise_sigma=2.5, uncertainty=calib_targets.Uncertainty.OFF
-    )
-    data = cfg.to_dict()
-    assert data["noise_sigma"] == 2.5
-    assert data["uncertainty"] == "off"
-    assert calib_targets.ChessConfig.from_dict(data) == cfg
-    # Both keys are optional on the wire (Rust `#[serde(default)]`).
+    Uncertainty = calib_targets.Uncertainty
+    for uncertainty, wire in (
+        (Uncertainty.off(), "off"),
+        (Uncertainty.propagated(), {"propagated": {"noise": "estimate"}}),
+        (
+            Uncertainty.propagated(noise_sigma=2.5),
+            {"propagated": {"noise": {"known": 2.5}}},
+        ),
+    ):
+        cfg = calib_targets.ChessConfig(uncertainty=uncertainty)
+        data = cfg.to_dict()
+        assert data["uncertainty"] == wire
+        assert calib_targets.ChessConfig.from_dict(data) == cfg
+    # Optional on the wire (Rust `#[serde(default)]`); the default is off.
     partial = calib_targets.ChessConfig.from_dict({"threshold": 15.0})
-    assert partial.noise_sigma is None
-    assert partial.uncertainty == calib_targets.Uncertainty.PROPAGATED
+    assert partial.uncertainty == Uncertainty.off()
+
+
+def test_uncertainty_is_validated_and_immutable() -> None:
+    Uncertainty = calib_targets.Uncertainty
+    for bad in (-1.0, math.nan, math.inf):
+        with pytest.raises(ValueError):
+            Uncertainty.propagated(noise_sigma=bad)
+    with pytest.raises(AttributeError):
+        Uncertainty.off().kind = "propagated"  # type: ignore[misc]
+
+
+def test_chess_config_rejects_moved_and_unknown_keys() -> None:
+    """chess-corners 2.0 config loaders reject unknown keys; so does Python."""
+    base = calib_targets.ChessConfig().to_dict()
+    with pytest.raises(ValueError, match="moved in chess-corners 2.0"):
+        calib_targets.ChessConfig.from_dict({**base, "noise_sigma": 2.0})
+    with pytest.raises(ValueError, match="moved in chess-corners 2.0"):
+        calib_targets.ChessStrategyConfig.from_dict(
+            {"ring": "canonical", "refiner": {"center_of_mass": {"radius": 2}}}
+        )
+    with pytest.raises(ValueError, match="has no keys"):
+        calib_targets.ChessConfig.from_dict({**base, "treshold": 15.0})
+    with pytest.raises(ValueError, match="1.x uncertainty string"):
+        calib_targets.ChessConfig.from_dict({**base, "uncertainty": "propagated"})
 
 
 def test_chess_config_threshold_is_a_bare_number() -> None:
@@ -172,35 +202,28 @@ def test_chess_config_tagged_subtrees() -> None:
 
 
 def test_chess_config_refiner_round_trip() -> None:
-    forstner = calib_targets.ChessConfig(
+    cfg = calib_targets.ChessConfig(
         strategy=calib_targets.DetectionStrategy.chess(
             calib_targets.ChessStrategyConfig(
-                refiner=calib_targets.ChessRefiner.forstner(
-                    calib_targets.ForstnerConfig(radius=3, min_trace=20.0)
-                )
+                center_of_mass=calib_targets.CenterOfMassConfig(radius=3)
             )
-        )
+        ),
+        refiner=calib_targets.ImageRefiner.saddle_point(
+            calib_targets.SaddlePointConfig(radius=3)
+        ),
     )
-    serialized = forstner.to_dict()
-    assert serialized["strategy"]["chess"]["refiner"] == {
-        "forstner": {
+    serialized = cfg.to_dict()
+    assert serialized["strategy"]["chess"]["center_of_mass"] == {"radius": 3}
+    assert serialized["refiner"] == {
+        "saddle_point": {
             "radius": 3,
-            "min_trace": 20.0,
-            "min_det": 1e-3,
-            "max_condition_number": 50.0,
+            "det_margin": 1e-3,
             "max_offset": 1.5,
+            "min_abs_det": 1e-4,
         }
     }
     restored = calib_targets.ChessConfig.from_dict(serialized)
-    assert restored.to_dict() == serialized
-
-
-def test_chess_config_legacy_refiner_shim() -> None:
-    # The deprecated ``RefinerConfig`` shim returns a ``ChessRefiner``;
-    # callers from before chess-corners 0.10 keep working.
-    legacy = calib_targets.RefinerConfig(kind="forstner")
-    assert isinstance(legacy, calib_targets.ChessRefiner)
-    assert legacy.to_dict() == {"forstner": calib_targets.ForstnerConfig().to_dict()}
+    assert restored == cfg
 
 
 def test_chess_config_rejects_old_flat_shape() -> None:

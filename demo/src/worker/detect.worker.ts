@@ -53,7 +53,7 @@ function prepare({ key, rgba, width, height }: WorkerMethods["prepare"]["args"][
 function withUncertainty<T extends { chess: ChessConfig }>(configs: T[], chess: ChessConfig): T[] {
   return configs.map((config) => ({
     ...config,
-    chess: { ...config.chess, uncertainty: chess.uncertainty, noise_sigma: chess.noise_sigma ?? null },
+    chess: { ...config.chess, uncertainty: chess.uncertainty },
   }));
 }
 

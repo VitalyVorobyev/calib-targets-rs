@@ -17,13 +17,13 @@ export const CHESS_UI: UiSchema = {
     {
       id: "corners",
       title: "Corner detection",
-      fields: ["threshold", "strategy", "upscale", "orientation_method"],
+      fields: ["threshold", "strategy", "refiner", "upscale", "orientation_method"],
     },
     {
       id: "uncertainty",
       title: "Position uncertainty",
-      hint: "Per-corner covariance; not reported while upscaling.",
-      fields: ["uncertainty", "noise_sigma"],
+      hint: "Per-corner covariance; off by default, and not reported while upscaling.",
+      fields: ["uncertainty"],
     },
   ],
 };

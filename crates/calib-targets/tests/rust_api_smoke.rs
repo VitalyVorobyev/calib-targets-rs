@@ -34,7 +34,7 @@ resolver = "3"
 
 [dependencies]
 calib-targets = {{ path = '{crate_dir}' }}
-chess-corners = "1.0"
+chess-corners = "2.0"
 image = "0.25"
 "#
         ),
@@ -45,7 +45,9 @@ image = "0.25"
         r#"use calib_targets::detect::{self, DetectorConfig};
 // Advanced ChESS tuning types come from `chess-corners` directly — the
 // `calib-targets` facade re-exports only `DetectorConfig` + `OrientationMethod`.
-use chess_corners::{ChessRefiner, ChessRing, DetectionStrategy, MultiscaleConfig};
+use chess_corners::{
+    ChessRing, DetectionStrategy, ImageRefiner, MultiscaleConfig, NoiseLevel, Uncertainty,
+};
 
 fn main() {
     // `DetectorConfig` is `#[non_exhaustive]` (re-exported from
@@ -61,9 +63,10 @@ fn main() {
         .with_threshold(15.0)
         .with_multiscale(MultiscaleConfig::pyramid(2, 64, 3))
         .with_detection(|d| d.min_cluster_size = 1)
-        .with_chess(|c| {
-            c.ring = ChessRing::Broad;
-            c.refiner = ChessRefiner::saddle_point();
+        .with_chess(|c| c.ring = ChessRing::Broad)
+        .with_refiner(ImageRefiner::saddle_point())
+        .with_uncertainty(Uncertainty::Propagated {
+            noise: NoiseLevel::Estimate,
         });
     assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
 

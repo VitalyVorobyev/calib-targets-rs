@@ -99,11 +99,11 @@ mod tests {
             axes: [
                 AxisEstimate {
                     angle: a0,
-                    sigma: 0.01,
+                    fit_std_error: 0.01,
                 },
                 AxisEstimate {
                     angle: a1,
-                    sigma: 0.01,
+                    fit_std_error: 0.01,
                 },
             ],
             // A sharp synthetic corner: well above the default

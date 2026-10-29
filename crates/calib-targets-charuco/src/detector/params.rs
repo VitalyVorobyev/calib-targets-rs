@@ -2,7 +2,7 @@ use crate::board::CharucoBoardSpec;
 use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{default_chess_config, DetectorConfig};
-use chess_corners::{ChessRefiner, SaddlePointConfig, Uncertainty};
+use chess_corners::ImageRefiner;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -243,13 +243,11 @@ fn default_cell_weight_border_threshold() -> f32 {
 /// re-detection consumes only the refined corner position, so the per-corner
 /// axis fit would be wasted work — preserving the old hand-rolled path's cost.
 ///
-/// The position covariance keeps the upstream default
-/// ([`Uncertainty::Propagated`]): a re-detected corner replaces a rejected
-/// one in the output, so it must carry its own covariance. The detector never
-/// runs this config as-is — the re-detection engine first fills in the frame's
-/// noise level (or switches the covariance off when the front end reports
-/// none), because with `noise_sigma` unset every ROI call would estimate the
-/// noise over the *whole* image.
+/// The uncertainty tier is left at the upstream default: the re-detection
+/// engine sets it per frame. A re-detected corner replaces a rejected one in
+/// the output, so it carries a covariance exactly when the front-end corners
+/// do, computed at the front end's noise level (`NoiseLevel::Known`) — an
+/// estimate here would run over the *whole* image on every ROI call.
 pub(crate) fn default_redetect_params() -> DetectorConfig {
     DetectorConfig::chess()
         .with_threshold(0.0)
@@ -257,9 +255,8 @@ pub(crate) fn default_redetect_params() -> DetectorConfig {
             d.nms_radius = 2;
             d.min_cluster_size = 1;
         })
-        .with_chess(|c| c.refiner = ChessRefiner::SaddlePoint(SaddlePointConfig::default()))
+        .with_refiner(ImageRefiner::saddle_point())
         .without_orientation()
-        .with_uncertainty(Uncertainty::Propagated)
 }
 
 impl CharucoParams {
@@ -401,17 +398,15 @@ mod tests {
         // Orientation is skipped: the re-detection uses only the refined
         // position, so the per-corner axis fit would be wasted cost.
         assert!(cfg.orientation_method.is_none());
-        // A re-detected corner is an output measurement, so it reports a
-        // covariance; the engine supplies the frame's noise level before use.
-        assert_eq!(cfg.uncertainty, Uncertainty::Propagated);
-        assert_eq!(cfg.noise_sigma, None);
-        let chess_corners::DetectionStrategy::Chess(chess) = cfg.strategy else {
-            panic!("expected the ChESS strategy, got {:?}", cfg.strategy);
-        };
         assert!(
-            matches!(chess.refiner, ChessRefiner::SaddlePoint(_)),
-            "expected SaddlePoint refiner, got {:?}",
-            chess.refiner,
+            matches!(cfg.strategy, chess_corners::DetectionStrategy::Chess(_)),
+            "expected the ChESS strategy, got {:?}",
+            cfg.strategy,
+        );
+        assert!(
+            matches!(cfg.refiner, Some(ImageRefiner::SaddlePoint(_))),
+            "expected the saddle-point image refiner, got {:?}",
+            cfg.refiner,
         );
     }
 

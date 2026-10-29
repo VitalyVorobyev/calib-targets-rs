@@ -20,19 +20,17 @@ Each detected corner carries:
   top-left, x right, y down. Not rounded to integer pixels.
 - **Two undirected local axes** — `axes: [AxisEstimate; 2]`, the two
   orthogonal grid directions visible in the corner's immediate
-  neighbourhood. Each `AxisEstimate` is an `angle ∈ [0, π)` plus a 1σ
-  angular uncertainty (`sigma`).
+  neighbourhood. Each `AxisEstimate` is an `angle ∈ [0, π)` plus
+  `fit_std_error`, the standard error of the axis fit in radians — a
+  fit-quality score, not a calibrated 1σ bound on the angle.
 - **A quality scalar** — `strength`, the ChESS response magnitude.
 - **A position covariance** — `position_covariance:
   Option<PositionCovariance>`, `{ xx, xy, yy }` in px²: how far the
   sub-pixel position is likely to be from the true corner. The detectors do
   not read it; they carry it onto every labelled corner they return. It is
-  `None` under `uncertainty: Off`, with an `upscale` stage, with the ML
-  refiner, and when the frame's noise estimate declines (JPEG input — supply
-  `noise_sigma`). The front end estimates the noise once per frame, before the
-  corner pass, and switches the covariance off for that frame when the
-  estimate declines, so no work is spent on covariances that cannot be
-  reported. See
+  `None` under `uncertainty: Off` (the default), with an `upscale` stage, and
+  when the frame's noise estimate declines (JPEG input — supply the noise
+  level with `NoiseLevel::Known`). See
   [chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
 Together these are exactly what the prefilter reads. A corner's axes are

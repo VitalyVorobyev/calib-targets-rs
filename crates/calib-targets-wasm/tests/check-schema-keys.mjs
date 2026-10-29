@@ -21,7 +21,7 @@
 //      schema type. This is what catches a declaration that has the right keys
 //      but points a field at the wrong shape — `refiner: RefinerConfig`, a
 //      `{ kind, center_of_mass, ... }` object, where the schema says
-//      `ChessRefiner`, an externally tagged union.
+//      `ImageRefiner`, an externally tagged union.
 //   3. Tagged unions. For every `export type X = A | B | ...` matched to a
 //      schema `oneOf` / `enum` of unit strings and single-key objects (serde's
 //      externally tagged enums), the declared variant tags — `"name"` for a

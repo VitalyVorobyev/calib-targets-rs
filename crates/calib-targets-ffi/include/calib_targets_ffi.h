@@ -125,6 +125,9 @@ typedef struct ct_chessboard_params_t {
 
 /**
  * Fixed refiner identifier type for ChESS subpixel refinement.
+ *
+ * ABI note (6.0.0): `2` (the Förstner refiner) is gone with chess-corners
+ * 2.0; the other values are unchanged.
  */
 typedef uint32_t ct_refiner_kind_t;
 
@@ -134,17 +137,6 @@ typedef uint32_t ct_refiner_kind_t;
 typedef struct ct_center_of_mass_config_t {
   int32_t radius;
 } ct_center_of_mass_config_t;
-
-/**
- * Förstner refiner configuration.
- */
-typedef struct ct_forstner_config_t {
-  int32_t radius;
-  float min_trace;
-  float min_det;
-  float max_condition_number;
-  float max_offset;
-} ct_forstner_config_t;
 
 /**
  * Saddle-point refiner configuration.
@@ -162,7 +154,6 @@ typedef struct ct_saddle_point_config_t {
 typedef struct ct_refiner_config_t {
   ct_refiner_kind_t kind;
   struct ct_center_of_mass_config_t center_of_mass;
-  struct ct_forstner_config_t forstner;
   struct ct_saddle_point_config_t saddle_point;
 } ct_refiner_config_t;
 
@@ -231,8 +222,8 @@ typedef struct ct_optional_f32_t {
 /**
  * Position-uncertainty tier identifier type for ChESS corner detection.
  *
- * `CT_UNCERTAINTY_PROPAGATED` is `0`, so a zero-initialised
- * `ct_chess_config_t` selects the default tier.
+ * `CT_UNCERTAINTY_OFF` is `0`, so a zero-initialised `ct_chess_config_t`
+ * selects the default tier.
  */
 typedef uint32_t ct_uncertainty_t;
 
@@ -240,8 +231,9 @@ typedef uint32_t ct_uncertainty_t;
  * Shared ChESS configuration for raw corner detection.
  *
  * ABI note (6.0.0): `noise_sigma` and `uncertainty` are appended. Both are
- * safe to zero-initialise: an unset `noise_sigma` estimates the pixel noise
- * from each image, and `0` is `CT_UNCERTAINTY_PROPAGATED`, the default tier.
+ * safe to zero-initialise: `0` is `CT_UNCERTAINTY_OFF`, the default tier,
+ * and an unset `noise_sigma` estimates the pixel noise from each image when
+ * the covariance is on.
  */
 typedef struct ct_chess_config_t {
   struct ct_chess_params_t params;
@@ -249,8 +241,10 @@ typedef struct ct_chess_config_t {
   struct ct_upscale_config_t upscale;
   /**
    * Pixel-noise standard deviation in gray levels (`>= 0`) used to express
-   * each corner's position covariance in px². Unset estimates it from each
-   * image; set it when the sensor noise is known.
+   * each corner's position covariance in px², read only under
+   * `CT_UNCERTAINTY_PROPAGATED` (setting it under `CT_UNCERTAINTY_OFF` is
+   * a configuration error). Unset estimates it from each image; set it when
+   * the sensor noise is known.
    */
   struct ct_optional_f32_t noise_sigma;
   /**
@@ -309,9 +303,10 @@ typedef struct ct_chessboard_detect_args_t {
  * real images); a frame-comparable number, not a pass/fail test.
  *
  * Every `ct_optional_f32_t` member is unset when unavailable: `noise_sigma`
- * when the detector did not run the corner pass itself or the estimate
- * declined, the σ statistics when no corner carries a covariance, the local
- * statistics when no corner qualifies.
+ * when no corner carries a covariance (`CT_UNCERTAINTY_OFF`, the default),
+ * the detector did not run the corner pass itself, or the estimate declined;
+ * the σ statistics when no corner carries a covariance; the local statistics
+ * when no corner qualifies.
  */
 typedef struct ct_detection_quality_t {
   /**
@@ -632,9 +627,9 @@ typedef struct ct_optional_u32_t {
  *
  * `position_covariance` is valid when `has_position_covariance` is
  * `CT_TRUE`: the corner detector measured the position's covariance. It is
- * `CT_FALSE` when the uncertainty tier is off, an upscale stage is active,
- * the refiner reports none, or the frame's noise estimate declined (e.g.
- * JPEG input — supply `ct_chess_config_t::noise_sigma`).
+ * `CT_FALSE` when the uncertainty tier is off (the default), an upscale stage
+ * is active, or the frame's noise estimate declined (e.g. JPEG input —
+ * supply `ct_chess_config_t::noise_sigma`).
  */
 typedef struct ct_labeled_corner_t {
   struct ct_point2f_t position;
@@ -1016,10 +1011,17 @@ typedef struct ct_puzzleboard_detect_buffers_t {
 
 #define CT_DICTIONARY_DICT_ARUCO_ORIGINAL 22
 
+/**
+ * The ChESS detector's own center of mass of the response (the default),
+ * tuned by `ct_refiner_config_t::center_of_mass`.
+ */
 #define CT_REFINER_KIND_CENTER_OF_MASS 1
 
-#define CT_REFINER_KIND_FORSTNER 2
-
+/**
+ * The saddle-point image refiner, tuned by
+ * `ct_refiner_config_t::saddle_point`. It replaces the center of mass and
+ * drops a corner it rejects.
+ */
 #define CT_REFINER_KIND_SADDLE_POINT 3
 
 #define CT_UPSCALE_MODE_DISABLED 0
@@ -1027,16 +1029,16 @@ typedef struct ct_puzzleboard_detect_buffers_t {
 #define CT_UPSCALE_MODE_FIXED 1
 
 /**
- * Propagate the image noise through each corner's localizer and add its
- * systematic-error term (the default).
+ * Compute no position covariance and skip the per-image noise estimate (the
+ * default). Corner positions are identical under both tiers.
  */
-#define CT_UNCERTAINTY_PROPAGATED 0
+#define CT_UNCERTAINTY_OFF 0
 
 /**
- * Compute no position covariance and skip the per-image noise estimate.
- * Corner positions are identical under both tiers.
+ * Propagate the image noise through each corner's localizer and add its
+ * systematic-error term.
  */
-#define CT_UNCERTAINTY_OFF 1
+#define CT_UNCERTAINTY_PROPAGATED 1
 
 #define CT_MARKER_LAYOUT_OPENCV_CHARUCO 1
 

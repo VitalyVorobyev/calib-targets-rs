@@ -579,11 +579,11 @@ mod tests {
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(axes[0]),
-                    sigma: 0.01,
+                    fit_std_error: 0.01,
                 },
                 AxisEstimate {
                     angle: wrap_pi(axes[1]),
-                    sigma: 0.01,
+                    fit_std_error: 0.01,
                 },
             ],
             strength: 1.0,
@@ -680,11 +680,11 @@ mod tests {
         corners[0].axes = [
             AxisEstimate {
                 angle: 0.70,
-                sigma: 0.05,
+                fit_std_error: 0.05,
             },
             AxisEstimate {
                 angle: 1.20,
-                sigma: 0.05,
+                fit_std_error: 0.05,
             },
         ];
         corners[0].stage = CornerStage::NoCluster { max_d_deg: 40.0 };

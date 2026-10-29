@@ -64,13 +64,6 @@ fn default_refiner() -> ct_refiner_config_t {
     ct_refiner_config_t {
         kind: CT_REFINER_KIND_CENTER_OF_MASS,
         center_of_mass: ct_center_of_mass_config_t { radius: 2 },
-        forstner: ct_forstner_config_t {
-            radius: 2,
-            min_trace: 25.0,
-            min_det: 1e-3,
-            max_condition_number: 50.0,
-            max_offset: 1.5,
-        },
         saddle_point: ct_saddle_point_config_t {
             radius: 2,
             det_margin: 1e-3,
@@ -102,7 +95,7 @@ fn default_shared_chess_config() -> ct_chess_config_t {
             factor: 2,
         },
         noise_sigma: ct_optional_f32_t::none(),
-        uncertainty: CT_UNCERTAINTY_PROPAGATED,
+        uncertainty: CT_UNCERTAINTY_OFF,
     }
 }
 
@@ -252,26 +245,56 @@ fn shared_chess_config_rejects_invalid_upscale_factor() {
 
 #[test]
 fn shared_chess_config_zero_initialised_uncertainty_is_the_default() {
-    // A C caller that `memset`s the struct gets the workspace defaults: the
-    // noise level estimated per image and the propagated covariance.
+    // A C caller that `memset`s the uncertainty fields gets the workspace
+    // default: no covariance.
+    assert_eq!(CT_UNCERTAINTY_OFF, 0);
     let converted = convert::convert_chess_config(&default_shared_chess_config()).unwrap();
-    assert_eq!(converted.noise_sigma, None);
-    assert_eq!(
-        converted.uncertainty,
-        chess_corners::Uncertainty::Propagated
-    );
+    assert_eq!(converted.uncertainty, chess_corners::Uncertainty::Off);
+    assert_eq!(converted.refiner, None);
     assert_eq!(converted, calib_targets::detect::default_chess_config());
 }
 
 #[test]
 fn shared_chess_config_converts_uncertainty_settings() {
-    let mut config = default_shared_chess_config();
-    config.noise_sigma = ct_optional_f32_t::some(2.5);
-    config.uncertainty = CT_UNCERTAINTY_OFF;
+    use chess_corners::{NoiseLevel, Uncertainty};
 
+    let mut config = default_shared_chess_config();
+    config.uncertainty = CT_UNCERTAINTY_PROPAGATED;
     let converted = convert::convert_chess_config(&config).unwrap();
-    assert_eq!(converted.noise_sigma, Some(2.5));
-    assert_eq!(converted.uncertainty, chess_corners::Uncertainty::Off);
+    assert_eq!(
+        converted.uncertainty,
+        Uncertainty::Propagated {
+            noise: NoiseLevel::Estimate
+        }
+    );
+
+    config.noise_sigma = ct_optional_f32_t::some(2.5);
+    let converted = convert::convert_chess_config(&config).unwrap();
+    assert_eq!(
+        converted.uncertainty,
+        Uncertainty::Propagated {
+            noise: NoiseLevel::Known(2.5)
+        }
+    );
+
+    // A noise level with the covariance off would be silently ignored.
+    config.uncertainty = CT_UNCERTAINTY_OFF;
+    assert!(convert::convert_chess_config(&config).is_err());
+}
+
+#[test]
+fn shared_chess_config_converts_the_saddle_point_refiner() {
+    let mut config = default_shared_chess_config();
+    config.params.refiner.kind = CT_REFINER_KIND_SADDLE_POINT;
+    let converted = convert::convert_chess_config(&config).unwrap();
+    assert!(matches!(
+        converted.refiner,
+        Some(chess_corners::ImageRefiner::SaddlePoint(_))
+    ));
+
+    // The retired Förstner tag is no longer a valid refiner.
+    config.params.refiner.kind = 2;
+    assert!(convert::convert_chess_config(&config).is_err());
 }
 
 #[test]
@@ -282,6 +305,7 @@ fn shared_chess_config_rejects_invalid_uncertainty_settings() {
 
     for sigma in [-1.0, f32::NAN, f32::INFINITY] {
         let mut config = default_shared_chess_config();
+        config.uncertainty = CT_UNCERTAINTY_PROPAGATED;
         config.noise_sigma = ct_optional_f32_t::some(sigma);
         assert!(
             convert::convert_chess_config(&config).is_err(),
@@ -357,7 +381,10 @@ fn gray_image_validation_rejects_invalid_inputs() {
 
 #[test]
 fn chessboard_detect_supports_query_and_copy() {
-    let config = chessboard_config_mid_png();
+    let mut config = chessboard_config_mid_png();
+    // Opt into the position covariance (off by default) so the per-corner
+    // covariance and the quality summary are populated.
+    config.chess.uncertainty = CT_UNCERTAINTY_PROPAGATED;
     let mut detector = ptr::null_mut();
     let status = unsafe { ct_chessboard_detector_create(&config, &mut detector) };
     assert_eq!(status, ct_status_t::CT_STATUS_OK);
@@ -406,8 +433,8 @@ fn chessboard_detect_supports_query_and_copy() {
     input_indices.sort_unstable();
     input_indices.dedup();
     assert_eq!(input_indices.len(), corners.len());
-    // The default config reports a positive-definite position covariance for
-    // every labelled corner of this lossless frame.
+    // With the covariance on, every labelled corner of this lossless frame
+    // carries a positive-definite position covariance.
     assert!(corners.iter().all(|corner| {
         let c = corner.position_covariance;
         corner.has_position_covariance == CT_TRUE
@@ -548,7 +575,8 @@ fn scan_decode_config_preserves_multi_threshold_flag() {
 
 #[test]
 fn charuco_detect_supports_query_and_copy() {
-    let config = charuco_config_small_png();
+    let mut config = charuco_config_small_png();
+    config.chess.uncertainty = CT_UNCERTAINTY_PROPAGATED;
     let mut detector = ptr::null_mut();
     let status = unsafe { ct_charuco_detector_create(&config, &mut detector) };
     assert_eq!(status, ct_status_t::CT_STATUS_OK);

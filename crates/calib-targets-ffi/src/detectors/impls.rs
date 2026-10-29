@@ -156,7 +156,7 @@ pub(super) unsafe fn chessboard_detector_detect_impl(
     let result = ct_chessboard_result_t {
         corners_len: corners_out.len(),
         cell_size: option_f32_to_ffi(detection.cell_size),
-        quality: detection_quality_to_ffi(&detection.quality.with_noise_sigma(frame.noise.sigma())),
+        quality: detection_quality_to_ffi(&detection.quality.with_noise_sigma(frame.noise_sigma)),
     };
 
     // SAFETY: `bufs.out_corners_len` and `bufs.out_result` are valid writable
@@ -425,7 +425,7 @@ pub(super) unsafe fn chessboard_detector_detect_all_impl(
         .map(|d| ct_chessboard_result_t {
             corners_len: d.corners.len(),
             cell_size: option_f32_to_ffi(d.cell_size),
-            quality: detection_quality_to_ffi(&d.quality.with_noise_sigma(frame.noise.sigma())),
+            quality: detection_quality_to_ffi(&d.quality.with_noise_sigma(frame.noise_sigma)),
         })
         .collect();
     let corners_out: Vec<ct_chessboard_corner_t> = detections

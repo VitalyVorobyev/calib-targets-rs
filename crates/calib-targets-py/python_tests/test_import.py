@@ -41,8 +41,8 @@ def test_module_exports() -> None:
 
 def test_new_config_types_exported() -> None:
     assert hasattr(calib_targets, "ChessConfig")
-    assert hasattr(calib_targets, "RefinerConfig")
+    assert hasattr(calib_targets, "ImageRefiner")
+    assert hasattr(calib_targets, "Uncertainty")
     assert hasattr(calib_targets, "CenterOfMassConfig")
-    assert hasattr(calib_targets, "ForstnerConfig")
     assert hasattr(calib_targets, "SaddlePointConfig")
     assert hasattr(calib_targets, "GridGraphParams")

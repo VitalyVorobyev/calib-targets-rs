@@ -6,7 +6,7 @@
 
 use axum::extract::State;
 use axum::Json;
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::detect_corners;
 use calib_targets_bench::diagnose::diagnose_topological;
 use calib_targets_bench::runner::load_entry_image;
 use serde::Deserialize;
@@ -50,8 +50,7 @@ pub async fn diagnose(
             entry.path
         )));
     }
-    let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = Some(req.orientation_method.into());
+    let chess_cfg = super::studio_chess_config(req.orientation_method.into());
 
     let value = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, ApiError> {
         let img = load_entry_image(&abs)?;

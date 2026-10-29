@@ -4,7 +4,7 @@
 use axum::extract::State;
 use axum::Json;
 use calib_targets::chessboard::ChessboardParams;
-use calib_targets::detect::{default_chess_config, OrientationMethod};
+use calib_targets::detect::OrientationMethod;
 use calib_targets_bench::baseline::{Baseline, BaselineCorner, BaselineImage};
 use calib_targets_bench::config::merge_detector_params;
 use calib_targets_bench::diff::BaselineDiff;
@@ -248,8 +248,7 @@ async fn detect_chessboard_family(
 ) -> Result<Json<DetectResponse>, ApiError> {
     let engine = Engine::from(req.engine);
     let params = effective_params(&req.params, engine)?;
-    let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = Some(req.orientation_method.into());
+    let chess_cfg = super::studio_chess_config(req.orientation_method.into());
 
     let outcome = tokio::task::spawn_blocking(move || {
         let img = load_entry_image(&abs)?;

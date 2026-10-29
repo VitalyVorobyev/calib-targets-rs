@@ -9,22 +9,30 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
-Moves to `chess-corners` 1.6, exposes its new corner-detector knobs on every
-binding, reports each corner's position covariance on every detection result,
-and summarises every detection's localization quality. Corner positions, labels
-and ids are unchanged, except that the marker-board detector no longer labels a
-board whose circles it cannot see, nor delivers corners off the board. The C ABI
-moves to 6.0.0 (`ct_chess_config_t`, the two
-corner structs and the four result headers grow).
+Moves to `chess-corners` 2.0, can report each corner's position covariance on
+every detection result (opt-in), and summarises every detection's localization
+quality. A breaking release: the `ml-refiner` feature and the Förstner refiner
+are gone, the corner config's refiner and uncertainty settings take
+`chess-corners` 2.0's shape, and `AxisEstimate::sigma` is renamed
+`fit_std_error`. Corner positions, labels and ids are unchanged, except where
+noted below (the grid builder's clutter fix and the marker board). The C ABI
+moves to 6.0.0. See
+[`docs/migrations/0.16.0.md`](docs/migrations/0.16.0.md).
 
 ### Added
 
-- **`noise_sigma` and `uncertainty` on the ChESS config** (`DetectorConfig`
-  upstream) in Python (`ChessConfig.noise_sigma`, `ChessConfig.uncertainty`,
-  `Uncertainty`), WASM (`ChessConfig.noise_sigma` / `uncertainty`), the C ABI
-  (`ct_chess_config_t::noise_sigma` / `uncertainty`, `CT_UNCERTAINTY_*`) and
-  the JSON Schemas. They select how each corner's position covariance is
-  computed.
+- **`uncertainty` and `refiner` on the ChESS config** (`DetectorConfig`
+  upstream), on every binding: `Uncertainty::{Off, Propagated { noise }}` with
+  `NoiseLevel::{Estimate, Known(σ)}` selects whether, and with which image
+  noise level, each corner's position covariance is computed (off by
+  default), and `refiner: Option<ImageRefiner>` selects the saddle-point image
+  refiner. Rust: `Uncertainty`, `NoiseLevel` and `ImageRefiner` are
+  re-exported from `calib_targets::detect` and `calib_targets_core`. Python:
+  `Uncertainty.off()` / `Uncertainty.propagated(noise_sigma=None)` and
+  `ImageRefiner.saddle_point(...)`. WASM typings: `Uncertainty`, `NoiseLevel`,
+  `ImageRefiner`. C ABI: `ct_chess_config_t::uncertainty`
+  (`CT_UNCERTAINTY_OFF = 0`, `CT_UNCERTAINTY_PROPAGATED`) and `noise_sigma`
+  (the known level, read only when propagated). JSON Schemas updated.
 - **Per-corner position covariance on every result.** `ChessCorner`,
   `ChessboardCorner`, `LabeledCorner`, `CharucoCorner`, `PuzzleBoardCorner`,
   `PuzzlePoleCorner` and `MarkerBoardCorner` gain
@@ -32,9 +40,9 @@ corner structs and the four result headers grow).
   image frame, as `chess-corners` measured it (noise propagated through the
   localizer plus its systematic error). New `calib_targets_core::PositionCovariance`
   with `sigma_max_px`, `mahalanobis_sq` and `transformed` (`G Σ Gᵀ`). It is
-  `None` under `uncertainty: Off`, with an `upscale` stage or the ML refiner,
-  when the frame's noise estimate declines (typical of JPEG input — supply
-  `noise_sigma`), and when a saddle-point refinement does not converge. A
+  `None` under `uncertainty: Off` (the default), with an `upscale` stage, when
+  the frame's noise estimate declines (typical of JPEG input — supply a known
+  noise level), and when a saddle-point refinement does not converge. A
   ChArUco corner re-detected near its marker-predicted position carries the
   covariance of that re-detection. Serialized as `null` when absent; JSON
   without the key (e.g. a corner cloud for `*_with_corners`) still reads.
@@ -43,8 +51,8 @@ corner structs and the four result headers grow).
   field on every corner shape. C ABI: `ct_position_covariance_t`, and
   `ct_labeled_corner_t` / `ct_chessboard_corner_t` append
   `has_position_covariance` + `position_covariance`.
-- WASM typings declare the Radon strategy (`RadonConfig`, `RadonRefiner`,
-  `PeakFitMode`) and `PuzzleBoardAdvancedTuning.edge_consensus`.
+- WASM typings declare the Radon strategy (`RadonConfig`, `PeakFitMode`) and
+  `PuzzleBoardAdvancedTuning.edge_consensus`.
 - **Per-detection localization quality.** `ChessboardDetection`,
   `CharucoDetection`, `PuzzleBoardDetection`, `PuzzlePoleDetection` and
   `MarkerBoardDetection` gain `quality: DetectionQuality`
@@ -56,9 +64,10 @@ corner structs and the four result headers grow).
   giving `local_residual_rms_px` and a robust variance factor
   `variance_factor` (σ̂₀², the residuals whitened by the corner's and the
   prediction's covariance) with their corner counts. Report-only: nothing gates
-  on it. `noise_sigma` is set when the detector ran the corner pass itself
-  (every image-level `detect`, `diagnose` and `*_best` entry point), `None` for
-  `*_with_corners`. A PuzzlePole reports the covariance statistics only (the
+  on it. `noise_sigma` is set when the corners carry a covariance and the
+  detector ran the corner pass itself (every image-level `detect`, `diagnose`
+  and `*_best` entry point), `None` for `*_with_corners`; the local residual is
+  measured either way. A PuzzlePole reports the covariance statistics only (the
   local check presumes a planar target). Serialized under `quality`; JSON
   without it still reads. `DetectionQuality::from_corners` /
   `from_covariances` measure any corner set. Measuring costs a few µs per frame.
@@ -78,15 +87,32 @@ corner structs and the four result headers grow).
 
 ### Changed
 
-- **Corner detection costs more by default.** `chess-corners` 1.6 computes a
-  position covariance for every corner (`uncertainty: "propagated"`), which
-  includes a per-image noise estimate. Set `uncertainty` to `"off"` to skip
-  both; positions are identical either way. The corner front end now makes
-  that noise estimate once per frame, before the corner pass: when it
-  declines, the pass runs without covariance instead of propagating noise
-  through every corner for nothing, and ChArUco reuses the frame's level for
-  the corners it re-detects (the `*_best` ChArUco sweep shares it across
-  configs). Corner sets, positions and labels are unchanged.
+- **`chess-corners` 2.0.** The position covariance is off by default
+  (`Uncertainty::Off`): weighting a real calibration by it has not been shown
+  to help, its real-data floor was fitted on one camera, and it costs a
+  per-image noise estimate plus a few percent of the corner pass. Opt in with
+  `Uncertainty::Propagated`. When it is on, ChArUco reuses the frame's noise
+  level for the corners it re-detects (the `*_best` ChArUco sweep shares it
+  across configs). Corner sets and positions are unchanged by the tier.
+- **The refiner moved out of the ChESS strategy.** `chess-corners` 2.0 makes
+  image refinement one optional stage: `DetectorConfig::refiner:
+  Option<ImageRefiner>` (`None`, the default, keeps the ChESS center of mass),
+  and the center-of-mass tuning is `ChessConfig::center_of_mass`. JSON:
+  `strategy.chess.refiner` becomes a top-level `"refiner"` (`null` or
+  `{"saddle_point": {...}}`); `uncertainty` becomes `"off"` or
+  `{"propagated": {"noise": "estimate" | {"known": σ}}}`, and the top-level
+  `noise_sigma` is gone. Config loaders reject unknown keys, so a stale 1.x key
+  fails to load instead of being dropped (Python `ChessConfig.from_dict` too).
+- **`AxisEstimate::sigma` is `fit_std_error`**, following `chess-corners` 2.0:
+  the least-squares standard error of the axis fit in radians, a fit-quality
+  score rather than a calibrated 1σ. Values are about 15% smaller than 1.x
+  `sigma` at the median, and 1.7.1 fixed RingFit scores that were reported on
+  the wrong axis. The admission gate that compares it with the 15° alignment
+  tolerance is unchanged, so it now admits slightly more corners; with the
+  grid builder's clutter fix (below) labels are unchanged on the public
+  regression set, and elsewhere a few frontier corners a recovery booster used
+  to add are no longer added. JSON key `axes[].fit_std_error` (WASM typings,
+  Python corner dicts, diagnostics traces).
 - ChArUco corners re-detected near a marker can move by a fraction of a pixel:
   `chess-corners` 1.5 re-centres its saddle-point refiner. Labels and ids are
   unchanged.
@@ -96,15 +122,35 @@ corner structs and the four result headers grow).
   the facade, so their results know the frame's noise level. Output is
   otherwise unchanged.
 - **C ABI 6.0.0**: `ct_chess_config_t` appends `noise_sigma`
-  (`ct_optional_f32_t`) and `uncertainty` (`ct_uncertainty_t`). Both are safe to
-  zero-initialise. `ct_labeled_corner_t` and `ct_chessboard_corner_t` append
+  (`ct_optional_f32_t`) and `uncertainty` (`ct_uncertainty_t`;
+  `CT_UNCERTAINTY_OFF = 0`, so zero-initialised means no covariance);
+  `ct_refiner_config_t` drops the Förstner tuning. `ct_labeled_corner_t` and
+  `ct_chessboard_corner_t` append
   `has_position_covariance` and `position_covariance`, so caller-allocated
   corner arrays must be rebuilt against the new header. The four result headers
   append `quality` (`ct_detection_quality_t`).
 - ChArUco `detect_with_corners` reads the uncertainty settings of
-  `params.chess` for the corners it re-detects, and without a supplied
-  `noise_sigma` estimates the frame's noise once per call when it re-detects
-  one; `detect` reuses its own corner pass's estimate.
+  `params.chess` for the corners it re-detects, and unless they supply a known
+  noise level estimates the frame's noise once per call when it re-detects
+  one; `detect` reuses its own corner pass's level.
+
+### Removed
+
+- **The `ml-refiner` feature** of every crate and the Python package:
+  `chess-corners` 2.0 removed the ML refiner (dominated by the saddle-point
+  refiner). Use `ImageRefiner::SaddlePoint`.
+- **The Förstner refiner** everywhere (Python `ForstnerConfig`, WASM
+  `ForstnerConfig`, C `CT_REFINER_KIND_FORSTNER` and `ct_forstner_config_t`),
+  removed by `chess-corners` 2.0. Use the saddle-point refiner.
+- Python `ChessRefiner` and the deprecated `RefinerConfig` shim (use
+  `ImageRefiner` and `ChessStrategyConfig.center_of_mass`), and
+  `ChessConfig.noise_sigma` (use `Uncertainty.propagated(noise_sigma=σ)`).
+  WASM typings: `ChessRefiner`, `RefinerConfig`, `RadonRefiner`,
+  `ChessConfig.noise_sigma`.
+- `FrameNoise` (`#[doc(hidden)]`, workspace-internal): the corner front end
+  reads the frame's noise level from `chess-corners`
+  (`Detector::last_noise_sigma`) instead of estimating it itself;
+  `CornerFrame` carries `noise_sigma`.
 - **Marker-board circle candidates are judged against an empty square.** A
   `CircleCandidate`'s `contrast` is now how far its disk-minus-ring reading
   (`score`, unchanged) departs from what a disk-free square of the same colour

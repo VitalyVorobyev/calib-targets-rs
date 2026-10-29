@@ -172,7 +172,7 @@ pub(super) fn clustered_augs(
         .map(|(i, c)| {
             let mut aug = CornerAug::from_chess_corner(i, c);
             if c.strength >= min_corner_strength
-                && c.axes[0].sigma.max(c.axes[1].sigma) <= max_axis_sigma
+                && c.axes[0].fit_std_error.max(c.axes[1].fit_std_error) <= max_axis_sigma
             {
                 aug.stage = CornerStage::Strong;
             }

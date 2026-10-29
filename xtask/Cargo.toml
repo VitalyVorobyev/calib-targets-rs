@@ -11,8 +11,6 @@ description = "Workspace task runner (JSON Schema generation)"
 anyhow = "1"
 schemars.workspace = true
 serde_json.workspace = true
-# Default features only (no `ml-refiner`): the committed schemas must match the
-# npm (wasm) build, which does not enable the ONNX refiner.
 calib-targets-aruco = { workspace = true, features = ["schemars"] }
 calib-targets-charuco = { workspace = true, features = ["schemars"] }
 calib-targets-chessboard = { workspace = true, features = ["schemars"] }

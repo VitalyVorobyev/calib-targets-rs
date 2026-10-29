@@ -69,7 +69,7 @@ impl PuzzlePoleDetector {
     ) -> Result<PuzzlePoleDetection, PuzzlePoleDetectError> {
         let frame = detect_corner_frame(image, &self.params.chess);
         let mut result = self.detect_with_corners(image, &frame.corners)?;
-        result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+        result.quality = result.quality.with_noise_sigma(frame.noise_sigma);
         Ok(result)
     }
 

@@ -98,8 +98,8 @@ fn collect_strong_features(corners: &[CornerAug]) -> (Vec<AxisFeature>, Vec<usiz
         }
         features.push(AxisFeature::new(
             [
-                AxisObservation::new(corner.axes[0].angle, corner.axes[0].sigma),
-                AxisObservation::new(corner.axes[1].angle, corner.axes[1].sigma),
+                AxisObservation::new(corner.axes[0].angle, corner.axes[0].fit_std_error),
+                AxisObservation::new(corner.axes[1].angle, corner.axes[1].fit_std_error),
             ],
             corner.strength,
         ));
@@ -192,11 +192,11 @@ mod tests {
             axes: [
                 AxisEstimate {
                     angle: wrap_pi(a0),
-                    sigma,
+                    fit_std_error: sigma,
                 },
                 AxisEstimate {
                     angle: wrap_pi(a1),
-                    sigma,
+                    fit_std_error: sigma,
                 },
             ],
             strength,
@@ -365,11 +365,11 @@ mod plateau_peak_regression {
                     axes: [
                         AxisEstimate {
                             angle: a0,
-                            sigma: 0.008,
+                            fit_std_error: 0.008,
                         },
                         AxisEstimate {
                             angle: a1,
-                            sigma: 0.008,
+                            fit_std_error: 0.008,
                         },
                     ],
                     strength: 612.0,

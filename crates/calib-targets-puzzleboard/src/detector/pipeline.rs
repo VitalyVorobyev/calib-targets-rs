@@ -107,7 +107,7 @@ impl PuzzleBoardDetector {
     ) -> Result<PuzzleBoardDetection, PuzzleBoardDetectError> {
         let frame = detect_corner_frame(image, &self.params.chess);
         let mut result = self.detect_with_corners(image, &frame.corners)?;
-        result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+        result.quality = result.quality.with_noise_sigma(frame.noise_sigma);
         Ok(result)
     }
 
@@ -171,7 +171,7 @@ impl PuzzleBoardDetector {
         let frame = detect_corner_frame(image, &self.params.chess);
         let (mut result, diagnostics) = self.diagnose_with_corners(image, &frame.corners);
         if let Ok(result) = &mut result {
-            result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+            result.quality = result.quality.with_noise_sigma(frame.noise_sigma);
         }
         (result, diagnostics)
     }

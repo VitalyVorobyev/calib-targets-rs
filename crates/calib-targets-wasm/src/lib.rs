@@ -704,7 +704,7 @@ pub fn detect_chessboard(
     let frame = calib_targets_chessboard::detect_corner_frame(&view, &chess);
     let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let result = detector.detect(&frame.corners).map(|mut d| {
-        d.quality = d.quality.with_noise_sigma(frame.noise.sigma());
+        d.quality = d.quality.with_noise_sigma(frame.noise_sigma);
         d
     });
     to_js(&result)
@@ -734,7 +734,7 @@ pub fn detect_chessboard_all(
     let detector = ChessDetector::new(cb_params).map_err(|e| JsError::new(&e.to_string()))?;
     let mut results = detector.detect_all(&frame.corners);
     for d in &mut results {
-        d.quality = d.quality.with_noise_sigma(frame.noise.sigma());
+        d.quality = d.quality.with_noise_sigma(frame.noise_sigma);
     }
     to_js(&results)
 }

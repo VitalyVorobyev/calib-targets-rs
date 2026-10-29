@@ -1,9 +1,27 @@
 # Corner uncertainty & detection quality
 
-Every delivered corner says how far it is likely to be from the true corner
-(its **position covariance**), and every detection summarises how well those
-covariances describe its corners (its **quality**). This page explains both and
+On request, every delivered corner says how far it is likely to be from the
+true corner (its **position covariance**), and every detection summarises how
+well its corners are localized (its **quality**). This page explains both and
 how to use them.
+
+## Switching it on
+
+The covariance is **off by default**: it costs a per-image noise estimate and a
+few percent of the corner pass, and it is a report rather than an input to any
+detection decision. Select it in the ChESS config:
+
+| Binding | Covariance on, noise estimated per image | Known sensor noise σ (gray levels) |
+|---|---|---|
+| Rust | `.with_uncertainty(Uncertainty::Propagated { noise: NoiseLevel::Estimate })` | `NoiseLevel::Known(σ)` |
+| Python | `ChessConfig(uncertainty=Uncertainty.propagated())` | `Uncertainty.propagated(noise_sigma=σ)` |
+| JS / JSON | `uncertainty: { propagated: { noise: "estimate" } }` | `{ propagated: { noise: { known: σ } } }` |
+| C | `uncertainty = CT_UNCERTAINTY_PROPAGATED` | plus `noise_sigma` set to σ |
+
+`Uncertainty`, `NoiseLevel` and `DetectorConfig` are re-exported from
+`calib_targets::detect`. Positions are identical either way. The local
+residual of the [quality](#the-per-detection-quality) is measured with or
+without it.
 
 ## The per-corner covariance
 
@@ -28,9 +46,9 @@ A corner carries `None` (`null` in JSON, Python and JS; `has_position_covariance
 
 | Cause | What to do |
 |---|---|
-| `uncertainty` is `Off`, or the ML refiner is selected | Keep the default `Propagated` tier and a classic refiner. |
+| `uncertainty` is `Off` (the default) | Switch it on, as [above](#switching-it-on). |
 | An `upscale` stage is active | Interpolated pixels carry correlated noise; none is reported. |
-| The frame's noise estimate declined — typical of JPEG or demosaiced images | Supply `chess.noise_sigma` (gray levels), measured on your camera's raw frames. |
+| The frame's noise estimate declined — typical of JPEG or demosaiced images | Supply the noise level (`NoiseLevel::Known`), measured on your camera's raw frames. |
 | A saddle-point refinement did not converge for that corner | Give the corner a low weight, or leave it out. |
 
 Positions are identical whether or not a covariance is computed.
@@ -43,7 +61,7 @@ Every result — `ChessboardDetection`, `CharucoDetection`,
 
 | Field | Meaning |
 |---|---|
-| `noise_sigma` | Image noise (gray levels, 1σ) the covariances were computed with — estimated or supplied. `None` for `*_with_corners` calls (the detector did not see the corner pass) or when the estimate declined. |
+| `noise_sigma` | Image noise (gray levels, 1σ) the covariances were computed with — estimated or supplied. `None` when no corner carries a covariance (the default), for `*_with_corners` calls (the detector did not see the corner pass), or when the estimate declined. |
 | `covariance_coverage` | Fraction of delivered corners that carry a covariance. |
 | `median_sigma_px`, `p95_sigma_px` | Median and 95th percentile of each corner's σ along its least certain direction (`PositionCovariance::sigma_max_px`). |
 | `local_residual_count` | Corners with at least six of their eight grid neighbours. |
@@ -93,17 +111,22 @@ Two known limits, both measured on the synthetic suite below:
 The check presumes a flat target. A PuzzlePole is curved, so its quality
 carries the covariance statistics only; the local fields stay unset.
 
-## Weighting a calibration
+## What it is good for
 
-Use the covariance as a per-observation weight: whiten each reprojection
-residual `e` with its corner's covariance, minimising `Σ eᵀ Σ⁻¹ e` instead of
-`Σ |e|²`. The chess-corners book's
-[§8.6.1](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html)
-gives the recipe with Rust and Python examples, and §8.5 lists where the model
-does not hold — notably that on real data most of a corner's error repeats
-across views, so weighting changes the held-out error little. The calibration's
-own σ̂₀² then measures everything the covariances leave out, shared errors
-included.
+- **Comparing frames of one setup.** The quality's σ and σ̂₀² rank frames taken
+  with the same camera and target; a frame that stands out deserves a look.
+- **Not a calibration weight, as measured so far.** Whitening each
+  reprojection residual with its corner's covariance (`Σ eᵀ Σ⁻¹ e`) has not
+  lowered the held-out error of a real calibration: on real data most of a
+  corner's error repeats across views, and the per-corner σ ranks real errors
+  only weakly. That is why `chess-corners` 2.0 switched the covariance off by
+  default.
+- **Not an absolute error bound on new optics.** The model's real-data floor
+  was fitted on one camera; on another its σ̂₀² reads well above 1.
+
+The chess-corners book's
+[Part VIII](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html)
+gives the model, the weighting recipe and the evidence.
 
 ## Measured accuracy (synthetic)
 
@@ -112,8 +135,8 @@ positions — 16 × 16 supersampling per pixel, Gaussian lens blur, sensor noise
 8-bit quantisation — over a grid of 80 conditions per family: 8 and 16 px cells
 (ChArUco: 24 and 32 px, the smallest its markers decode at), in-plane rotation
 0/8/30/45°, perspective tilt 0/30°, blur σ 0.5/1.5 px, noise σ 1/4 gray levels on
-a 190-level step, and a radial-distortion level. The detector estimates the noise
-from each image. Medians over the conditions; **RMSE** is over corners found
+a 190-level step, and a radial-distortion level. The suite switches the
+covariance on, and the detector estimates the noise from each image. Medians over the conditions; **RMSE** is over corners found
 within 1 px with the right label; **σ̂₀² truth** whitens the true errors with the
 reported covariances (mean form); **local σ̂₀²** is the detection's own
 `quality.variance_factor`.

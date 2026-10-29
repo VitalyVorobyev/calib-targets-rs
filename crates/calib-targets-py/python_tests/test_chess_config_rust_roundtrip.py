@@ -94,15 +94,14 @@ def test_detection_params_accepted_by_rust() -> None:
     _core.detect_chessboard(image, chess_cfg=cfg.to_dict())
 
 
-def test_forstner_refiner_accepted_by_rust() -> None:
-    """A non-default ``ChessRefiner`` variant deserialises on the Rust side."""
+def test_saddle_point_refiner_accepted_by_rust() -> None:
+    """The image refiner and the center-of-mass tuning deserialise in Rust."""
     image = _load_gray("mid.png")
     cfg = ct.ChessConfig(
         strategy=ct.DetectionStrategy.chess(
-            ct.ChessStrategyConfig(
-                refiner=ct.ChessRefiner.forstner(ct.ForstnerConfig(radius=2))
-            )
-        )
+            ct.ChessStrategyConfig(center_of_mass=ct.CenterOfMassConfig(radius=3))
+        ),
+        refiner=ct.ImageRefiner.saddle_point(ct.SaddlePointConfig(radius=2)),
     )
     _core.detect_chessboard(image, chess_cfg=cfg.to_dict())
 
@@ -126,7 +125,7 @@ def test_fixed_upscale_accepted_by_rust() -> None:
 
 
 def test_uncertainty_knobs_accepted_by_rust() -> None:
-    """``noise_sigma`` / ``uncertainty`` deserialise on the Rust side.
+    """Every ``uncertainty`` value deserialises on the Rust side.
 
     Corner positions do not depend on the uncertainty tier, so switching the
     covariance off (or pinning the noise level) must leave the labelled corner
@@ -135,8 +134,8 @@ def test_uncertainty_knobs_accepted_by_rust() -> None:
     image = _load_gray("mid.png")
     baseline = _core.detect_chessboard(image, chess_cfg=ct.ChessConfig().to_dict())
     for cfg in (
-        ct.ChessConfig(uncertainty=ct.Uncertainty.OFF),
-        ct.ChessConfig(noise_sigma=2.0),
+        ct.ChessConfig(uncertainty=ct.Uncertainty.propagated()),
+        ct.ChessConfig(uncertainty=ct.Uncertainty.propagated(noise_sigma=2.0)),
     ):
         result = _core.detect_chessboard(image, chess_cfg=cfg.to_dict())
         assert _corner_count(result) == _corner_count(baseline)
@@ -149,3 +148,13 @@ def test_unknown_uncertainty_rejected_by_rust() -> None:
     data["uncertainty"] = "full"
     with pytest.raises(ValueError):
         _core.detect_chessboard(image, chess_cfg=data)
+
+
+def test_stale_1x_keys_rejected_by_rust() -> None:
+    """chess-corners 2.0 rejects a stale 1.x key instead of dropping it."""
+    image = _load_gray("mid.png")
+    for key, value in (("noise_sigma", 2.0), ("uncertainty", "propagated")):
+        data = ct.ChessConfig().to_dict()
+        data[key] = value
+        with pytest.raises(ValueError):
+            _core.detect_chessboard(image, chess_cfg=data)

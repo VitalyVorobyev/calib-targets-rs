@@ -30,11 +30,11 @@ fn corner(x: f32, y: f32, parity: usize) -> ChessCorner {
         [
             AxisEstimate {
                 angle: a0,
-                sigma: 0.02,
+                fit_std_error: 0.02,
             },
             AxisEstimate {
                 angle: a1,
-                sigma: 0.02,
+                fit_std_error: 0.02,
             },
         ],
         100.0,

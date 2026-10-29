@@ -129,7 +129,7 @@ pub fn run_snap(
         Engine::Pipeline => match run_pipeline_engine(params, &frame.corners) {
             Some((image, quality)) => (
                 Some(image),
-                Some(quality.with_noise_sigma(frame.noise.sigma())),
+                Some(quality.with_noise_sigma(frame.noise_sigma)),
             ),
             None => (None, None),
         },
@@ -294,6 +294,7 @@ mod tests {
     use super::*;
     use crate::dataset::ImageKind;
     use calib_targets::detect::default_chess_config;
+    use chess_corners::NoiseLevel;
 
     fn entry(upscale: u32) -> DatasetEntry {
         DatasetEntry {
@@ -315,15 +316,18 @@ mod tests {
             &entry(upscale),
             0,
             &ChessboardParams::default(),
-            &default_chess_config(),
+            &default_chess_config().with_uncertainty(Uncertainty::Propagated {
+                noise: NoiseLevel::Estimate,
+            }),
             Engine::Pipeline,
         )
         .expect("snap");
         outcome.quality.expect("the board is detected")
     }
 
-    /// A snap the bench resamples itself reports no covariance and no noise
-    /// level: both would describe interpolated pixels.
+    /// With the covariance on, a snap the bench resamples itself still reports
+    /// no covariance and no noise level: both would describe interpolated
+    /// pixels.
     #[test]
     fn an_upscaled_snap_reports_no_covariance() {
         let native = quality(1);

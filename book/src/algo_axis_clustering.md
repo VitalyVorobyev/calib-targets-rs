@@ -19,8 +19,10 @@ caller-side.
 ## Input / output
 
 - **Input:** a slice of `AxisFeature`, each carrying its two
-  `AxisObservation`s `(angle, sigma)` and a detector `strength`. Axes
-  whose `sigma` is the no-info sentinel (`≥ π`) or non-finite are
+  `AxisObservation`s `(angle, sigma)` and a detector `strength`. `sigma` is
+  the axis's uncertainty score — for ChESS corners the fit's standard error
+  (`AxisEstimate::fit_std_error`). Axes whose `sigma` is the no-info sentinel
+  (`≥ π`) or non-finite are
   skipped; callers pre-filter to the features they want to vote (the
   chessboard passes only its `Strong` corners).
 - **Output:**

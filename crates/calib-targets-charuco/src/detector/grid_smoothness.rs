@@ -91,6 +91,7 @@ pub(crate) fn smooth_grid_corners(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::detector::corner_refit::FrameNoise;
 
     /// Helper: build a simple grid of corners with uniform spacing.
     fn make_grid(rows: i32, cols: i32, spacing: f32) -> CornerMap {
@@ -125,7 +126,7 @@ mod tests {
         let mut detector = Redetector::new(
             crate::detector::params::default_redetect_params(),
             &front_end,
-            None,
+            FrameNoise::Unresolved,
         );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
@@ -153,7 +154,7 @@ mod tests {
         let mut detector = Redetector::new(
             crate::detector::params::default_redetect_params(),
             &front_end,
-            None,
+            FrameNoise::Unresolved,
         );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
@@ -190,7 +191,7 @@ mod tests {
         let mut detector = Redetector::new(
             crate::detector::params::default_redetect_params(),
             &front_end,
-            None,
+            FrameNoise::Unresolved,
         );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
@@ -216,7 +217,7 @@ mod tests {
         let mut detector = Redetector::new(
             crate::detector::params::default_redetect_params(),
             &front_end,
-            None,
+            FrameNoise::Unresolved,
         );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
@@ -245,7 +246,7 @@ mod tests {
         let mut detector = Redetector::new(
             crate::detector::params::default_redetect_params(),
             &front_end,
-            None,
+            FrameNoise::Unresolved,
         );
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);

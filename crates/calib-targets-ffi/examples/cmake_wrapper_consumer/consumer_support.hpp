@@ -155,11 +155,6 @@ inline ct_refiner_config_t default_refiner() {
   ct_refiner_config_t config{};
   config.kind = CT_REFINER_KIND_CENTER_OF_MASS;
   config.center_of_mass.radius = 2;
-  config.forstner.radius = 2;
-  config.forstner.min_trace = 25.0f;
-  config.forstner.min_det = 1e-3f;
-  config.forstner.max_condition_number = 50.0f;
-  config.forstner.max_offset = 1.5f;
   config.saddle_point.radius = 2;
   config.saddle_point.det_margin = 1e-3f;
   config.saddle_point.max_offset = 1.5f;
@@ -182,8 +177,8 @@ inline ct_chess_config_t default_shared_chess_config() {
   config.multiscale.merge_radius = 3.0f;
   config.upscale.mode = CT_UPSCALE_MODE_DISABLED;
   config.upscale.factor = 2;
-  // ABI 6.0.0: estimate the pixel noise per image, propagated covariance.
-  // Both are the value-initialised values; spelled out for the reader.
+  // ABI 6.0.0: opt into the position covariance (value-initialised: off),
+  // with the pixel noise estimated per image (noise_sigma unset).
   config.noise_sigma.has_value = CT_FALSE;
   config.uncertainty = CT_UNCERTAINTY_PROPAGATED;
   return config;
@@ -219,7 +214,7 @@ inline std::size_t count_valid_covariances(const std::vector<ct_chessboard_corne
 }
 
 // Whether a chessboard result's `quality` is internally consistent and
-// populated, as it is for a lossless frame detected by the default config.
+// populated, as it is for a lossless frame detected with the covariance on.
 inline bool quality_is_sane(const ct_detection_quality_t &q, std::size_t corners_len) {
   return q.noise_sigma.has_value == CT_TRUE && q.noise_sigma.value >= 0.0f &&
          q.covariance_coverage >= 0.9f && q.covariance_coverage <= 1.0f &&

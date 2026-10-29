@@ -47,7 +47,7 @@ jobs:
 
       - name: JSON Schemas are up to date
         # Regenerates schemas/*.json from the Rust config types (default
-        # features, no ml-refiner) and fails on any drift from the committed
+        # features) and fails on any drift from the committed
         # copies. Fix with `cargo xtask emit-schemas`.
         if: matrix.toolchain == 'stable'
         run: cargo xtask emit-schemas --check
@@ -62,10 +62,9 @@ jobs:
       # `link-check`, off by default — sat broken on `main` after a
       # `#[non_exhaustive]` struct gained a field, with five green checks.
       #
-      # This enables every *local* feature and deliberately omits `ml-refiner`,
-      # whose `tract` ONNX runtime is what makes `--all-features` too slow to
-      # run per-PR. It compiles in seconds and would have caught that break.
-      - name: check (every local feature, no ml-refiner)
+      # This enables every local feature. It compiles in seconds and would have
+      # caught that break.
+      - name: check (every local feature)
         if: matrix.toolchain == 'stable'
         run: >
           cargo check --workspace --all-targets --features

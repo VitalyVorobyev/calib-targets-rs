@@ -227,9 +227,15 @@ export type GridAlignment = GridTransform;
 // Corner outputs
 // ---------------------------------------------------------------------------
 
+/**
+ * One local grid axis of a corner: `angle` in radians (modulo π) and
+ * `fit_std_error`, the standard error of the axis fit in radians — a
+ * fit-quality score (lower is a cleaner fit; `π` means no information), not a
+ * calibrated 1σ bound on the angle.
+ */
 export interface AxisEstimate {
   angle: number;
-  sigma: number;
+  fit_std_error: number;
 }
 
 /**
@@ -257,8 +263,9 @@ export interface PositionCovariance {
 export interface DetectionQuality {
   /**
    * Image noise (gray levels, 1σ) the covariances were computed with; `null`
-   * when the detector did not run the corner pass itself (`*_with_corners`)
-   * or the noise estimate declined.
+   * when no corner carries a covariance (uncertainty off, the default), the
+   * detector did not run the corner pass itself (`*_with_corners`), or the
+   * noise estimate declined.
    */
   noise_sigma: number | null;
   /** Fraction of delivered corners carrying a covariance, in `[0, 1]`. */
@@ -299,9 +306,9 @@ export interface LabeledCorner {
   position: Point2;
   /**
    * Covariance of `position` in px² (image frame), or `null` when the corner
-   * detector measured none: uncertainty off, an upscale stage, a refiner that
-   * reports none, a noise estimate that declined (e.g. JPEG — supply
-   * `noise_sigma`).
+   * detector measured none: uncertainty off (the default), an upscale stage,
+   * a noise estimate that declined (e.g. JPEG — supply a known noise level
+   * in `uncertainty`).
    */
   position_covariance: PositionCovariance | null;
   /** Integer `(u, v)` grid label, rebased so the bounding-box minimum is `(0, 0)`. */
@@ -329,9 +336,9 @@ export interface ChessboardCorner {
   position: Point2;
   /**
    * Covariance of `position` in px² (image frame), or `null` when the corner
-   * detector measured none: uncertainty off, an upscale stage, a refiner that
-   * reports none, a noise estimate that declined (e.g. JPEG — supply
-   * `noise_sigma`).
+   * detector measured none: uncertainty off (the default), an upscale stage,
+   * a noise estimate that declined (e.g. JPEG — supply a known noise level
+   * in `uncertainty`).
    */
   position_covariance: PositionCovariance | null;
   /** Grid label `(u, v)` — always present for a chessboard corner. */
@@ -369,9 +376,9 @@ export interface CharucoCorner {
   position: Point2;
   /**
    * Covariance of `position` in px² (image frame), or `null` when the corner
-   * detector measured none: uncertainty off, an upscale stage, a refiner that
-   * reports none, a noise estimate that declined (e.g. JPEG — supply
-   * `noise_sigma`).
+   * detector measured none: uncertainty off (the default), an upscale stage,
+   * a noise estimate that declined (e.g. JPEG — supply a known noise level
+   * in `uncertainty`).
    */
   position_covariance: PositionCovariance | null;
   grid: Coord;
@@ -393,9 +400,9 @@ export interface MarkerBoardCorner {
   position: Point2;
   /**
    * Covariance of `position` in px² (image frame), or `null` when the corner
-   * detector measured none: uncertainty off, an upscale stage, a refiner that
-   * reports none, a noise estimate that declined (e.g. JPEG — supply
-   * `noise_sigma`).
+   * detector measured none: uncertainty off (the default), an upscale stage,
+   * a noise estimate that declined (e.g. JPEG — supply a known noise level
+   * in `uncertainty`).
    */
   position_covariance: PositionCovariance | null;
   grid: Coord;
@@ -454,9 +461,9 @@ export interface PuzzleBoardCorner {
   position: Point2;
   /**
    * Covariance of `position` in px² (image frame), or `null` when the corner
-   * detector measured none: uncertainty off, an upscale stage, a refiner that
-   * reports none, a noise estimate that declined (e.g. JPEG — supply
-   * `noise_sigma`).
+   * detector measured none: uncertainty off (the default), an upscale stage,
+   * a noise estimate that declined (e.g. JPEG — supply a known noise level
+   * in `uncertainty`).
    */
   position_covariance: PositionCovariance | null;
   grid: Coord;
@@ -481,25 +488,24 @@ export type ChessRing = "canonical" | "broad";
 export type OrientationMethod = "ring_fit" | "disk_fit";
 
 /**
- * Which position uncertainty the corner detector computes. `"propagated"`
- * (the default) propagates the image noise through each corner's localizer
- * and adds a per-localizer systematic term; `"off"` skips that work and the
- * per-image noise estimate. Corner positions are identical under both.
+ * The image noise level a propagated covariance is expressed with:
+ * `"estimate"` (from each image; unreliable on demosaiced or JPEG input) or
+ * `{ known: σ }`, the image's total pixel noise in gray levels (`>= 0`).
  */
-export type Uncertainty = "off" | "propagated";
+export type NoiseLevel = "estimate" | { known: number };
 
-/** Center-of-mass refinement on the ChESS response map. */
+/**
+ * Which position uncertainty each corner reports. `"off"` (the default)
+ * reports no position covariance and makes no noise estimate;
+ * `{ propagated: { noise } }` propagates the image noise through each corner's
+ * localizer and adds a per-localizer systematic term. Corner positions are
+ * identical under both.
+ */
+export type Uncertainty = "off" | { propagated: { noise: NoiseLevel } };
+
+/** The ChESS detector's own localizer: center of mass of the response map. */
 export interface CenterOfMassConfig {
   radius: number;
-}
-
-/** Förstner structure-tensor refinement on the image patch. */
-export interface ForstnerConfig {
-  radius: number;
-  min_trace: number;
-  min_det: number;
-  max_condition_number: number;
-  max_offset: number;
 }
 
 /** Quadratic saddle-surface fit on the image patch. */
@@ -511,22 +517,14 @@ export interface SaddlePointConfig {
 }
 
 /**
- * ChESS subpixel refiner — an externally tagged union, exactly as Rust's
- * `chess_corners::ChessRefiner` serialises: the variant name is the single
- * key and its tuning struct the value, e.g.
+ * The optional image-refinement stage ({@link ChessConfig.refiner}), an
+ * externally tagged union exactly as Rust's `chess_corners::ImageRefiner`
+ * serialises, e.g.
  * `{ saddle_point: { radius: 2, det_margin: 1e-3, max_offset: 1.5, min_abs_det: 1e-4 } }`.
+ * On ChESS it replaces the center of mass, starts from the integer response
+ * peak and drops a corner it rejects.
  */
-export type ChessRefiner =
-  | { center_of_mass: CenterOfMassConfig }
-  | { forstner: ForstnerConfig }
-  | { saddle_point: SaddlePointConfig };
-
-/**
- * @deprecated Use {@link ChessRefiner}. This name used to describe a
- * `{ kind, center_of_mass, forstner, saddle_point }` object that the WASM
- * entry points never accepted; it is now an alias of the real wire shape.
- */
-export type RefinerConfig = ChessRefiner;
+export type ImageRefiner = { saddle_point: SaddlePointConfig };
 
 /**
  * Pre-pipeline integer upscaling: `"disabled"`, or `{ fixed: k }` with
@@ -543,18 +541,11 @@ export type MultiscaleConfig =
 /** Strategy payload nested under {@link ChessConfig.strategy}. */
 export interface ChessStrategyConfig {
   ring: ChessRing;
-  refiner: ChessRefiner;
+  center_of_mass: CenterOfMassConfig;
 }
 
 /** 3-point subpixel fit of the Radon response-map peak. */
 export type PeakFitMode = "parabolic" | "gaussian";
-
-/**
- * Final subpixel position of a Radon corner: the response-map peak fit alone
- * (`"peak_fit"`, the default), or saddle-point refinement of each peak on the
- * input image.
- */
-export type RadonRefiner = "peak_fit" | { saddle_point: SaddlePointConfig };
 
 /** Whole-image Radon detector payload nested under {@link ChessConfig.strategy}. */
 export interface RadonConfig {
@@ -562,7 +553,6 @@ export interface RadonConfig {
   image_upsample: number;
   response_blur_radius: number;
   peak_fit: PeakFitMode;
-  refiner: RadonRefiner;
 }
 
 export type DetectionStrategy = { chess: ChessStrategyConfig } | { radon: RadonConfig };
@@ -593,12 +583,11 @@ export interface ChessConfig {
   orientation_method: OrientationMethod | null;
   merge_radius: number;
   /**
-   * Pixel-noise standard deviation in gray levels (`>= 0`) used to express
-   * each corner's position covariance in px². `null` / omitted estimates it
-   * from each image; set it when the sensor noise is known.
+   * Image-refinement stage, or `null` / omitted (the default) to keep the
+   * detector's own localizer (ChESS center of mass, Radon peak fit).
    */
-  noise_sigma?: number | null;
-  /** Which position uncertainty to compute. Default `"propagated"`. */
+  refiner?: ImageRefiner | null;
+  /** Which position uncertainty each corner reports. Default `"off"`. */
   uncertainty?: Uncertainty;
 }
 

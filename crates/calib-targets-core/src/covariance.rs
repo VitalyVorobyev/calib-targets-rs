@@ -15,11 +15,11 @@ use serde::{Deserialize, Serialize};
 /// # When a corner has none
 ///
 /// A corner's `position_covariance` is `None` when no covariance was measured:
-/// the corner config's `uncertainty` is `Off`; its `upscale` is active
-/// (interpolated pixels carry correlated noise); it uses the ML refiner; the
-/// frame's noise estimate declined (typical of JPEG input — supply
-/// `noise_sigma`); or a saddle-point refinement did not converge for that
-/// corner.
+/// the corner config's `uncertainty` is `Off` (the default — opt in with
+/// `Uncertainty::Propagated`); its `upscale` is active (interpolated pixels
+/// carry correlated noise); the frame's noise estimate declined (typical of
+/// JPEG input — supply the noise level with `NoiseLevel::Known`); or a
+/// saddle-point refinement did not converge for that corner.
 ///
 /// The model assumes white pixel noise in the image the detector ran on. If the
 /// caller resampled or blurred that image first (resizing it, or

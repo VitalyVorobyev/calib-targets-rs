@@ -56,12 +56,13 @@ use crate::{charuco, chessboard, core, marker, puzzleboard};
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
-// Only the two `chess-corners` types the workspace's own public API
-// legitimately exposes are re-exported. Advanced ChESS tuning types
-// (`ChessConfig`, `RadonConfig`, `Threshold`, `RefinerKind`, …) come from the
+// Only the `chess-corners` types the workspace's own public API legitimately
+// exposes are re-exported: `DetectorConfig` and the types of the top-level
+// fields callers routinely set on it. Advanced ChESS tuning types
+// (`ChessConfig`, `RadonConfig`, `SaddlePointConfig`, …) come from the
 // `chess-corners` crate directly — re-exporting the whole upstream surface
 // would freeze it into this crate's semver contract.
-pub use core::{DetectorConfig, OrientationMethod};
+pub use core::{DetectorConfig, ImageRefiner, NoiseLevel, OrientationMethod, Uncertainty};
 
 /// Errors produced by the high-level facade helpers.
 #[non_exhaustive]
@@ -289,7 +290,7 @@ fn with_frame_noise(
     mut detection: chessboard::ChessboardDetection,
     frame: &chessboard::CornerFrame,
 ) -> chessboard::ChessboardDetection {
-    detection.quality = detection.quality.with_noise_sigma(frame.noise.sigma());
+    detection.quality = detection.quality.with_noise_sigma(frame.noise_sigma);
     detection
 }
 
@@ -536,7 +537,7 @@ pub fn detect_puzzleboard_best(
         let frame = cached_frame(img, &params.chess, &mut corner_cache);
         match detect_puzzleboard_with_corners(img, &frame.corners, params) {
             Ok(mut r) => {
-                r.quality = r.quality.with_noise_sigma(frame.noise.sigma());
+                r.quality = r.quality.with_noise_sigma(frame.noise_sigma);
                 let better = match &best {
                     None => true,
                     Some(b) => {
@@ -603,7 +604,7 @@ pub fn detect_puzzlepole_best(
         let frame = cached_frame(img, &params.chess, &mut corner_cache);
         match detect_puzzlepole_with_corners(img, &frame.corners, params) {
             Ok(mut r) => {
-                r.quality = r.quality.with_noise_sigma(frame.noise.sigma());
+                r.quality = r.quality.with_noise_sigma(frame.noise_sigma);
                 let better = match &best {
                     None => true,
                     Some(b) => {
@@ -664,7 +665,7 @@ pub fn detect_marker_board_best(
         let frame = cached_frame(img, &params.chess, &mut corner_cache);
         let result = match detector.detect_with_corners(&gray_view(img), &frame.corners) {
             Ok(mut result) => {
-                result.quality = result.quality.with_noise_sigma(frame.noise.sigma());
+                result.quality = result.quality.with_noise_sigma(frame.noise_sigma);
                 result
             }
             Err(err) => {
