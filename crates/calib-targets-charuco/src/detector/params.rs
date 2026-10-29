@@ -1,5 +1,4 @@
 use crate::board::CharucoBoardSpec;
-use calib_targets_aruco::ScanDecodeConfig;
 use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{default_chess_config, DetectorConfig};
 use chess_corners::ImageRefiner;
@@ -53,19 +52,16 @@ pub struct CharucoParams {
     /// ChArUco board parameters
     #[serde(alias = "charuco")]
     pub board: CharucoBoardSpec,
-    /// Marker scan parameters.
+    /// Fraction of a marker bit cell ignored next to each cell edge when its
+    /// value is sampled, in `[0, 0.5)`. Default `0.06`.
     ///
-    /// `CharucoParams::for_board` uses a slightly smaller inset
-    /// (`inset_frac = 0.06`) to improve real-image robustness. If
-    /// `scan.marker_size_rel <= 0.0`, it is filled from the board spec.
-    ///
-    /// **`scan.border_bits` is derived, not configured.**
-    /// [`CharucoDetector::new`](crate::CharucoDetector::new) overwrites it with
-    /// [`CharucoBoardSpec::border_bits`], because the two describe the same
-    /// printed ring and the board is what describes the target. Set it on the
-    /// board — [`CharucoBoardSpec::with_border_bits`] — not here.
-    #[serde(default)]
-    pub scan: ScanDecodeConfig,
+    /// The rest of the marker sampling geometry describes the printed board
+    /// and comes from [`Self::board`]: the marker's size within its square
+    /// ([`CharucoBoardSpec::marker_size_rel`]) and the width of its border
+    /// ring ([`CharucoBoardSpec::border_bits`]).
+    #[serde(default = "default_inset_frac")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 0.5)))]
+    pub inset_frac: f32,
     /// Minimal number of marker inliers needed to accept the alignment.
     #[serde(default = "default_min_marker_inliers")]
     pub min_marker_inliers: usize,
@@ -198,6 +194,13 @@ fn default_corner_validation_threshold_rel() -> f32 {
     0.08
 }
 
+fn default_inset_frac() -> f32 {
+    // Smaller than the generic marker scanner's 0.10: ChArUco markers sit
+    // inside a white margin, so a thinner inset keeps more of each bit cell
+    // on blurry or unevenly lit images.
+    0.06
+}
+
 fn default_px_per_square() -> f32 {
     60.0
 }
@@ -323,24 +326,12 @@ impl CharucoParams {
         // alignment the healthy region votes for and applies it to the broken
         // region too.
 
-        let scan = ScanDecodeConfig::default()
-            .with_marker_size_rel(board.marker_size_rel)
-            // The border ring is a physical property of the printed board, so
-            // it comes from the spec rather than from a default: sampling the
-            // wrong ring width shifts every payload bit.
-            .with_border_bits(board.border_bits)
-            .with_inset_frac(0.06)
-            // Lower than the default (0.85) — downstream alignment validation
-            // rejects false positives, so a looser bar here improves recall on
-            // blurry or unevenly-lit images.
-            .with_min_border_score(0.75);
-
         Self {
             chess: default_chess_config(),
             px_per_square: 60.0,
             chessboard,
             board,
-            scan,
+            inset_frac: default_inset_frac(),
             // The board-level soft-LL matcher is its own inlier gate (it
             // accepts/rejects on the margin gate), so it is robust on partial /
             // blurry views and takes board-appropriate low inlier floors

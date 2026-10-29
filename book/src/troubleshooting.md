@@ -125,7 +125,7 @@ marker was decoded inside any cell.
 3. **Blurry or small markers?** Every cell is thresholded on its own and its bits
    are scored softly, so there is no border or threshold knob to lower. What helps
    is resolution: more pixels per marker bit (move closer, or set the corner
-   detector's `upscale` for small cells), and a correct `scan.inset_frac`.
+   detector's `upscale` for small cells), and a correct `inset_frac`.
 
 4. **Uneven lighting?** Per-cell thresholding already absorbs smooth gradients. Specular
    reflections inside a marker cannot be corrected by thresholding at all.

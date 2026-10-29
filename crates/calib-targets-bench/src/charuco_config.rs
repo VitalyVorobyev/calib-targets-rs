@@ -7,7 +7,6 @@
 //! trimmed copy, carrying only the fields `charuco_stage_timing` reads from
 //! the checked-in `testdata/charuco_detect_config*.json` fixtures.
 
-use calib_targets::aruco::ArucoScanConfig;
 use calib_targets::charuco::{CharucoBoardError, CharucoBoardSpec, CharucoDetector, CharucoParams};
 use calib_targets::chessboard::ChessboardParams;
 use calib_targets_core::io::{self, IoError};
@@ -33,9 +32,9 @@ pub struct CharucoDetectConfig {
     /// Optional override for the underlying chessboard detector params.
     #[serde(default)]
     pub chessboard: Option<ChessboardParams>,
-    /// Optional ArUco scan-config overrides.
+    /// Optional override for the marker-cell sampling inset.
     #[serde(default)]
-    pub aruco: Option<ArucoScanConfig>,
+    pub inset_frac: Option<f32>,
 }
 
 impl CharucoDetectConfig {
@@ -54,11 +53,8 @@ impl CharucoDetectConfig {
         if let Some(chessboard) = self.chessboard.clone() {
             params.chessboard = chessboard;
         }
-        if let Some(aruco) = self.aruco.as_ref() {
-            // `ArucoScanConfig.max_hamming` is intentionally not mapped: the
-            // board-level matcher (the sole matcher) uses soft-bit scoring and
-            // a margin gate, with no Hamming cap. Only the scan overrides apply.
-            aruco.apply_to_scan(&mut params.scan);
+        if let Some(inset_frac) = self.inset_frac {
+            params.inset_frac = inset_frac;
         }
         params
     }

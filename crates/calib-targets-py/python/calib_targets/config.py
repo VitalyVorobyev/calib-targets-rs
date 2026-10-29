@@ -736,70 +736,6 @@ class ChessConfig:
 
 
 @dataclass(slots=True)
-class OrientationClusteringParams:
-    num_bins: int = 90
-    max_iters: int = 10
-    peak_min_separation_deg: float = 15.0
-    outlier_threshold_deg: float = 30.0
-    min_peak_weight_fraction: float = 0.2
-    use_weights: bool = True
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "num_bins": self.num_bins,
-            "max_iters": self.max_iters,
-            "peak_min_separation_deg": self.peak_min_separation_deg,
-            "outlier_threshold_deg": self.outlier_threshold_deg,
-            "min_peak_weight_fraction": self.min_peak_weight_fraction,
-            "use_weights": self.use_weights,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> OrientationClusteringParams:
-        d = cls()
-        return cls(
-            num_bins=data.get("num_bins", d.num_bins),
-            max_iters=data.get("max_iters", d.max_iters),
-            peak_min_separation_deg=data.get(
-                "peak_min_separation_deg", d.peak_min_separation_deg
-            ),
-            outlier_threshold_deg=data.get("outlier_threshold_deg", d.outlier_threshold_deg),
-            min_peak_weight_fraction=data.get(
-                "min_peak_weight_fraction", d.min_peak_weight_fraction
-            ),
-            use_weights=data.get("use_weights", d.use_weights),
-        )
-
-
-@dataclass(slots=True)
-class GridGraphParams:
-    min_spacing_pix: float = 10.0
-    max_spacing_pix: float = 200.0
-    k_neighbors: int = 8
-    orientation_tolerance_deg: float = 22.5
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "min_spacing_pix": self.min_spacing_pix,
-            "max_spacing_pix": self.max_spacing_pix,
-            "k_neighbors": self.k_neighbors,
-            "orientation_tolerance_deg": self.orientation_tolerance_deg,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GridGraphParams:
-        d = cls()
-        return cls(
-            min_spacing_pix=data.get("min_spacing_pix", d.min_spacing_pix),
-            max_spacing_pix=data.get("max_spacing_pix", d.max_spacing_pix),
-            k_neighbors=data.get("k_neighbors", d.k_neighbors),
-            orientation_tolerance_deg=data.get(
-                "orientation_tolerance_deg", d.orientation_tolerance_deg
-            ),
-        )
-
-
-@dataclass(slots=True)
 class AxisClusterCenters:
     """Two global grid-axis directions for the topological pre-Delaunay gate.
 
@@ -1030,8 +966,6 @@ class ChessboardParams:
     line_min_members: int = 3
     validate_step_aware: bool = False
     enable_final_edge_shape_check: bool = True
-    # --- Python-side convenience carrier (NOT part of the wire shape) -------
-    chess: ChessConfig = field(default_factory=ChessConfig)
 
     def _advanced_to_dict(self) -> dict[str, Any]:
         advanced: dict[str, Any] = {
@@ -1073,10 +1007,6 @@ class ChessboardParams:
             "component_merge": LocalMergeParams.from_dict(
                 advanced.get("component_merge", {})
             ),
-            # `chess` is a Python-side carrier, not part of the wire shape; we
-            # still read it back when present so a Python `to_dict`-with-chess
-            # round-trip (external pipelines may add it) is preserved.
-            "chess": ChessConfig.from_dict(data.get("chess", {})),
         }
         for name in _ADVANCED_SCALAR_FIELDS:
             kwargs[name] = advanced.get(name, getattr(d, name))
@@ -1100,48 +1030,6 @@ class ChessboardParams:
 # ---------------------------------------------------------------------------
 # ChArUco detection params
 # ---------------------------------------------------------------------------
-
-
-@dataclass(slots=True)
-class ScanDecodeConfig:
-    """Marker-cell decoding parameters.
-
-    Mirrors ``calib_targets_aruco::ScanDecodeConfig``. The defaults here are
-    the ChArUco-flavoured ones the ChArUco detector applies, not the bare
-    ``ScanDecodeConfig::default()`` values.
-    """
-
-    border_bits: int = 1
-    inset_frac: float = 0.06
-    marker_size_rel: float = 0.75
-    min_border_score: float = 0.75
-    dedup_by_id: bool = True
-    #: Try multiple per-cell binarization thresholds and keep the one that
-    #: yields a valid dictionary match. Improves recall on blurry or unevenly
-    #: lit images at a small compute cost.
-    multi_threshold: bool = True
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "border_bits": self.border_bits,
-            "inset_frac": self.inset_frac,
-            "marker_size_rel": self.marker_size_rel,
-            "min_border_score": self.min_border_score,
-            "dedup_by_id": self.dedup_by_id,
-            "multi_threshold": self.multi_threshold,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ScanDecodeConfig:
-        d = cls()
-        return cls(
-            border_bits=data.get("border_bits", d.border_bits),
-            inset_frac=data.get("inset_frac", d.inset_frac),
-            marker_size_rel=data.get("marker_size_rel", d.marker_size_rel),
-            min_border_score=data.get("min_border_score", d.min_border_score),
-            dedup_by_id=data.get("dedup_by_id", d.dedup_by_id),
-            multi_threshold=data.get("multi_threshold", d.multi_threshold),
-        )
 
 
 @dataclass(slots=True)
@@ -1194,7 +1082,10 @@ class CharucoParams:
     chess: ChessConfig = field(default_factory=ChessConfig)
     px_per_square: float = 60.0
     chessboard: ChessboardParams = field(default_factory=_charuco_chessboard_default)
-    scan: ScanDecodeConfig = field(default_factory=ScanDecodeConfig)
+    #: Fraction of a marker bit cell ignored next to each cell edge when its
+    #: value is sampled, in ``[0, 0.5)``. The marker's size and border ring
+    #: come from ``board``.
+    inset_frac: float = 0.06
     min_marker_inliers: int = 1
     # --- Advanced (opt-in, unstable; serialised under "advanced") -----------
     # These knobs live in Rust's ``CharucoAdvancedTuning`` behind
@@ -1225,7 +1116,7 @@ class CharucoParams:
             "chess": self.chess.to_dict(),
             "px_per_square": self.px_per_square,
             "chessboard": self.chessboard.to_dict(),
-            "scan": self.scan.to_dict(),
+            "inset_frac": self.inset_frac,
             "min_marker_inliers": self.min_marker_inliers,
         }
         advanced = self._advanced_to_dict()
@@ -1240,6 +1131,12 @@ class CharucoParams:
         board_data = data.get("board") or data.get("charuco")
         if board_data is None:
             raise ValueError("CharucoParams requires 'board' field")
+        if "scan" in data:
+            raise ValueError(
+                "CharucoParams no longer has a 'scan' block (0.16): the marker "
+                "size and border ring come from 'board'; pass the sampling "
+                "inset as CharucoParams(inset_frac=...)."
+            )
         # The moved knobs live under "advanced" (current shape). Tolerate a
         # flat top-level layout too, so configs written before the
         # stable/advanced split keep deserialising.
@@ -1257,7 +1154,7 @@ class CharucoParams:
                 if "chessboard" in data
                 else _charuco_chessboard_default()
             ),
-            scan=ScanDecodeConfig.from_dict(data.get("scan", {})),
+            inset_frac=float(data.get("inset_frac", 0.06)),
             # A legacy "max_hamming" key (the retired vote matcher's knob) is
             # ignored if present.
             min_marker_inliers=data.get("min_marker_inliers", 1),
@@ -1752,7 +1649,6 @@ class PuzzleBoardParams:
 
     board: PuzzleBoardSpec
     chess: ChessConfig = field(default_factory=ChessConfig)
-    px_per_square: float = 60.0
     chessboard: ChessboardParams = field(default_factory=ChessboardParams)
     decode: PuzzleBoardDecodeConfig = field(default_factory=PuzzleBoardDecodeConfig)
 
@@ -1771,7 +1667,7 @@ class PuzzleBoardParams:
         # missing corners far better than wrong ones.
         chessboard.min_corner_strength = 33.0
         _ = board  # board dims no longer constrain chessboard params
-        return cls(board=board, px_per_square=60.0, chessboard=chessboard)
+        return cls(board=board, chessboard=chessboard)
 
     @classmethod
     def sweep_for_board(cls, board: PuzzleBoardSpec) -> list[PuzzleBoardParams]:
@@ -1795,7 +1691,6 @@ class PuzzleBoardParams:
     def to_dict(self) -> dict[str, Any]:
         return {
             "chess": self.chess.to_dict(),
-            "px_per_square": self.px_per_square,
             "chessboard": self.chessboard.to_dict(),
             "board": self.board.to_dict(),
             "decode": self.decode.to_dict(),
@@ -1808,7 +1703,6 @@ class PuzzleBoardParams:
         return cls(
             board=PuzzleBoardSpec.from_dict(data["board"]),
             chess=(ChessConfig.from_dict(data["chess"]) if "chess" in data else ChessConfig()),
-            px_per_square=float(data.get("px_per_square", 60.0)),
             chessboard=ChessboardParams.from_dict(data.get("chessboard", {})),
             decode=PuzzleBoardDecodeConfig.from_dict(data.get("decode", {})),
         )
@@ -2072,14 +1966,11 @@ __all__ = [
     "DetectionStrategy",
     "ChessConfig",
     # Chessboard pipeline.
-    "OrientationClusteringParams",
-    "GridGraphParams",
     "ChessboardParams",
     "TopologicalParams",
     "LocalMergeParams",
     "AxisClusterCenters",
     # ChArUco / marker / puzzleboard pipelines.
-    "ScanDecodeConfig",
     "CharucoBoardSpec",
     "CharucoParams",
     "CharucoDetectorParams",  # backward-compatible alias

@@ -788,53 +788,6 @@
       },
       "type": "object"
     },
-    "ScanDecodeConfig": {
-      "description": "Decoder configuration for scanning markers.",
-      "properties": {
-        "border_bits": {
-          "default": 1,
-          "description": "Marker border width in cells (OpenCV typically uses 1).\n\nDerived, not configured: the ChArUco detector overwrites it with `board.border_bits`, so set the border width on the board.",
-          "format": "uint",
-          "minimum": 0,
-          "readOnly": true,
-          "type": "integer"
-        },
-        "dedup_by_id": {
-          "default": true,
-          "description": "If true, keep only the best detection per marker id.",
-          "type": "boolean"
-        },
-        "inset_frac": {
-          "default": 0.1,
-          "description": "Fraction of a square to ignore near edges (0.08..0.15 typical).",
-          "format": "float",
-          "minimum": 0.0,
-          "type": "number"
-        },
-        "marker_size_rel": {
-          "default": 1.0,
-          "description": "Marker side length relative to the square cell side.\n\n- `1.0`: marker fills the entire square (no extra white margin).\n- `< 1.0`: marker is centered inside the square (ChArUco-style).",
-          "format": "float",
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "type": "number"
-        },
-        "min_border_score": {
-          "default": 0.85,
-          "description": "Require border-black ratio >= this.",
-          "format": "float",
-          "maximum": 1.0,
-          "minimum": 0.0,
-          "type": "number"
-        },
-        "multi_threshold": {
-          "default": true,
-          "description": "If true, try multiple binarization thresholds per cell and select the\none that yields a valid dictionary match. Improves recall on blurry or\nunevenly-lit images at a small compute cost.",
-          "type": "boolean"
-        }
-      },
-      "type": "object"
-    },
     "TopologicalParams": {
       "description": "Tuning knobs for the axis-driven topological pipeline.\n\nDefaults are conservative values pinned by the crate's regression tests.\nAdding new fields is non-breaking via `#[non_exhaustive]`;\nliteral-construction from outside the crate goes through `default`\n+ struct-update syntax or `new`.",
       "properties": {
@@ -1029,6 +982,14 @@
       },
       "description": "Chessboard detection parameters.\n\nChArUco runs on the **topological** grid builder (the workspace\ndefault). The `min_corner_strength` floor set by\n`CharucoParams::for_board` keeps marker-bit saddles out of the grid,\nso the topological cell test labels ChArUco grids cleanly, and the\nmarker-decode stages downstream of grid construction are\nbuilder-agnostic."
     },
+    "inset_frac": {
+      "default": 0.06,
+      "description": "Fraction of a marker bit cell ignored next to each cell edge when its\nvalue is sampled, in `[0, 0.5)`. Default `0.06`.\n\nThe rest of the marker sampling geometry describes the printed board\nand comes from `board`: the marker's size within its square\n(`CharucoBoardSpec::marker_size_rel`) and the width of its border\nring (`CharucoBoardSpec::border_bits`).",
+      "format": "float",
+      "maximum": 0.5,
+      "minimum": 0.0,
+      "type": "number"
+    },
     "min_marker_inliers": {
       "default": 1,
       "description": "Minimal number of marker inliers needed to accept the alignment.",
@@ -1043,18 +1004,6 @@
       "format": "float",
       "type": "number",
       "x-unit": "px"
-    },
-    "scan": {
-      "$ref": "#/$defs/ScanDecodeConfig",
-      "default": {
-        "border_bits": 1,
-        "dedup_by_id": true,
-        "inset_frac": 0.1,
-        "marker_size_rel": 1.0,
-        "min_border_score": 0.85,
-        "multi_threshold": true
-      },
-      "description": "Marker scan parameters.\n\n`CharucoParams::for_board` uses a slightly smaller inset\n(`inset_frac = 0.06`) to improve real-image robustness. If\n`scan.marker_size_rel <= 0.0`, it is filled from the board spec.\n\n**`scan.border_bits` is derived, not configured.**\n`CharucoDetector::new` overwrites it with\n`CharucoBoardSpec::border_bits`, because the two describe the same\nprinted ring and the board is what describes the target. Set it on the\nboard — `CharucoBoardSpec::with_border_bits` — not here."
     }
   },
   "required": [

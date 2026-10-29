@@ -55,7 +55,7 @@ detector to marker scenes:
 | Symptom | Likely stage | What it means / knob to try |
 |---|---|---|
 | No grid / `None` from Stage 0 | Stage 0 (chessboard) | Sparse corner cloud or clustering failure — see the [chessboard failure modes](pipeline_chessboard.md#failure-modes). |
-| `NoMarkers` (grid found, no decodes) | Stage 3 (decode) | Wrong `dictionary` / `marker_size_rel`, or blur. Enable `multi_threshold`, lower `min_border_score`, verify the board spec. |
+| `NoMarkers` (grid found, no decodes) | Stage 3 (decode) | Wrong `dictionary` / `marker_size_rel` / `border_bits`, or blur. Verify the board spec, give the markers more pixels (`chess.upscale`), check `inset_frac`. |
 | `AlignmentFailed { inliers: 0 }` | Stage 4 | No decoded ID is in the layout — board-spec mismatch (`rows`, `cols`, `dictionary`, `marker_layout`) or a non-zero `first_marker` offset. |
 | `AlignmentFailed`, small but non-zero inliers | Stage 4 | Partial view or strong perspective — lower `min_marker_inliers` to what you reliably see. |
 | Small soft-matcher margin | Stage 3 (board-level matcher) | Ambiguous decodes / heavy bit noise — the margin gate is flagging a low-confidence alignment. |
@@ -70,10 +70,10 @@ ChArUco config layers three surfaces:
   (stable core + opt-in `advanced`). `for_board` pre-sets the
   marker-scene-safe `min_corner_strength` floor; do not lower it on marker
   boards.
-- **Marker decode** — `scan.*` (`ScanDecodeConfig`): `min_border_score`
-  (default `0.75`; lower cautiously to `0.65` on blur), `multi_threshold`
-  (default `true`), `inset_frac` (default `0.06`; raise when borders bleed
-  into the bit grid). `marker_size_rel` must match the printed board.
+- **Marker decode** — `inset_frac` (default `0.06`; raise when borders
+  bleed into the bit grid). The marker's size (`board.marker_size_rel`) and
+  border ring (`board.border_bits`) come from the board spec, which must
+  match the printed board.
 - **Alignment** — the board-level matcher's `alignment_min_margin` /
   `bit_likelihood_slope`, the downstream `min_marker_inliers` /
   `min_secondary_marker_inliers` floors (default `1` each — the matcher is

@@ -96,61 +96,6 @@ impl ScanDecodeConfig {
     }
 }
 
-/// Optional overrides for marker scanning and matching.
-#[non_exhaustive]
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub struct ArucoScanConfig {
-    /// Override the matcher's maximum allowed Hamming distance. `None`
-    /// keeps the matcher's configured value.
-    #[serde(default)]
-    pub max_hamming: Option<u8>,
-    /// Override `ScanDecodeConfig::border_bits` — marker border width in cells.
-    #[serde(default)]
-    pub border_bits: Option<usize>,
-    /// Override `ScanDecodeConfig::inset_frac` — edge fraction ignored per cell.
-    #[serde(default)]
-    pub inset_frac: Option<f32>,
-    /// Override `ScanDecodeConfig::marker_size_rel` — marker side relative
-    /// to the square cell.
-    #[serde(default)]
-    pub marker_size_rel: Option<f32>,
-    /// Override `ScanDecodeConfig::min_border_score` — minimum border-black ratio.
-    #[serde(default)]
-    pub min_border_score: Option<f32>,
-    /// Override `ScanDecodeConfig::dedup_by_id` — keep only the best
-    /// detection per marker id.
-    #[serde(default)]
-    pub dedup_by_id: Option<bool>,
-    /// Override `ScanDecodeConfig::multi_threshold` — try multiple
-    /// binarization thresholds per cell.
-    #[serde(default)]
-    pub multi_threshold: Option<bool>,
-}
-
-impl ArucoScanConfig {
-    /// Apply overrides to an existing `ScanDecodeConfig`.
-    pub fn apply_to_scan(&self, scan: &mut ScanDecodeConfig) {
-        if let Some(border_bits) = self.border_bits {
-            scan.border_bits = border_bits;
-        }
-        if let Some(inset_frac) = self.inset_frac {
-            scan.inset_frac = inset_frac;
-        }
-        if let Some(marker_size_rel) = self.marker_size_rel {
-            scan.marker_size_rel = marker_size_rel;
-        }
-        if let Some(min_border_score) = self.min_border_score {
-            scan.min_border_score = min_border_score;
-        }
-        if let Some(dedup_by_id) = self.dedup_by_id {
-            scan.dedup_by_id = dedup_by_id;
-        }
-        if let Some(multi_threshold) = self.multi_threshold {
-            scan.multi_threshold = multi_threshold;
-        }
-    }
-}
-
 /// One decoded marker detection.
 ///
 /// `#[non_exhaustive]`: construct with [`MarkerDetection::new`] plus the

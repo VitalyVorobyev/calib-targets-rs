@@ -18,27 +18,13 @@ export type BoardSync =
   | { mode: "puzzleboard"; board: PuzzleBoardSpec };
 
 /**
- * Put a board into the parameters of its detector.
- *
- * `CharucoParams.for_board` also derives the marker-decode settings from the board (the marker
- * size and the border ring), so a board edit has to carry them along or the decoder would sample
- * the old marker size.
+ * Put a board into the parameters of its detector. Each detector reads its marker geometry (the
+ * ChArUco marker size and border ring) from the board itself, so the board is all that changes.
  */
 export function applyBoard(params: TargetParams, sync: BoardSync): TargetParams {
   switch (sync.mode) {
     case "charuco":
-      return {
-        ...params,
-        charuco: {
-          ...params.charuco,
-          board: sync.board,
-          scan: {
-            ...params.charuco.scan,
-            marker_size_rel: sync.board.marker_size_rel,
-            border_bits: sync.board.border_bits ?? 1,
-          },
-        },
-      };
+      return { ...params, charuco: { ...params.charuco, board: sync.board } };
     case "markerboard":
       return { ...params, markerboard: { ...params.markerboard, board: sync.board } };
     case "puzzleboard":

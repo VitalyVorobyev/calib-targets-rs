@@ -129,6 +129,16 @@ moves to 6.0.0. See
   `has_position_covariance` and `position_covariance`, so caller-allocated
   corner arrays must be rebuilt against the new header. The four result headers
   append `quality` (`ct_detection_quality_t`).
+- **ChArUco takes its marker sampling geometry from the board.**
+  `CharucoParams.scan` (a `ScanDecodeConfig`) is replaced by `inset_frac`
+  (default `0.06`), the one sampling knob the detector reads; the marker's
+  size and border ring come from `board.marker_size_rel` and
+  `board.border_bits`. Previously a config that named the board but not
+  `scan` — the ordinary shape of a stored or Python config — sampled the
+  marker as filling its whole square; its `min_border_score`, `dedup_by_id`
+  and `multi_threshold` were never read. A stale `scan` key now fails to
+  load. C: `ct_charuco_detector_params_t::inset_frac` replaces `scan`, and
+  `ct_charuco_board_spec_t` gains `border_bits`.
 - ChArUco `detect_with_corners` reads the uncertainty settings of
   `params.chess` for the corners it re-detects, and unless they supply a known
   noise level estimates the frame's noise once per call when it re-detects
@@ -147,6 +157,14 @@ moves to 6.0.0. See
   `ChessConfig.noise_sigma` (use `Uncertainty.propagated(noise_sigma=σ)`).
   WASM typings: `ChessRefiner`, `RefinerConfig`, `RadonRefiner`,
   `ChessConfig.noise_sigma`.
+- **Config knobs nothing read.** `PuzzleBoardParams.px_per_square` (never
+  read by the PuzzleBoard detector); `aruco::ArucoScanConfig`; Python
+  `ChessboardParams.chess` (a Python-only carrier the detectors never saw),
+  `OrientationClusteringParams`, `GridGraphParams` and the debug result
+  classes `OrientationHistogram`, `GridGraphNode`, `GridGraphNeighbor`,
+  `GridGraphDebug`, `ChessboardDebug` (no Rust counterpart, returned by
+  nothing); Python and WASM `ScanDecodeConfig` mirrors; C
+  `ct_scan_decode_config_t` and `ct_puzzleboard_params_t::px_per_square`.
 - `FrameNoise` (`#[doc(hidden)]`, workspace-internal): the corner front end
   reads the frame's noise level from `chess-corners`
   (`Detector::last_noise_sigma`) instead of estimating it itself;

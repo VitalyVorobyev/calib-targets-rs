@@ -46,14 +46,7 @@ const OWNED_ELSEWHERE: UiSchema["fields"] = {
 
 export const PARAMS_UI: Record<Exclude<DetectMode, "corners">, UiSchema> = {
   chessboard: {},
-  charuco: {
-    fields: {
-      ...OWNED_ELSEWHERE,
-      // Derived from the board by the geometry fields (see `applyBoard`).
-      "scan.marker_size_rel": { hidden: true },
-      "scan.border_bits": { hidden: true },
-    },
-  },
+  charuco: { fields: OWNED_ELSEWHERE },
   markerboard: { fields: OWNED_ELSEWHERE },
   puzzleboard: { fields: OWNED_ELSEWHERE },
 };

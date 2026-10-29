@@ -11,7 +11,7 @@ use super::merge::merge_charuco_results;
 use super::{CharucoDetectError, CharucoDetection, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
-use calib_targets_aruco::MarkerDetection;
+use calib_targets_aruco::{MarkerDetection, ScanDecodeConfig};
 use calib_targets_chessboard::{detect_corner_frame, ChessCorner, CornerFrame};
 use calib_targets_chessboard::{
     ChessboardCorner, ChessboardDetection, ChessboardDetector as ChessDetector,
@@ -167,7 +167,7 @@ trait PipelineSink {
         image: &GrayImageView<'_>,
         cells: &[calib_targets_aruco::MarkerCell],
         board: &CharucoBoard,
-        scan_cfg: &calib_targets_aruco::ScanDecodeConfig,
+        scan_cfg: &ScanDecodeConfig,
         cfg: &BoardMatchConfig,
     ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)>;
 
@@ -200,7 +200,7 @@ impl PipelineSink for NoPipelineDiag {
         image: &GrayImageView<'_>,
         cells: &[calib_targets_aruco::MarkerCell],
         board: &CharucoBoard,
-        scan_cfg: &calib_targets_aruco::ScanDecodeConfig,
+        scan_cfg: &ScanDecodeConfig,
         cfg: &BoardMatchConfig,
     ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
         match_board(image, cells, board, scan_cfg, cfg)
@@ -219,24 +219,18 @@ pub struct CharucoDetector {
 
 impl CharucoDetector {
     /// Create a detector from parameters (board spec lives in `params.board`).
-    pub fn new(mut params: CharucoParams) -> Result<Self, CharucoBoardError> {
-        let board_cfg = params.board;
-        if !params.scan.marker_size_rel.is_finite() || params.scan.marker_size_rel <= 0.0 {
-            params.scan.marker_size_rel = board_cfg.marker_size_rel;
-        }
-        // `board.border_bits` and `scan.border_bits` describe one physical fact:
-        // the ring printed around each marker. Inside a ChArUco detector the
-        // board spec is the description of the target, so the scan value is
-        // derived from it rather than left as a second knob that can contradict
-        // it. Repairing only an "unset" scan value is not possible — its default
-        // is 1, indistinguishable from a caller who meant 1 — so a conditional
-        // here would silently decode a `border_bits = 2` board as 1 for every
-        // params built by hand or round-tripped through JSON.
-        params.scan.border_bits = board_cfg.border_bits;
-
-        let board = CharucoBoard::new(board_cfg)?;
-
+    pub fn new(params: CharucoParams) -> Result<Self, CharucoBoardError> {
+        let board = CharucoBoard::new(params.board)?;
         Ok(Self { board, params })
+    }
+
+    /// The marker sampling geometry: the printed marker's size and border
+    /// ring come from the board spec, the inset from the params.
+    fn scan_config(&self) -> ScanDecodeConfig {
+        ScanDecodeConfig::default()
+            .with_marker_size_rel(self.params.board.marker_size_rel)
+            .with_border_bits(self.params.board.border_bits)
+            .with_inset_frac(self.params.inset_frac)
     }
 
     /// Board definition used by the detector.
@@ -560,7 +554,7 @@ impl CharucoDetector {
             #[cfg(feature = "diagnostics")]
             candidate_cell_count: cells.len(),
         };
-        let scan_cfg = self.params.scan.clone();
+        let scan_cfg = self.scan_config();
 
         let board_cfg = BoardMatchConfig {
             px_per_square: self.params.px_per_square,
@@ -670,7 +664,7 @@ impl PipelineSink for DiagCollector {
         image: &GrayImageView<'_>,
         cells: &[calib_targets_aruco::MarkerCell],
         board: &CharucoBoard,
-        scan_cfg: &calib_targets_aruco::ScanDecodeConfig,
+        scan_cfg: &ScanDecodeConfig,
         cfg: &BoardMatchConfig,
     ) -> Option<(Vec<MarkerDetection>, CharucoAlignment)> {
         let (result, board_diag) = match_board_diag(image, cells, board, scan_cfg, cfg);

@@ -41,7 +41,7 @@ pub use dictionary::{resolve_dictionary, Dictionary, DictionaryError};
 pub use matcher::{rotate_code_u64, Match, Matcher};
 pub use scan::{
     decode_marker_in_cell, sample_cell, scan_decode_markers, scan_decode_markers_in_cells,
-    ArucoScanConfig, CellSamples, MarkerCell, MarkerDetection, ScanDecodeConfig,
+    CellSamples, MarkerCell, MarkerDetection, ScanDecodeConfig,
 };
 
 // Re-export the core image-view type this crate's scan API names, so depending

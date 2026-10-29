@@ -238,91 +238,6 @@ class TargetDetection:
 
 
 @dataclass(slots=True)
-class OrientationHistogram:
-    bin_centers: list[float]
-    values: list[float]
-
-    def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import orientation_histogram_to_dict
-
-        return orientation_histogram_to_dict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> OrientationHistogram:
-        from ._convert_out import orientation_histogram_from_dict
-
-        return orientation_histogram_from_dict(data)
-
-
-@dataclass(slots=True)
-class GridGraphNeighbor:
-    index: int
-    direction: str
-    distance: float
-
-    def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import grid_graph_neighbor_to_dict
-
-        return grid_graph_neighbor_to_dict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GridGraphNeighbor:
-        from ._convert_out import grid_graph_neighbor_from_dict
-
-        return grid_graph_neighbor_from_dict(data)
-
-
-@dataclass(slots=True)
-class GridGraphNode:
-    position: Point2
-    neighbors: list[GridGraphNeighbor]
-
-    def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import grid_graph_node_to_dict
-
-        return grid_graph_node_to_dict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GridGraphNode:
-        from ._convert_out import grid_graph_node_from_dict
-
-        return grid_graph_node_from_dict(data)
-
-
-@dataclass(slots=True)
-class GridGraphDebug:
-    nodes: list[GridGraphNode]
-
-    def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import grid_graph_debug_to_dict
-
-        return grid_graph_debug_to_dict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> GridGraphDebug:
-        from ._convert_out import grid_graph_debug_from_dict
-
-        return grid_graph_debug_from_dict(data)
-
-
-@dataclass(slots=True)
-class ChessboardDebug:
-    orientation_histogram: OrientationHistogram | None
-    graph: GridGraphDebug | None
-
-    def to_dict(self) -> dict[str, Any]:
-        from ._convert_out import chessboard_debug_to_dict
-
-        return chessboard_debug_to_dict(self)
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ChessboardDebug:
-        from ._convert_out import chessboard_debug_from_dict
-
-        return chessboard_debug_from_dict(data)
-
-
-@dataclass(slots=True)
 class ChessboardCorner:
     """A single labelled chessboard corner.
 
@@ -825,11 +740,6 @@ __all__ = [
     "GridAlignment",
     "LabeledCorner",
     "TargetDetection",
-    "OrientationHistogram",
-    "GridGraphNeighbor",
-    "GridGraphNode",
-    "GridGraphDebug",
-    "ChessboardDebug",
     "ChessboardCorner",
     "ChessboardDetectionResult",
     "MarkerDetection",

@@ -87,9 +87,6 @@ const params = {
   board,
   px_per_square: 60.0,
   chessboard: default_chessboard_params(),
-  scan: { border_bits: 1, inset_frac: 0.06, marker_size_rel: 0.75,
-          min_border_score: 0.85, multi_threshold: true, dedup_by_id: true },
-  max_hamming: 2,
   min_marker_inliers: 4,
 };
 const result = detect_charuco(width, height, gray, default_chess_config(), params);
@@ -294,9 +291,7 @@ they need no schema of their own. Field descriptions carry the unit in an
 `x-unit` annotation (`px`, `mm`, `rad`, `deg`, `dpi`) and the range the code
 enforces as `minimum` / `maximum` / `exclusiveMinimum`; the ArUco
 `dictionary` is a closed `enum` of the names `list_aruco_dictionaries()`
-returns. A field the detector overwrites (only `scan.border_bits` of the
-ChArUco params, which comes from `board.border_bits`) is marked `readOnly`.
-The schemas also use the non-standard `format` values `float`,
+returns. The schemas also use the non-standard `format` values `float`,
 `double`, `int32`, `uint32` and `uint` that `schemars` emits for Rust numeric
 types, so an Ajv validator in strict mode needs `ajv.addVocabulary(["x-unit"])`
 and those formats declared (or `strict: false`). JSON has no infinity: a knob

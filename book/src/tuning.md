@@ -95,7 +95,7 @@ PuzzleBoard `decode.*` knobs sit on their own config structs.
 | Scene has multiple chessboard components | use `detect_chessboard_all` (cap with `max_components`) |
 | Fast perspective / wide-angle lens | `edge_axis_tol_deg` ↑, `geometry_check_local_h_tol_rel` ↑ |
 | Corners falsely labelled (wrong `(i, j)`) | **Do not tune** — file a bug. precision contract forbids this. |
-| `NoMarkers` on blurry ChArUco | more pixels per square (`chess.upscale`), check `scan.inset_frac` |
+| `NoMarkers` on blurry ChArUco | more pixels per square (`chess.upscale`), check `inset_frac` |
 | `AlignmentFailed` (low inlier count) | `min_marker_inliers` ↓ |
 | `DecodeFailed` on PuzzleBoard | `decode.min_bit_confidence` ↓, `decode.max_bit_error_rate` ↑ |
 
@@ -207,25 +207,20 @@ run unconditionally and are no longer configurable.
 
 ---
 
-## Per-parameter reference: `ScanDecodeConfig` / ChArUco
+## Per-parameter reference: ChArUco marker sampling
 
-These parameters live inside `CharucoParams`.
-
-`scan.min_border_score`, `scan.dedup_by_id` and `scan.multi_threshold` are
-read only by the stand-alone ArUco scanner (`calib_targets_aruco::scan_decode_markers`).
-The ChArUco detector thresholds each cell on its own and scores the bits softly
-against the board's expected markers, so these three have no effect on
-`detect_charuco`; leave them at their defaults.
+The marker sampling geometry of `CharucoParams` is one knob, `inset_frac`; the
+rest describes the printed board and lives on `board`.
 
 ### `inset_frac`
 
-**Default:** `0.06` for ChArUco.
+**Default:** `0.06`.
 
 **Guidance:** Fraction of the cell size inset from the cell boundary before sampling
 the marker interior. Raise to `0.10`–`0.12` when the cell boundary visibly bleeds into
 the bit area (common with thick printed borders or strong blur).
 
-### `marker_size_rel`
+### `board.marker_size_rel`, `board.border_bits`
 
 **Source:** Board specification — must match the printed board exactly.
 
@@ -254,7 +249,7 @@ Verify against the printed board or the JSON spec used to generate it.
    config). See
    [Troubleshooting](troubleshooting.md) for the full chain.
 4. If **grid found but no ChArUco markers**: give the markers more pixels
-   (`chess.upscale` for small squares) and check `scan.inset_frac`.
+   (`chess.upscale` for small squares) and check `inset_frac`.
 5. If **alignment fails**: verify board spec (rows, cols, dictionary,
    `marker_size_rel`).
 6. If you observe **wrong `(i, j)` labels**, that's a precision-

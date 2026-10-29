@@ -125,15 +125,9 @@ fn charuco_config_small_png() -> ct_charuco_detector_config_t {
                 marker_size_rel: 0.75,
                 dictionary: CT_DICTIONARY_DICT_4X4_250,
                 marker_layout: CT_MARKER_LAYOUT_OPENCV_CHARUCO,
-            },
-            scan: ct_scan_decode_config_t {
                 border_bits: 1,
-                inset_frac: 0.06,
-                marker_size_rel: 0.75,
-                min_border_score: 0.85,
-                dedup_by_id: CT_TRUE,
-                multi_threshold: CT_TRUE,
             },
+            inset_frac: 0.06,
             min_marker_inliers: 12,
             grid_smoothness_threshold_rel: 0.05,
             corner_validation_threshold_rel: 0.08,
@@ -193,7 +187,6 @@ fn puzzleboard_config_small_png() -> ct_puzzleboard_detector_config_t {
     ct_puzzleboard_detector_config_t {
         chess,
         detector: ct_puzzleboard_params_t {
-            px_per_square: 60.0,
             chessboard: chessboard_params_with_strength(0.1),
             board: ct_puzzleboard_spec_t {
                 rows: 10,
@@ -546,31 +539,6 @@ fn puzzleboard_create_rejects_invalid_board_size() {
     assert_eq!(status, ct_status_t::CT_STATUS_CONFIG_ERROR);
     assert!(detector.is_null());
     assert!(last_error_string().contains("PuzzleBoard"));
-}
-
-#[test]
-fn scan_decode_config_preserves_multi_threshold_flag() {
-    let disabled = convert::convert_scan_decode_config(&ct_scan_decode_config_t {
-        border_bits: 1,
-        inset_frac: 0.06,
-        marker_size_rel: 0.75,
-        min_border_score: 0.85,
-        dedup_by_id: CT_TRUE,
-        multi_threshold: CT_FALSE,
-    })
-    .unwrap();
-    assert!(!disabled.multi_threshold);
-
-    let enabled = convert::convert_scan_decode_config(&ct_scan_decode_config_t {
-        border_bits: 1,
-        inset_frac: 0.06,
-        marker_size_rel: 0.75,
-        min_border_score: 0.85,
-        dedup_by_id: CT_TRUE,
-        multi_threshold: CT_TRUE,
-    })
-    .unwrap();
-    assert!(enabled.multi_threshold);
 }
 
 #[test]

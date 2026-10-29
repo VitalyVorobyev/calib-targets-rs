@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use calib_targets_aruco::{ArucoScanConfig, MarkerDetection};
+use calib_targets_aruco::MarkerDetection;
 use calib_targets_charuco::{
     CharucoBoardSpec, CharucoDetectError, CharucoDetection, CharucoDetector, CharucoParams,
 };
@@ -53,9 +53,9 @@ struct CharucoDetectConfig {
     /// Optional override for the underlying chessboard detector params.
     #[serde(default)]
     chessboard: Option<ChessboardParams>,
-    /// Optional ArUco scan-config overrides.
+    /// Optional override for the marker-cell sampling inset.
     #[serde(default)]
-    aruco: Option<ArucoScanConfig>,
+    inset_frac: Option<f32>,
 }
 
 impl CharucoDetectConfig {
@@ -82,11 +82,8 @@ impl CharucoDetectConfig {
         if let Some(chessboard) = self.chessboard.clone() {
             params.chessboard = chessboard;
         }
-        if let Some(aruco) = self.aruco.as_ref() {
-            // `ArucoScanConfig.max_hamming` is intentionally not mapped: the
-            // board-level matcher (the sole matcher) uses soft-bit scoring and
-            // a margin gate, with no Hamming cap. Only the scan overrides apply.
-            aruco.apply_to_scan(&mut params.scan);
+        if let Some(inset_frac) = self.inset_frac {
+            params.inset_frac = inset_frac;
         }
         params
     }
@@ -272,12 +269,8 @@ fn log_detector_params(params: &CharucoParams) {
         params.chessboard.max_components,
     );
     debug!(
-        "Marker scan params: marker_size_rel={:.3}, inset_frac={:.3}, border_bits={}, min_border_score={:.3}, dedup_by_id={}",
-        params.scan.marker_size_rel,
-        params.scan.inset_frac,
-        params.scan.border_bits,
-        params.scan.min_border_score,
-        params.scan.dedup_by_id
+        "Marker scan params: marker_size_rel={:.3}, inset_frac={:.3}, border_bits={}",
+        params.board.marker_size_rel, params.inset_frac, params.board.border_bits,
     );
 }
 
