@@ -23,7 +23,7 @@ about orientation.
 | 3 | marker decode + alignment | cells + image → markers + alignment | Score each cell's soft bits ([ArUco bit decode](algo_aruco_decode.md)) against every `(D4 rotation, integer translation)` board hypothesis, pick the maximum-likelihood placement, and accept it through a margin gate. See [alignment](algo_charuco_alignment.md). |
 | 4 | alignment validation | markers + spec → inliers | Require `≥ min_marker_inliers` (primary component) or `≥ min_secondary_marker_inliers` (subsequent). |
 | 5 | ChArUco corner mapping | corners + alignment → IDed corners | Map each board-spec inner-corner position through the alignment; only inner-cell intersections get IDs (not marker corners). |
-| 6 | corner validation | mapped corners + markers + image → validated corners | Check each corner against its marker-predicted seed; deviation over `corner_validation_threshold_rel × px_per_square` → marker-constrained redetect or drop. |
+| 6 | corner validation | mapped corners + markers + image → validated corners | Check each corner against its marker-predicted seed; deviation over `corner_validation_threshold_rel × px_per_square` → marker-constrained re-detection, which must land within that same distance of the seed, or drop. Re-detection uses the front end's localizer. |
 | 7 | emit detection | validated corners + alignment → result | Sort typed ChArUco corners by ID; refuse below the caller's threshold. |
 
 ## What it inherits from the chessboard detector — and the strength floor

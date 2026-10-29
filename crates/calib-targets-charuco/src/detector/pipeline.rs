@@ -456,13 +456,9 @@ impl CharucoDetector {
             self.params.effective_tuning().min_secondary_marker_inliers;
         // Build the local corner re-detection engine once per detect call and
         // reuse it across every component and both validation stages, so its
-        // internal scratch buffers are allocated a single time. The config is
-        // an internal constant (`default_redetect_params`) and always valid.
-        let mut redetector = Redetector::new(
-            self.params.corner_redetect_params,
-            &self.params.chess,
-            noise,
-        );
+        // internal scratch buffers are allocated a single time. It localizes
+        // like the front end (`redetect_params`).
+        let mut redetector = Redetector::new(&self.params.chess, noise);
         let mut results: Vec<(CharucoDetection, RawMarkerCounts)> = Vec::new();
         for (i, chessboard) in components.iter().enumerate() {
             let min_inliers = if i == 0 {

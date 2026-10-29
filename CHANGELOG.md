@@ -15,7 +15,8 @@ quality. A breaking release: the `ml-refiner` feature and the Förstner refiner
 are gone, the corner config's refiner and uncertainty settings take
 `chess-corners` 2.0's shape, and `AxisEstimate::sigma` is renamed
 `fit_std_error`. Corner positions, labels and ids are unchanged, except where
-noted below (the grid builder's clutter fix and the marker board). The C ABI
+noted below (the grid builder's clutter fix, the marker board and ChArUco
+re-detection). The C ABI
 moves to 6.0.0. See
 [`docs/migrations/0.16.0.md`](docs/migrations/0.16.0.md).
 
@@ -224,6 +225,26 @@ moves to 6.0.0. See
   delivered now, each with its id.
 - `MarkerBoardDiagnostics::inliers` now runs parallel to the delivered corners;
   it was in the chessboard stage's order while the corners were sorted.
+- **ChArUco re-detection ignored the configured localizer and could ship a
+  corner on the wrong feature.** ChArUco re-detects a corner in a small window
+  in two stages, grid smoothness and corner validation. That re-detection
+  always used the saddle-point refiner, whatever `chess.refiner` said, so a
+  default (center-of-mass) detection mixed two localizers.
+  - **The wrong-feature defect.** Corner validation flags a corner because it
+    disagrees with the board. The corner it re-detected in its place was
+    accepted wherever the strongest response in the window lay, up to half a
+    cell from the board-predicted position. On blurred, obliquely viewed boards
+    that was sometimes a marker-bit saddle or a neighbouring edge, several
+    pixels off.
+  - **The fix.** Re-detection now localizes exactly like the front end: the
+    same ChESS ring, the same center-of-mass settings and the same image
+    refiner. A re-detected corner is kept only if it passes the same test as
+    the corners validation keeps: it must lie within
+    `corner_validation_threshold_rel × px_per_square` of its board-predicted
+    position. Otherwise it is dropped.
+  - **Effect on real ChArUco images.** The fix removes the multi-pixel outliers
+    re-detection produced and improves held-out reprojection on the views it
+    touches. Frames where no corner needed re-detection are unchanged.
 - **A re-measured ChArUco corner kept the rejected corner's `score`.** When a
   corner is re-detected near its marker-predicted position, its `position`
   and `position_covariance` were replaced but its `score` was not, so

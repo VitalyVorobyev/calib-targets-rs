@@ -483,9 +483,8 @@ pub(crate) fn convert_charuco_detector_params(
     // `grid_smoothness_threshold_rel` / `corner_validation_threshold_rel` are
     // kept as flat C fields but now live in `CharucoAdvancedTuning` on the Rust
     // side. Route them into the advanced tier, seeding every other advanced
-    // knob from its default (the C ABI does not expose the rest). The
-    // `corner_redetect_params` field is no longer part of the C ABI — the Rust
-    // field is internal and reconstructed from `for_board` defaults above.
+    // knob from its default (the C ABI does not expose the rest). Corner
+    // re-detection has no config of its own: it is derived from `chess`.
     let mut advanced = out.effective_tuning().into_owned();
     advanced.grid_smoothness_threshold_rel = grid_smoothness_threshold_rel;
     advanced.corner_validation_threshold_rel = corner_validation_threshold_rel;

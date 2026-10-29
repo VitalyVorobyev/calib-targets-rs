@@ -1,7 +1,7 @@
 use crate::board::CharucoBoardSpec;
 use calib_targets_chessboard::ChessboardParams;
 use calib_targets_core::{default_chess_config, DetectorConfig};
-use chess_corners::ImageRefiner;
+use chess_corners::DetectionStrategy;
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
 
@@ -65,18 +65,6 @@ pub struct CharucoParams {
     /// Minimal number of marker inliers needed to accept the alignment.
     #[serde(default = "default_min_marker_inliers")]
     pub min_marker_inliers: usize,
-    /// ChESS detector configuration used for local corner re-detection.
-    ///
-    /// When validation identifies a false corner, this config drives a
-    /// single-scale ROI detection ([`chess_corners::Detector::detect_u8_roi`])
-    /// in a small window centred on the marker-predicted seed position.
-    ///
-    /// Internal (`pub(crate)`): the field carries the upstream `chess_corners`
-    /// [`DetectorConfig`] and is `#[serde(skip)]`, so JSON / binding consumers
-    /// could never set it — it is reconstructed from defaults on every
-    /// deserialisation and is not part of the public configuration surface.
-    #[serde(skip)]
-    pub(crate) corner_redetect_params: DetectorConfig,
     /// Opt-in, **unstable** board-level-matcher and corner-validation tuning
     /// knobs. Leave unset (`None`) unless a specific input fails and you have
     /// evidence for the change; `None` behaves exactly like
@@ -237,29 +225,42 @@ fn default_cell_weight_border_threshold() -> f32 {
     0.5
 }
 
-/// Build the ChESS config used for local re-detection inside a small ROI.
+/// Build the ChESS config used for local re-detection inside a small ROI,
+/// from the front end's config `front_end`.
 ///
-/// Lower threshold and looser cluster requirement compared to the global scan,
-/// because we already know approximately where the true corner should be.
-/// `threshold = 0.0` keeps every strictly-positive response. Orientation is
-/// skipped ([`without_orientation`](DetectorConfig::without_orientation)): the
-/// re-detection consumes only the refined corner position, so the per-corner
-/// axis fit would be wasted work — preserving the old hand-rolled path's cost.
+/// Re-detection localizes exactly like the front end: the same ChESS ring and
+/// center-of-mass settings and the same image refiner (none by default). Every
+/// corner of a detection then comes from the one localizer the caller chose,
+/// whether the front end found it or re-detection replaced it. A Radon front
+/// end keeps the ChESS kernel here (Radon's threshold is a per-frame fraction
+/// with no meaning in a small window) but still shares its image refiner.
+///
+/// Only the detection gates differ from the front end: a lower threshold and
+/// looser cluster requirement, because we already know approximately where the
+/// true corner should be. `threshold = 0.0` keeps every strictly-positive
+/// response. Orientation is skipped
+/// ([`without_orientation`](DetectorConfig::without_orientation)): the
+/// re-detection consumes only the corner position, so the per-corner axis fit
+/// would be wasted work.
 ///
 /// The uncertainty tier is left at the upstream default: the re-detection
 /// engine sets it per frame. A re-detected corner replaces a rejected one in
 /// the output, so it carries a covariance exactly when the front-end corners
 /// do, computed at the front end's noise level (`NoiseLevel::Known`) — an
 /// estimate here would run over the *whole* image on every ROI call.
-pub(crate) fn default_redetect_params() -> DetectorConfig {
-    DetectorConfig::chess()
+pub(crate) fn redetect_params(front_end: &DetectorConfig) -> DetectorConfig {
+    let mut cfg = DetectorConfig::chess()
         .with_threshold(0.0)
         .with_detection(|d| {
             d.nms_radius = 2;
             d.min_cluster_size = 1;
         })
-        .with_refiner(ImageRefiner::saddle_point())
-        .without_orientation()
+        .without_orientation();
+    if let DetectionStrategy::Chess(chess) = front_end.strategy {
+        cfg.strategy = DetectionStrategy::Chess(chess);
+    }
+    cfg.refiner = front_end.refiner;
+    cfg
 }
 
 impl CharucoParams {
@@ -337,7 +338,6 @@ impl CharucoParams {
             // blurry views and takes board-appropriate low inlier floors
             // (1 primary / 1 secondary).
             min_marker_inliers: 1,
-            corner_redetect_params: default_redetect_params(),
             // `None` behaves exactly like `CharucoAdvancedTuning::default()`,
             // which carries the previous inline values (grid smoothness 0.05,
             // corner validation 0.08, secondary inliers 1), so detection is
@@ -379,26 +379,37 @@ mod tests {
     use super::*;
 
     #[test]
-    fn default_redetect_params_uses_saddle_point_refiner() {
-        let cfg = default_redetect_params();
+    fn redetect_params_relax_the_gates_of_the_default_front_end() {
+        let cfg = redetect_params(&default_chess_config());
         // Absolute floor of 0.0 — the paper contract, and what this path has
-        // always effectively run at. See the note in `default_redetect_params`.
+        // always effectively run at.
         assert_eq!(cfg.threshold, 0.0);
         assert_eq!(cfg.detection.nms_radius, 2);
         assert_eq!(cfg.detection.min_cluster_size, 1);
-        // Orientation is skipped: the re-detection uses only the refined
-        // position, so the per-corner axis fit would be wasted cost.
+        // Orientation is skipped: the re-detection uses only the position,
+        // so the per-corner axis fit would be wasted cost.
         assert!(cfg.orientation_method.is_none());
         assert!(
-            matches!(cfg.strategy, chess_corners::DetectionStrategy::Chess(_)),
+            matches!(cfg.strategy, DetectionStrategy::Chess(_)),
             "expected the ChESS strategy, got {:?}",
             cfg.strategy,
         );
-        assert!(
-            matches!(cfg.refiner, Some(ImageRefiner::SaddlePoint(_))),
-            "expected the saddle-point image refiner, got {:?}",
-            cfg.refiner,
-        );
+        // The default front end runs ChESS's own center of mass, so
+        // re-detection does too.
+        assert_eq!(cfg.refiner, None);
+    }
+
+    #[test]
+    fn redetect_params_localize_like_the_front_end() {
+        let front_end = default_chess_config()
+            .with_refiner(chess_corners::ImageRefiner::saddle_point())
+            .with_chess(|c| c.ring = chess_corners::ChessRing::Broad);
+        let cfg = redetect_params(&front_end);
+        assert_eq!(cfg.refiner, front_end.refiner);
+        assert_eq!(cfg.strategy, front_end.strategy);
+        // The gates are still the re-detection's own.
+        assert_eq!(cfg.threshold, 0.0);
+        assert!(cfg.orientation_method.is_none());
     }
 
     #[test]

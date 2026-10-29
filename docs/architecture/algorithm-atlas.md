@@ -173,7 +173,7 @@ with its alignment. Deep dive:
 | Marker-cell enumeration | `charuco detector/marker_sampling.rs::build_marker_cells` | corner map → 4-corner cells | Enumerate complete grid squares to decode. | ✅ |
 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | corners + image → refined | Per-corner ChESS re-detect to tighten the grid. | ✅ |
 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | corners + alignment → `CharucoCorner`s | Map grid→board coords, look up charuco id, dedup per cell. | ✅ |
-| Homography corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | corners + inlier markers → refined | Global board→image H; flag deviating corners, re-detect via ChESS ROI sized by the locally predicted pitch, one claimant per corner. | ✅ |
+| Homography corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | corners + inlier markers → refined | Global board→image H; flag deviating corners, re-detect via a ChESS ROI (the front end's localizer) sized by the locally predicted pitch; a re-detection must pass the same deviation test, one claimant per corner. | ✅ |
 | Marker-corner linkage check | `charuco link_check.rs::validate_marker_corner_links` | reported links + spec → violations | **Public** post-hoc check that a result matches the board definition. | ✅ (API) |
 | Multi-component merge | `charuco detector/merge.rs::merge_charuco_results` | per-component results → union | Dedup + union across grid components. | ✅ |
 
