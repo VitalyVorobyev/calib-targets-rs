@@ -1,15 +1,18 @@
 //! ChESS detector configuration types surfaced by the workspace's own API.
 //!
-//! Re-exports only the two `chess-corners` facade types the workspace's
-//! public API legitimately exposes: [`DetectorConfig`], the high-level ChESS
-//! config object callers construct (strategy + threshold + multiscale +
-//! upscale), and [`OrientationMethod`], the documented orientation knob.
+//! Re-exports only the `chess-corners` facade types the workspace's public
+//! API legitimately exposes: [`DetectorConfig`], the high-level ChESS config
+//! object callers construct, and the types of the top-level fields callers
+//! routinely set on it — [`OrientationMethod`], [`ImageRefiner`] (the
+//! saddle-point refiner) and [`Uncertainty`] / [`NoiseLevel`] (the opt-in
+//! position covariance). They are part of `DetectorConfig`'s shape, so naming
+//! them adds no contract.
 //!
-//! Advanced ChESS tuning types (`ChessConfig`, `RadonConfig`, `RefinerKind`,
-//! …) are intentionally *not* re-exported here — re-exporting the whole
-//! upstream surface would freeze `chess-corners`'s API into this crate's
-//! semver contract. Callers needing those types depend on the
-//! `chess-corners` crate directly, where they belong.
+//! Advanced ChESS tuning types (`ChessConfig`, `RadonConfig`,
+//! `SaddlePointConfig`, …) are intentionally *not* re-exported here —
+//! re-exporting the whole upstream surface would freeze `chess-corners`'s API
+//! into this crate's semver contract. Callers needing those types depend on
+//! the `chess-corners` crate directly, where they belong.
 //!
 //! This module also owns [`default_chess_config`], the single definition of
 //! the workspace's corner front-end settings. It lives here rather than on
@@ -23,7 +26,7 @@
 //! image as supplied so the library no longer conflates preprocessing
 //! with detection.
 
-pub use chess_corners::{DetectorConfig, OrientationMethod};
+pub use chess_corners::{DetectorConfig, ImageRefiner, NoiseLevel, OrientationMethod, Uncertainty};
 
 /// The workspace's ChESS acceptance threshold.
 ///
@@ -53,10 +56,14 @@ const WORKSPACE_CHESS_THRESHOLD: f32 = 15.0;
 /// the upstream default, and the ChESS response scale did not change in 1.0,
 /// so `15.0` keeps producing exactly the corner set it did under 0.11.
 ///
-/// Every other field keeps the upstream default — including, since
-/// `chess-corners` 1.6, the position-uncertainty tier (`Propagated`, with the
-/// pixel noise estimated from each image). Corner positions do not depend on
-/// it; select `Uncertainty::Off` to skip the covariance and its noise estimate.
+/// Every other field keeps the upstream default — including the
+/// position-uncertainty tier, which is `Uncertainty::Off`: corners carry no
+/// position covariance. Select `Uncertainty::Propagated` to get one (it costs
+/// a per-image noise estimate plus a few percent of the corner pass); corner
+/// positions do not depend on the tier. The covariance is a report: weighting
+/// a calibration by it has not been shown to help, and its absolute scale is
+/// fitted on one camera, so compare it across frames of one setup rather than
+/// across setups.
 ///
 /// This is the default value of the `chess` field carried by the
 /// compound-target params structs — `CharucoParams`, `PuzzleBoardParams`, and
@@ -115,10 +122,11 @@ mod tests {
         // here from the per-strategy config in 1.0) stay at upstream defaults.
         assert_eq!(cfg.detection, baseline.detection);
 
-        // The position-uncertainty knobs (chess-corners 1.6) stay at upstream
-        // defaults too: a propagated covariance, noise estimated per image.
+        // The position-uncertainty tier and the image refiner stay at upstream
+        // defaults too: no covariance, and the ChESS center of mass.
         assert_eq!(cfg.uncertainty, baseline.uncertainty);
-        assert_eq!(cfg.noise_sigma, baseline.noise_sigma);
+        assert_eq!(cfg.uncertainty, chess_corners::Uncertainty::Off);
+        assert_eq!(cfg.refiner, baseline.refiner);
 
         // The nested ChESS strategy fields stay at upstream defaults so
         // the override is purely the acceptance threshold.
@@ -129,6 +137,6 @@ mod tests {
             unreachable!("baseline preset is ChESS");
         };
         assert_eq!(chess.ring, chess_baseline.ring);
-        assert_eq!(chess.refiner, chess_baseline.refiner);
+        assert_eq!(chess.center_of_mass, chess_baseline.center_of_mass);
     }
 }

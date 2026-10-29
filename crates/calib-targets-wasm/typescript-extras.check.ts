@@ -24,15 +24,13 @@ import type {
   MarkerBoardCorner,
   PositionCovariance,
   PuzzleBoardCorner,
-  ChessRefiner,
   DetectionStrategy,
-  ForstnerConfig,
+  ImageRefiner,
   MarkerBoardSpec,
   MarkerCircleSpec,
   PageSpec,
   PrintableMarkerCircleSpec,
   PrintableTargetDocument,
-  RefinerConfig,
   RenderOptions,
   SaddlePointConfig,
 } from "./typescript-extras";
@@ -165,35 +163,29 @@ export const detectorCharucoBoard: CharucoBoardSpec = {
 };
 
 // The workspace default ChESS config, key for key as `default_chess_config()`
-// returns it (`noise_sigma: null` = estimate it per image).
+// returns it (no image refiner, no position covariance).
 export const defaultChessConfig: ChessConfig = {
-  strategy: { chess: { ring: "canonical", refiner: { center_of_mass: { radius: 2 } } } },
+  strategy: { chess: { ring: "canonical", center_of_mass: { radius: 2 } } },
   threshold: 15.0,
   detection: { nms_radius: 2, min_cluster_size: 2 },
   multiscale: "single_scale",
   upscale: "disabled",
   orientation_method: "ring_fit",
   merge_radius: 3.0,
-  noise_sigma: null,
-  uncertainty: "propagated",
+  refiner: null,
+  uncertainty: "off",
 };
 
-// The uncertainty knobs are optional, so a config written before they existed
+// `refiner` and `uncertainty` are optional, so a config that leaves them out
 // still type-checks; it also exercises the payload-carrying variants.
-export const legacyChessConfig: ChessConfig = {
-  strategy: { chess: { ring: "broad", refiner: { forstner: forstnerTuning() } } },
+export const minimalChessConfig: ChessConfig = {
+  strategy: { chess: { ring: "broad", center_of_mass: { radius: 3 } } },
   threshold: 8.0,
   detection: { nms_radius: 3, min_cluster_size: 2 },
   multiscale: { pyramid: { levels: 3, min_size: 128, refinement_radius: 3 } },
   upscale: { fixed: 2 },
   orientation_method: null,
   merge_radius: 3.0,
-};
-
-export const quietChessConfig: ChessConfig = {
-  ...defaultChessConfig,
-  noise_sigma: 2.0,
-  uncertainty: "off",
 };
 
 const saddle: SaddlePointConfig = {
@@ -203,20 +195,18 @@ const saddle: SaddlePointConfig = {
   min_abs_det: 1e-4,
 };
 
-function forstnerTuning(): ForstnerConfig {
-  return { radius: 2, min_trace: 25.0, min_det: 1e-3, max_condition_number: 50.0, max_offset: 1.5 };
-}
+// The image refiner is a single-key tagged object.
+export const saddleRefiner: ImageRefiner = { saddle_point: saddle };
 
-// Every refiner variant is a single-key tagged object; the deprecated
-// `RefinerConfig` name accepts the same values.
-export const refiners: ChessRefiner[] = [
-  { center_of_mass: { radius: 2 } },
-  { forstner: forstnerTuning() },
-  { saddle_point: saddle },
+// Every uncertainty variant: off, and propagated with an estimated or a known
+// noise level.
+export const covarianceConfigs: ChessConfig[] = [
+  { ...defaultChessConfig, refiner: saddleRefiner, uncertainty: "off" },
+  { ...defaultChessConfig, uncertainty: { propagated: { noise: "estimate" } } },
+  { ...defaultChessConfig, uncertainty: { propagated: { noise: { known: 2.0 } } } },
 ];
-export const legacyRefinerName: RefinerConfig = { saddle_point: saddle };
 
-// The Radon strategy, with both final-position refiners.
+// The Radon strategy, with both peak-fit modes.
 export const radonStrategies: DetectionStrategy[] = [
   {
     radon: {
@@ -224,7 +214,6 @@ export const radonStrategies: DetectionStrategy[] = [
       image_upsample: 2,
       response_blur_radius: 1,
       peak_fit: "gaussian",
-      refiner: "peak_fit",
     },
   },
   {
@@ -233,7 +222,6 @@ export const radonStrategies: DetectionStrategy[] = [
       image_upsample: 2,
       response_blur_radius: 1,
       peak_fit: "parabolic",
-      refiner: { saddle_point: saddle },
     },
   },
 ];
@@ -242,8 +230,8 @@ export const radonStrategies: DetectionStrategy[] = [
 // detector measured none. A hand-built input corner may omit it.
 const cov: PositionCovariance = { xx: 0.01, xy: -0.002, yy: 0.012 };
 const axes: Corner["axes"] = [
-  { angle: 0.1, sigma: 0.01 },
-  { angle: 1.67, sigma: 0.01 },
+  { angle: 0.1, fit_std_error: 0.01 },
+  { angle: 1.67, fit_std_error: 0.01 },
 ];
 export const measuredCorner: Corner = {
   position: [10.5, 20.25],

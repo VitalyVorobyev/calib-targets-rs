@@ -27,8 +27,10 @@
 //! 64 conditions per family plus 16 distorted ones, for the four families
 //! and each refiner under test. Every image is rendered with 16 × 16
 //! stratified samples per pixel; the sub-sample jitter and the noise are
-//! seeded from the condition, so a run is reproducible bit for bit. Noise is
-//! estimated by the detector from each image, as in production.
+//! seeded from the condition, so a run is reproducible bit for bit. The
+//! position covariance is switched on (`Uncertainty::Propagated`; the
+//! production default is `Off`) with the noise estimated by the detector from
+//! each image, so its variance factor can be scored against the truth.
 //!
 //! [`quick_conditions`] is the small subset the integration test and
 //! `bench accuracy --quick` run.
@@ -40,7 +42,7 @@ pub mod render;
 use std::fmt::Write as _;
 
 use calib_targets::detect::DetectorConfig;
-use chess_corners::ChessRefiner;
+use chess_corners::{ImageRefiner, NoiseLevel, Uncertainty};
 use serde::{Deserialize, Serialize};
 
 use families::{Board, Family};
@@ -61,9 +63,10 @@ pub const K1: f64 = 0.15;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum Refiner {
-    /// `chess-corners`' default: centre of mass of the response.
+    /// `chess-corners`' default: the ChESS detector's own centre of mass of
+    /// the response, no image refiner.
     CenterOfMass,
-    /// Saddle-point fit of the image patch.
+    /// The saddle-point image refiner: a fit of the image patch.
     SaddlePoint,
 }
 
@@ -79,12 +82,15 @@ impl Refiner {
         }
     }
 
+    /// `cfg` with this refiner and the covariance switched on.
     fn apply(self, cfg: DetectorConfig) -> DetectorConfig {
-        let refiner = match self {
-            Refiner::CenterOfMass => ChessRefiner::center_of_mass(),
-            Refiner::SaddlePoint => ChessRefiner::saddle_point(),
-        };
-        cfg.with_chess(|c| c.refiner = refiner)
+        let cfg = cfg.with_uncertainty(Uncertainty::Propagated {
+            noise: NoiseLevel::Estimate,
+        });
+        match self {
+            Refiner::CenterOfMass => cfg.without_refiner(),
+            Refiner::SaddlePoint => cfg.with_refiner(ImageRefiner::saddle_point()),
+        }
     }
 }
 

@@ -1,20 +1,28 @@
 //! Per-corner position covariance through the corner front end and the
 //! chessboard detector, on public test images.
 //!
-//! The front end estimates the frame's noise once, up front, and runs
-//! `chess-corners` with that level filled in (or with the covariance off when
-//! the estimate declines). These tests pin that this is *exactly* what
-//! `chess-corners` reports on its own — positions and covariances bit for bit —
-//! and that labelled corners carry the covariance of the corner they came from.
+//! The covariance is opt-in (`Uncertainty::Propagated`; the default is `Off`).
+//! These tests pin that the front end reports *exactly* what `chess-corners`
+//! reports on its own — positions and covariances bit for bit — together with
+//! the noise level it used, and that labelled corners carry the covariance of
+//! the corner they came from.
 
 use std::path::PathBuf;
 
 use calib_targets::detect::{default_chess_config, gray_view};
 use calib_targets_chessboard::{
     detect_corner_frame, detect_corners, ChessCorner, ChessboardDetector, ChessboardParams,
-    FrameNoise, PositionCovariance,
+    PositionCovariance,
 };
-use chess_corners::{Detector, Uncertainty, UpscaleConfig};
+use chess_corners::{Detector, DetectorConfig, NoiseLevel, Uncertainty, UpscaleConfig};
+
+/// The workspace default with the covariance switched on, the noise level
+/// estimated from each image.
+fn propagated() -> DetectorConfig {
+    default_chess_config().with_uncertainty(Uncertainty::Propagated {
+        noise: NoiseLevel::Estimate,
+    })
+}
 
 fn load(name: &str) -> image::GrayImage {
     let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -61,7 +69,7 @@ fn front_end_matches_upstream_bit_for_bit() {
         ("puzzleboard/oblique.png", false),
     ] {
         let img = load(name);
-        let cfg = default_chess_config();
+        let cfg = propagated();
         let ours = detect_corners(&gray_view(&img), &cfg);
         let theirs = upstream(&img, cfg);
         assert!(!ours.is_empty(), "{name}: no corners");
@@ -83,10 +91,9 @@ fn front_end_matches_upstream_bit_for_bit() {
             assert_eq!(with_cov, 0, "{name}: declined estimate, no covariance");
         }
 
-        // Positions do not depend on the uncertainty tier.
-        let mut off = cfg;
-        off.uncertainty = Uncertainty::Off;
-        let ours_off = detect_corners(&gray_view(&img), &off);
+        // Positions do not depend on the uncertainty tier, and the default
+        // tier reports no covariance.
+        let ours_off = detect_corners(&gray_view(&img), &default_chess_config());
         assert_eq!(ours_off.len(), ours.len());
         for (a, b) in ours_off.iter().zip(&ours) {
             assert_eq!(corner_bits(a).0, corner_bits(b).0, "{name}: position moved");
@@ -96,57 +103,54 @@ fn front_end_matches_upstream_bit_for_bit() {
 }
 
 #[test]
-fn frame_noise_reports_how_sigma_was_obtained() {
+fn frame_reports_the_noise_level_its_covariances_used() {
     let img = load("small.png");
     let view = gray_view(&img);
-    let cfg = default_chess_config();
 
-    let estimated = detect_corner_frame(&view, &cfg).noise;
-    let sigma = match estimated {
-        FrameNoise::Estimated(s) => s,
-        other => panic!("expected an estimate on small.png, got {other:?}"),
-    };
+    let estimated = detect_corner_frame(&view, &propagated())
+        .noise_sigma
+        .expect("small.png has a noise estimate");
     let direct = chess_corners::estimate_noise_sigma_u8(img.as_raw(), img.width(), img.height())
         .unwrap()
         .unwrap();
-    assert_eq!(sigma.to_bits(), direct.to_bits());
+    assert_eq!(estimated.to_bits(), direct.to_bits());
 
-    let supplied = cfg.with_noise_sigma(2.0);
-    assert_eq!(
-        detect_corner_frame(&view, &supplied).noise,
-        FrameNoise::Supplied(2.0)
-    );
+    let known = default_chess_config().with_uncertainty(Uncertainty::Propagated {
+        noise: NoiseLevel::Known(2.0),
+    });
+    assert_eq!(detect_corner_frame(&view, &known).noise_sigma, Some(2.0));
 
-    let mut off = cfg;
-    off.uncertainty = Uncertainty::Off;
-    assert_eq!(
-        detect_corner_frame(&view, &off).noise,
-        FrameNoise::NotRequested
-    );
+    // The default tier is off: no covariance and no noise level.
+    let frame = detect_corner_frame(&view, &default_chess_config());
+    assert_eq!(frame.noise_sigma, None);
+    assert!(frame
+        .corners
+        .iter()
+        .all(|c| c.position_covariance.is_none()));
 
-    // Upscaling correlates the noise of interpolated pixels: no covariance,
-    // and no estimate is made for it.
-    let mut up = cfg;
+    // Upscaling correlates the noise of interpolated pixels: no covariance.
+    let mut up = propagated();
     up.upscale = UpscaleConfig::fixed(2);
     let frame = detect_corner_frame(&view, &up);
-    assert_eq!(frame.noise, FrameNoise::NotRequested);
+    assert_eq!(frame.noise_sigma, None);
     assert!(!frame.corners.is_empty());
     assert!(frame
         .corners
         .iter()
         .all(|c| c.position_covariance.is_none()));
 
+    // The estimate declines on oblique.png.
     let oblique = load("puzzleboard/oblique.png");
     assert_eq!(
-        detect_corner_frame(&gray_view(&oblique), &cfg).noise,
-        FrameNoise::Declined
+        detect_corner_frame(&gray_view(&oblique), &propagated()).noise_sigma,
+        None
     );
 }
 
 #[test]
 fn covariance_is_deterministic() {
     let img = load("small.png");
-    let cfg = default_chess_config();
+    let cfg = propagated();
     let a = detect_corners(&gray_view(&img), &cfg);
     let b = detect_corners(&gray_view(&img), &cfg);
     assert_eq!(a.len(), b.len());
@@ -158,7 +162,7 @@ fn covariance_is_deterministic() {
 #[test]
 fn labelled_corners_carry_their_input_covariance() {
     let img = load("mid.png");
-    let corners = detect_corners(&gray_view(&img), &default_chess_config());
+    let corners = detect_corners(&gray_view(&img), &propagated());
     let mut params = ChessboardParams::default();
     params.min_corner_strength = 0.5;
     let detection = ChessboardDetector::new(params)
@@ -181,7 +185,7 @@ fn labelled_corners_carry_their_input_covariance() {
             assert!(cov.mahalanobis_sq(0.1, 0.1).is_some());
         }
     }
-    // The default config gives most labelled corners a covariance.
+    // A propagated config gives most labelled corners a covariance.
     assert!(
         with_cov * 10 >= detection.corners.len() * 9,
         "{with_cov} of {} labelled corners carry a covariance",

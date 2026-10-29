@@ -51,7 +51,7 @@ fn detect_multi(corners: &[ChessCorner]) {
 ## Inputs
 
 - `&[ChessCorner]` — ChESS X-junction corners from `chess-corners`, with
-  `position`, `axes` (each with a 1σ angular uncertainty), and `strength`
+  `position`, `axes` (each with its fit's standard error), and `strength`
   populated.
 - [`ChessboardParams`] — a small stable core (graph-build algorithm,
   output gates, corner-strength floor) plus an opt-in, unstable

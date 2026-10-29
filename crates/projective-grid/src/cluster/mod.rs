@@ -60,7 +60,8 @@ pub use circular::{
 };
 
 /// One undirected local lattice-axis estimate feeding the clustering
-/// stage: an angle in radians and its 1σ angular uncertainty.
+/// stage: an angle in radians and an uncertainty score in radians (lower is
+/// more certain; for ChESS corners, the axis fit's standard error).
 ///
 /// Sigma at the no-info sentinel (≥ `π`) or non-finite marks an axis
 /// with no usable direction information; such axes are skipped.
@@ -69,7 +70,7 @@ pub use circular::{
 pub struct AxisObservation {
     /// Axis angle in radians (interpreted on the mod-π circle).
     pub angle: f32,
-    /// 1σ angular uncertainty in radians.
+    /// Uncertainty score of the angle in radians (lower is more certain).
     pub sigma: f32,
 }
 

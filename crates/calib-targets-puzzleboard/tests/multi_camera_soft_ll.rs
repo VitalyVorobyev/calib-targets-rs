@@ -40,11 +40,11 @@ fn adapt(c: &CornerDescriptor) -> TargetCorner {
                 [
                     calib_targets_core::AxisEstimate {
                         angle: a[0].angle,
-                        sigma: a[0].sigma,
+                        fit_std_error: a[0].fit_std_error,
                     },
                     calib_targets_core::AxisEstimate {
                         angle: a[1].angle,
-                        sigma: a[1].sigma,
+                        fit_std_error: a[1].fit_std_error,
                     },
                 ]
             })

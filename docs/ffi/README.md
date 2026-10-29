@@ -55,9 +55,11 @@ Per-family outputs:
 Both corner structs end with `has_position_covariance` and
 `position_covariance` (`ct_position_covariance_t { xx, xy, yy }`, px², image
 frame): the covariance of `position`, valid when the flag is `CT_TRUE`. It is
-`CT_FALSE` under `CT_UNCERTAINTY_OFF`, with an upscale stage, or when the
+`CT_FALSE` under `CT_UNCERTAINTY_OFF` (the zero-initialised default — set
+`CT_UNCERTAINTY_PROPAGATED` to measure it), with an upscale stage, or when the
 frame's noise estimate declined (typical of JPEG input — set
-`ct_chess_config_t::noise_sigma`).
+`ct_chess_config_t::noise_sigma`, read only under
+`CT_UNCERTAINTY_PROPAGATED`).
 
 Every result header ends with `quality` (`ct_detection_quality_t`), the
 detection's localization-quality summary. Each `ct_optional_f32_t` member has
@@ -65,7 +67,7 @@ detection's localization-quality summary. Each `ct_optional_f32_t` member has
 
 | Field | Meaning |
 |---|---|
-| `noise_sigma` | Image noise (gray levels) the covariances used; unset for `*_with_corners` calls or when the estimate declined. |
+| `noise_sigma` | Image noise (gray levels) the covariances used; unset under `CT_UNCERTAINTY_OFF`, for `*_with_corners` calls, or when the estimate declined. |
 | `covariance_coverage` | Fraction of delivered corners carrying a covariance. |
 | `median_sigma_px`, `p95_sigma_px` | Median / 95th-percentile per-corner σ (least certain direction), px. |
 | `local_residual_count`, `local_residual_rms_px` | Corners with ≥ 6 of 8 grid neighbours; RMS of their leave-one-out residual (corner predicted from its neighbours alone), px. |

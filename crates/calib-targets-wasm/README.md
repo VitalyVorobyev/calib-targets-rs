@@ -214,10 +214,13 @@ edges and soft-mode runner-up scoring evidence are returned by
 ```
 
 `position_covariance` (on every corner type, and on `detect_corners`' raw
-corners) is the covariance of `position` in px², image frame. It is absent
-when none was measured: `uncertainty: "off"`, an upscale stage, a refiner
-that reports none, or a noise estimate that declined (typical of JPEG input —
-set `noise_sigma`). See
+corners) is the covariance of `position` in px², image frame. It is off by
+default; switch it on in the ChESS config with
+`uncertainty: { propagated: { noise: "estimate" } }`, or
+`{ propagated: { noise: { known: σ } } }` with a known sensor noise in gray
+levels. It is absent when none was measured: the uncertainty is off, an
+upscale stage is active, or the noise estimate declined (typical of JPEG
+input — supply the noise level). See
 [chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
 Every detection result (`ChessboardDetection`, `CharucoDetection`,
@@ -226,7 +229,7 @@ Every detection result (`ChessboardDetection`, `CharucoDetection`,
 
 | Field | Meaning |
 |---|---|
-| `noise_sigma` | Image noise (gray levels) the covariances used; null for `*_with_corners` calls or when the estimate declined. |
+| `noise_sigma` | Image noise (gray levels) the covariances used; null when the uncertainty is off (the default), for `*_with_corners` calls, or when the estimate declined. |
 | `covariance_coverage` | Fraction of delivered corners carrying a covariance. |
 | `median_sigma_px`, `p95_sigma_px` | Median / 95th-percentile per-corner σ (least certain direction), px. |
 | `local_residual_count`, `local_residual_rms_px` | Corners with ≥ 6 of 8 grid neighbours; RMS of their leave-one-out residual (corner predicted from its neighbours alone), px. |

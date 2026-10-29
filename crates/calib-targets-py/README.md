@@ -303,11 +303,14 @@ Every corner type (`LabeledCorner`, `ChessboardCorner`, `CharucoCorner`,
 `PuzzleBoardCorner`, `PuzzlePoleCorner`, `MarkerBoardCorner`) carries
 `position_covariance: PositionCovariance | None` — the covariance of
 `position` in px², image frame (`xx`, `xy`, `yy`; `as_matrix()`,
-`sigma_max_px()`). Use it to weight corners in a calibration solver.
+`sigma_max_px()`). It is off by default; switch it on with
+`ChessConfig(uncertainty=Uncertainty.propagated())`, or
+`Uncertainty.propagated(noise_sigma=σ)` with a known sensor noise in gray
+levels.
 
-It is `None` when none was measured: `ChessConfig.uncertainty` is `OFF`, an
-upscale stage is active, the refiner reports none, or the frame's noise
-estimate declined — typical of JPEG input; set `ChessConfig.noise_sigma` then.
+It is `None` when none was measured: the uncertainty is off (the default), an
+upscale stage is active, or the frame's noise estimate declined — typical of
+JPEG input; supply `noise_sigma` then.
 Positions do not depend on it. Model and caveats:
 [chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html).
 
@@ -320,7 +323,7 @@ unavailable; a PuzzlePole carries the covariance statistics only):
 
 | Field | Meaning |
 |---|---|
-| `noise_sigma` | Image noise (gray levels) the covariances used; `None` for `*_with_corners` calls or when the estimate declined. |
+| `noise_sigma` | Image noise (gray levels) the covariances used; `None` when the uncertainty is off (the default), for `*_with_corners` calls, or when the estimate declined. |
 | `covariance_coverage` | Fraction of delivered corners carrying a covariance. |
 | `median_sigma_px`, `p95_sigma_px` | Median / 95th-percentile per-corner σ (least certain direction), px. |
 | `local_residual_count`, `local_residual_rms_px` | Corners with ≥ 6 of 8 grid neighbours; RMS of their leave-one-out residual (corner predicted from its neighbours alone), px. |

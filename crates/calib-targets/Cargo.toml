@@ -24,21 +24,6 @@ schemars = [
     "calib-targets-print/schemars",
     "calib-targets-puzzleboard/schemars",
 ]
-# Opt-in ONNX-backed subpixel refiner (`ChessRefiner::Ml`, upstream's
-# `chess-corners/ml-refiner`). OFF by default: it drags the `tract` ONNX
-# runtime into the build — which took the WASM bundle from ~0.85 MB to ~10 MB
-# while nothing in this workspace ever selects the ML refiner — and on
-# `wasm32-unknown-unknown` its transitive `getrandom` needs a backend chosen at
-# build time. With the feature off, the serde value `{"refiner": "ml"}` does
-# not deserialize; every other refiner is unaffected.
-ml-refiner = [
-    "chess-corners?/ml-refiner",
-    "calib-targets-aruco/ml-refiner",
-    "calib-targets-charuco/ml-refiner",
-    "calib-targets-chessboard/ml-refiner",
-    "calib-targets-marker/ml-refiner",
-    "calib-targets-puzzleboard/ml-refiner",
-]
 default = ["image", "cli"]
 image = ["dep:chess-corners", "dep:image"]
 cli = ["dep:clap"]

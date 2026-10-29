@@ -31,7 +31,13 @@ name = "calib-targets-ffi"
 # (still unreleased): the four detection result headers
 # (`ct_chessboard_result_t`, `ct_charuco_result_t`, `ct_marker_board_result_t`,
 # `ct_puzzleboard_result_t`) append `quality` (`ct_detection_quality_t`), the
-# per-detection localization-quality summary.
+# per-detection localization-quality summary. And, following chess-corners 2.0
+# (still within the unreleased 6.0.0): `ct_refiner_config_t` drops the
+# Förstner tuning (`forstner`, `ct_forstner_config_t`, and the
+# `CT_REFINER_KIND_FORSTNER = 2` tag) — struct-layout-breaking — and
+# `ct_uncertainty_t` renumbers to `CT_UNCERTAINTY_OFF = 0`,
+# `CT_UNCERTAINTY_PROPAGATED = 1`, so a zero-initialised config reports no
+# covariance, the new default.
 version = "6.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true

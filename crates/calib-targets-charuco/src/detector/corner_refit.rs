@@ -45,12 +45,11 @@
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_chessboard::FrameNoise;
 use calib_targets_core::{
     estimate_homography_rect_to_img, DetectorConfig, GrayImageView, LabeledCorner,
     PositionCovariance, TargetDetection, TargetKind,
 };
-use chess_corners::{Detector, Roi};
+use chess_corners::{Detector, NoiseLevel, Roi, Uncertainty};
 use nalgebra::Point2;
 
 // ---------------------------------------------------------------------------
@@ -87,15 +86,16 @@ pub(crate) struct CornerValidationConfig<'a, 'r> {
 /// the front-end corners do. The uncertainty policy comes from the front-end
 /// config (`CharucoParams::chess`), and the frame's noise level is the one
 /// the front end used — estimated at most once per detect call, and only if a
-/// corner is actually measured. With the noise level known the ROI detector
-/// makes no estimate of its own (it would otherwise estimate over the whole
-/// image on every call). Positions are identical in both modes.
+/// corner is actually measured. The ROI detector runs with that level as
+/// [`NoiseLevel::Known`], so it makes no estimate of its own (it would
+/// otherwise estimate over the whole image on every call). Positions are
+/// identical in both modes.
 pub(crate) struct Redetector<'a> {
     detector: Detector,
     base: DetectorConfig,
     front_end: &'a DetectorConfig,
     /// The frame's noise level, once known.
-    noise: Option<FrameNoise>,
+    noise: FrameNoise,
     /// Whether `detector` currently runs at `noise` rather than with the
     /// covariance off.
     measuring: bool,
@@ -123,16 +123,16 @@ impl Redetected {
 
 impl<'a> Redetector<'a> {
     /// `base` is the ROI detector config, `front_end` the config the frame's
-    /// corners were detected with, and `noise` the front end's noise level when
-    /// the caller already has it (`None` resolves it on first measurement).
+    /// corners were detected with, and `noise` what is known about the front
+    /// end's noise level.
     pub(crate) fn new(
         base: DetectorConfig,
         front_end: &'a DetectorConfig,
-        noise: Option<FrameNoise>,
+        noise: FrameNoise,
     ) -> Self {
-        let off = FrameNoise::NotRequested.lower(base);
         Self {
-            detector: Detector::new(off).expect("internal corner-redetect config is always valid"),
+            detector: Detector::new(at_noise_level(base, None))
+                .expect("internal corner-redetect config is always valid"),
             base,
             front_end,
             noise,
@@ -224,21 +224,84 @@ impl<'a> Redetector<'a> {
         if on == self.measuring {
             return;
         }
-        let noise = if on {
-            *self
-                .noise
-                .get_or_insert_with(|| FrameNoise::resolve(image, self.front_end))
+        let sigma = if on {
+            if self.noise == FrameNoise::Unresolved {
+                self.noise = FrameNoise::Known(resolve_noise_sigma(image, self.front_end));
+            }
+            self.noise.sigma()
         } else {
-            FrameNoise::NotRequested
+            None
         };
-        if self.detector.set_config(noise.lower(self.base)).is_err() {
-            // Only a supplied `noise_sigma` the detector rejects (negative /
+        if self
+            .detector
+            .set_config(at_noise_level(self.base, sigma))
+            .is_err()
+        {
+            // Only a supplied noise level the detector rejects (negative /
             // non-finite) can fail here; the front end rejects the same config
             // and reports no covariance, so keep running without one.
-            self.noise = Some(FrameNoise::NotRequested);
+            self.noise = FrameNoise::Known(None);
         }
         self.measuring = on;
     }
+}
+
+/// What a [`Redetector`] knows about the frame's image noise level.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum FrameNoise {
+    /// The front end ran on this frame and reported this σ: `None` when its
+    /// corners carry no covariance (the tier is off, the image was upscaled,
+    /// or the estimate declined), so re-detected corners carry none either.
+    Known(Option<f32>),
+    /// The corners came from the caller; the noise level is resolved from the
+    /// front-end config the first time a corner is measured.
+    Unresolved,
+}
+
+impl FrameNoise {
+    /// The noise level, when one is known.
+    pub(crate) fn sigma(self) -> Option<f32> {
+        match self {
+            Self::Known(sigma) => sigma,
+            Self::Unresolved => None,
+        }
+    }
+}
+
+/// The noise level `front_end` would compute covariances with on `image`, or
+/// `None` when it reports none.
+fn resolve_noise_sigma(image: &GrayImageView<'_>, front_end: &DetectorConfig) -> Option<f32> {
+    // An upscale stage interpolates pixels, so their noise is correlated and
+    // the front end reports no covariance.
+    if front_end.upscale.effective_factor() > 1 {
+        return None;
+    }
+    match front_end.uncertainty {
+        Uncertainty::Propagated {
+            noise: NoiseLevel::Known(sigma),
+        } => Some(sigma),
+        Uncertainty::Propagated {
+            noise: NoiseLevel::Estimate,
+        } => chess_corners::estimate_noise_sigma_u8(
+            image.data,
+            image.width as u32,
+            image.height as u32,
+        )
+        .ok()
+        .flatten(),
+        _ => None,
+    }
+}
+
+/// `base` with its covariance computed at the known noise level `sigma`, or
+/// switched off when there is none. Positions do not depend on it.
+fn at_noise_level(base: DetectorConfig, sigma: Option<f32>) -> DetectorConfig {
+    base.with_uncertainty(match sigma {
+        Some(sigma) => Uncertainty::Propagated {
+            noise: NoiseLevel::Known(sigma),
+        },
+        None => Uncertainty::Off,
+    })
 }
 
 // ---------------------------------------------------------------------------

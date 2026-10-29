@@ -71,7 +71,7 @@ The best entry point when onboarding or auditing the detector crates.
 - [`changelog/`](changelog/) — archived per-minor-version release notes,
   indexed from the root [`CHANGELOG.md`](../CHANGELOG.md).
 - [`migrations/`](migrations/) — breaking-change migration guides.
-  [`0.15.0.md`](migrations/0.15.0.md) and [`0.14.0.md`](migrations/0.14.0.md)
+  [`0.16.0.md`](migrations/0.16.0.md) and [`0.15.0.md`](migrations/0.15.0.md)
   are pulled into the book's Migration chapter via `{{#include}}` — **do not
   move/rename** them; older guides stay on disk but are not included.
 - [`releases/`](releases/) — GitHub release bodies consumed by CI.

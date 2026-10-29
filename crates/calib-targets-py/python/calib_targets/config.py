@@ -25,8 +25,9 @@ from .enums import CirclePolarity, DictionaryName, MarkerLayout
 # ChESS corner detector config (tagged-enum, matching Rust DetectorConfig)
 #
 # The Rust side is ``chess_corners::DetectorConfig``, a tagged-enum tree:
-# strategy / threshold / multiscale / upscale / orientation_method /
-# merge_radius / noise_sigma / uncertainty. The Python user-facing class is ``ChessConfig`` so the
+# strategy / threshold / detection / multiscale / upscale /
+# orientation_method / merge_radius / refiner / uncertainty. The Python
+# user-facing class is ``ChessConfig`` so the
 # import name from ``calib_targets`` stays stable across the 0.8 → 0.10
 # migration; semantically it carries the full ``DetectorConfig``.
 # ---------------------------------------------------------------------------
@@ -34,7 +35,8 @@ from .enums import CirclePolarity, DictionaryName, MarkerLayout
 
 @dataclass(slots=True)
 class CenterOfMassConfig:
-    """Center-of-mass subpixel refinement parameters."""
+    """The ChESS detector's own subpixel localizer: the center of mass of the
+    response around each peak (``ChessStrategyConfig.center_of_mass``)."""
 
     radius: int = 2
 
@@ -47,41 +49,8 @@ class CenterOfMassConfig:
 
 
 @dataclass(slots=True)
-class ForstnerConfig:
-    """Forstner-style gradient-based subpixel refinement."""
-
-    radius: int = 2
-    min_trace: float = 25.0
-    min_det: float = 1e-3
-    max_condition_number: float = 50.0
-    max_offset: float = 1.5
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "radius": self.radius,
-            "min_trace": self.min_trace,
-            "min_det": self.min_det,
-            "max_condition_number": self.max_condition_number,
-            "max_offset": self.max_offset,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> ForstnerConfig:
-        d = cls()
-        return cls(
-            radius=int(data.get("radius", d.radius)),
-            min_trace=float(data.get("min_trace", d.min_trace)),
-            min_det=float(data.get("min_det", d.min_det)),
-            max_condition_number=float(
-                data.get("max_condition_number", d.max_condition_number)
-            ),
-            max_offset=float(data.get("max_offset", d.max_offset)),
-        )
-
-
-@dataclass(slots=True)
 class SaddlePointConfig:
-    """Saddle-point subpixel refinement on the source image."""
+    """Tuning of the saddle-point image refiner (:meth:`ImageRefiner.saddle_point`)."""
 
     radius: int = 2
     det_margin: float = 1e-3
@@ -222,113 +191,56 @@ class UpscaleConfig:
         raise ValueError(f"unsupported UpscaleConfig payload: {data!r}")
 
 
-class ChessRefiner:
-    """Subpixel refiner selection for the ChESS detector.
+class ImageRefiner:
+    """The optional image-refinement stage (``ChessConfig.refiner``).
 
-    Mirrors ``chess_corners::ChessRefiner``. Construct via the
-    classmethods so the wire-shape stays consistent with serde:
+    Mirrors ``chess_corners::ImageRefiner``. The ChESS detector places each
+    corner with its own center of mass of the response
+    (``ChessStrategyConfig.center_of_mass``); an image refiner instead fits the
+    corner on the input image. It starts from the integer response peak and
+    drops a corner it rejects. ``ChessConfig.refiner = None`` (the default)
+    keeps the center of mass.
 
     .. code-block:: python
 
-        ChessRefiner.center_of_mass()
-        ChessRefiner.forstner(ForstnerConfig(radius=3))
-        ChessRefiner.saddle_point()
-        ChessRefiner.ml()   # only honoured by the Rust crate when the
-                            # ``ml-refiner`` feature is enabled
-
-    Implemented as a hand-rolled class (not a ``@dataclass``) so the
-    variant-constructor classmethods do not collide with the per-variant
-    payload slots.
+        ImageRefiner.saddle_point()
+        ImageRefiner.saddle_point(SaddlePointConfig(radius=3))
     """
 
-    __slots__ = ("kind", "center_of_mass_cfg", "forstner_cfg", "saddle_point_cfg")
+    __slots__ = ("kind", "saddle_point_cfg")
 
     def __init__(
         self,
-        kind: str = "center_of_mass",
-        center_of_mass_cfg: CenterOfMassConfig | None = None,
-        forstner_cfg: ForstnerConfig | None = None,
+        kind: str = "saddle_point",
         saddle_point_cfg: SaddlePointConfig | None = None,
     ) -> None:
+        if kind != "saddle_point":
+            raise ValueError(f"unknown ImageRefiner kind: {kind!r}")
         self.kind = kind
-        self.center_of_mass_cfg: CenterOfMassConfig = (
-            center_of_mass_cfg if center_of_mass_cfg is not None else CenterOfMassConfig()
-        )
-        self.forstner_cfg: ForstnerConfig = (
-            forstner_cfg if forstner_cfg is not None else ForstnerConfig()
-        )
         self.saddle_point_cfg: SaddlePointConfig = (
             saddle_point_cfg if saddle_point_cfg is not None else SaddlePointConfig()
         )
 
     def __eq__(self, other: object) -> bool:
-        if not isinstance(other, ChessRefiner):
+        if not isinstance(other, ImageRefiner):
             return NotImplemented
-        if self.kind != other.kind:
-            return False
-        if self.kind == "center_of_mass":
-            return self.center_of_mass_cfg == other.center_of_mass_cfg
-        if self.kind == "forstner":
-            return self.forstner_cfg == other.forstner_cfg
-        if self.kind == "saddle_point":
-            return self.saddle_point_cfg == other.saddle_point_cfg
-        return True  # ml
+        return self.kind == other.kind and self.saddle_point_cfg == other.saddle_point_cfg
 
     def __repr__(self) -> str:
-        return f"ChessRefiner(kind={self.kind!r})"
+        return f"ImageRefiner(kind={self.kind!r}, saddle_point_cfg={self.saddle_point_cfg!r})"
 
     @classmethod
-    def center_of_mass(
-        cls, cfg: CenterOfMassConfig | None = None
-    ) -> ChessRefiner:
-        return cls(kind="center_of_mass", center_of_mass_cfg=cfg)
-
-    @classmethod
-    def forstner(cls, cfg: ForstnerConfig | None = None) -> ChessRefiner:
-        return cls(kind="forstner", forstner_cfg=cfg)
-
-    @classmethod
-    def saddle_point(
-        cls, cfg: SaddlePointConfig | None = None
-    ) -> ChessRefiner:
+    def saddle_point(cls, cfg: SaddlePointConfig | None = None) -> ImageRefiner:
         return cls(kind="saddle_point", saddle_point_cfg=cfg)
 
-    @classmethod
-    def ml(cls) -> ChessRefiner:
-        """ONNX-backed ML refiner (Rust must be built with ``ml-refiner``)."""
-        return cls(kind="ml")
-
-    def to_dict(self) -> Any:
-        if self.kind == "center_of_mass":
-            return {"center_of_mass": self.center_of_mass_cfg.to_dict()}
-        if self.kind == "forstner":
-            return {"forstner": self.forstner_cfg.to_dict()}
-        if self.kind == "saddle_point":
-            return {"saddle_point": self.saddle_point_cfg.to_dict()}
-        if self.kind == "ml":
-            return "ml"
-        raise ValueError(f"unknown ChessRefiner kind: {self.kind!r}")
+    def to_dict(self) -> dict[str, Any]:
+        return {"saddle_point": self.saddle_point_cfg.to_dict()}
 
     @classmethod
-    def from_dict(cls, data: Any) -> ChessRefiner:
-        if isinstance(data, str):
-            if data == "ml":
-                return cls.ml()
-            raise ValueError(f"unknown ChessRefiner variant: {data!r}")
-        if isinstance(data, dict):
-            if "center_of_mass" in data:
-                return cls.center_of_mass(
-                    CenterOfMassConfig.from_dict(data["center_of_mass"] or {})
-                )
-            if "forstner" in data:
-                return cls.forstner(ForstnerConfig.from_dict(data["forstner"] or {}))
-            if "saddle_point" in data:
-                return cls.saddle_point(
-                    SaddlePointConfig.from_dict(data["saddle_point"] or {})
-                )
-            if "ml" in data:
-                return cls.ml()
-        raise ValueError(f"unsupported ChessRefiner payload: {data!r}")
+    def from_dict(cls, data: Any) -> ImageRefiner:
+        if isinstance(data, dict) and set(data) == {"saddle_point"}:
+            return cls.saddle_point(SaddlePointConfig.from_dict(data["saddle_point"] or {}))
+        raise ValueError(f"unsupported ImageRefiner payload: {data!r}")
 
 
 # Bare-string enum constants. The Rust side uses ``#[serde(rename_all =
@@ -349,16 +261,92 @@ class OrientationMethod:
 
 
 class Uncertainty:
-    """Which position uncertainty the corner detector computes (Rust unit-enum).
+    """Which position uncertainty each corner reports, and the image noise
+    level that expresses it in px². An immutable value.
 
-    ``PROPAGATED`` (the default) propagates the image noise through each
-    corner's subpixel localizer and adds a per-localizer systematic term;
-    ``OFF`` skips that work and the per-image noise estimate. Corner positions
-    are identical under both.
+    Mirrors ``chess_corners::Uncertainty``. :meth:`off` (the default) reports
+    no position covariance and makes no noise estimate. :meth:`propagated`
+    propagates the image noise through each corner's localizer and adds a
+    per-localizer systematic term; ``noise_sigma`` is the image's total pixel
+    noise in gray levels (``>= 0``), or ``None`` to estimate it from each
+    image (unreliable on demosaiced or JPEG input — supply it there). Corner
+    positions are identical under both.
+
+    .. code-block:: python
+
+        Uncertainty.off()
+        Uncertainty.propagated()                 # estimate per image
+        Uncertainty.propagated(noise_sigma=1.2)  # known sensor noise
     """
 
-    OFF = "off"
-    PROPAGATED = "propagated"
+    __slots__ = ("kind", "noise_sigma")
+
+    def __init__(self, kind: str = "off", noise_sigma: float | None = None) -> None:
+        if kind not in ("off", "propagated"):
+            raise ValueError(f"unknown Uncertainty kind: {kind!r}")
+        if kind == "off" and noise_sigma is not None:
+            raise ValueError(
+                "Uncertainty.off() takes no noise level; use "
+                "Uncertainty.propagated(noise_sigma=...)"
+            )
+        if noise_sigma is not None:
+            noise_sigma = float(noise_sigma)
+            if not math.isfinite(noise_sigma) or noise_sigma < 0.0:
+                raise ValueError(
+                    f"noise_sigma must be finite and >= 0; got {noise_sigma!r}"
+                )
+        object.__setattr__(self, "kind", kind)
+        object.__setattr__(self, "noise_sigma", noise_sigma)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        raise AttributeError("Uncertainty is immutable; build a new value")
+
+    def __eq__(self, other: object) -> bool:
+        if not isinstance(other, Uncertainty):
+            return NotImplemented
+        return self.kind == other.kind and self.noise_sigma == other.noise_sigma
+
+    def __hash__(self) -> int:
+        return hash((self.kind, self.noise_sigma))
+
+    def __repr__(self) -> str:
+        if self.kind == "off":
+            return "Uncertainty.off()"
+        return f"Uncertainty.propagated(noise_sigma={self.noise_sigma!r})"
+
+    @classmethod
+    def off(cls) -> Uncertainty:
+        return cls("off")
+
+    @classmethod
+    def propagated(cls, noise_sigma: float | None = None) -> Uncertainty:
+        return cls("propagated", noise_sigma)
+
+    def to_dict(self) -> Any:
+        if self.kind == "off":
+            return "off"
+        noise: Any = "estimate" if self.noise_sigma is None else {"known": self.noise_sigma}
+        return {"propagated": {"noise": noise}}
+
+    @classmethod
+    def from_dict(cls, data: Any) -> Uncertainty:
+        if data == "off":
+            return cls.off()
+        if isinstance(data, dict) and set(data) == {"propagated"}:
+            body = data["propagated"]
+            if isinstance(body, dict) and set(body) == {"noise"}:
+                noise = body["noise"]
+                if noise == "estimate":
+                    return cls.propagated()
+                if isinstance(noise, dict) and set(noise) == {"known"}:
+                    return cls.propagated(noise_sigma=float(noise["known"]))
+        if data == "propagated":
+            raise ValueError(
+                'the 1.x uncertainty string "propagated" is gone in chess-corners '
+                '2.0: write {"propagated": {"noise": "estimate"}} '
+                "(Uncertainty.propagated())"
+            )
+        raise ValueError(f"unsupported Uncertainty payload: {data!r}")
 
 
 # ---------------------------------------------------------------------------
@@ -378,29 +366,48 @@ class ChessStrategyConfig:
     """
 
     ring: str = ChessRing.CANONICAL
-    refiner: ChessRefiner = field(
-        default_factory=lambda: ChessRefiner.center_of_mass()
-    )
+    #: The ChESS detector's own subpixel localizer. An image refiner
+    #: (``ChessConfig.refiner``) replaces it.
+    center_of_mass: CenterOfMassConfig = field(default_factory=CenterOfMassConfig)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "ring": self.ring,
-            "refiner": self.refiner.to_dict(),
+            "center_of_mass": self.center_of_mass.to_dict(),
         }
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessStrategyConfig:
         d = cls()
         _reject_moved_detection_keys(data)
+        if "refiner" in data:
+            raise ValueError(
+                "ChessStrategyConfig received 'refiner', which moved in "
+                "chess-corners 2.0: the center-of-mass tuning is now "
+                "strategy.chess.center_of_mass, and an image refiner is the "
+                "top-level ChessConfig(refiner=ImageRefiner.saddle_point())."
+            )
+        _reject_unknown_keys("ChessStrategyConfig", data, {"ring", "center_of_mass"})
         return cls(
             ring=data.get("ring", d.ring),
-            refiner=ChessRefiner.from_dict(
-                data.get("refiner", {"center_of_mass": {}})
+            center_of_mass=CenterOfMassConfig.from_dict(
+                data.get("center_of_mass", d.center_of_mass.to_dict())
             ),
         )
 
 
 _MOVED_DETECTION_KEYS = frozenset({"nms_radius", "min_cluster_size"})
+
+
+def _reject_unknown_keys(owner: str, data: dict[str, Any], known: set[str]) -> None:
+    """Reject keys the Rust config does not have, as its serde does.
+
+    Silently dropping one would leave a caller believing a setting took
+    effect when it did not.
+    """
+    unknown = set(data) - known
+    if unknown:
+        raise ValueError(f"{owner} has no keys {sorted(unknown)!r}")
 
 
 def _reject_moved_detection_keys(data: dict[str, Any]) -> None:
@@ -495,64 +502,6 @@ class DetectionStrategy:
 
 
 # ---------------------------------------------------------------------------
-# Backward-compatible deprecated alias for the old flat ``RefinerConfig``.
-# ---------------------------------------------------------------------------
-
-
-class RefinerConfig:
-    """Deprecated flat refiner config — kept for source compatibility.
-
-    Pre-0.10 code wrote ``RefinerConfig(kind="forstner")`` and let
-    ``ChessConfig`` pick the appropriate sub-config. The Rust side now
-    speaks a tagged-enum :class:`ChessRefiner`; this shim accepts the
-    legacy keyword shape and forwards to :class:`ChessRefiner`. Prefer
-    constructing :class:`ChessRefiner` directly in new code.
-    """
-
-    def __new__(  # type: ignore[misc]
-        cls,
-        kind: str = "center_of_mass",
-        center_of_mass: CenterOfMassConfig | None = None,
-        forstner: ForstnerConfig | None = None,
-        saddle_point: SaddlePointConfig | None = None,
-    ) -> ChessRefiner:
-        if kind == "center_of_mass":
-            return ChessRefiner.center_of_mass(center_of_mass)
-        if kind == "forstner":
-            return ChessRefiner.forstner(forstner)
-        if kind == "saddle_point":
-            return ChessRefiner.saddle_point(saddle_point)
-        if kind == "ml":
-            return ChessRefiner.ml()
-        raise ValueError(f"unknown refiner kind: {kind!r}")
-
-    @staticmethod
-    def from_dict(data: dict[str, Any]) -> ChessRefiner:  # noqa: D401
-        """Accept the legacy flat shape *or* the new tagged shape."""
-        if isinstance(data, dict) and "kind" in data and (
-            "center_of_mass" in data or "forstner" in data or "saddle_point" in data
-        ):
-            kind = data["kind"]
-            if kind == "center_of_mass":
-                payload = data.get("center_of_mass", {}) or {}
-                return ChessRefiner.center_of_mass(
-                    CenterOfMassConfig.from_dict(payload)
-                )
-            if kind == "forstner":
-                payload = data.get("forstner", {}) or {}
-                return ChessRefiner.forstner(ForstnerConfig.from_dict(payload))
-            if kind == "saddle_point":
-                payload = data.get("saddle_point", {}) or {}
-                return ChessRefiner.saddle_point(
-                    SaddlePointConfig.from_dict(payload)
-                )
-            if kind == "ml":
-                return ChessRefiner.ml()
-            raise ValueError(f"unknown refiner kind: {kind!r}")
-        return ChessRefiner.from_dict(data)
-
-
-# ---------------------------------------------------------------------------
 # DetectionParams — shared NMS / clustering knobs (Rust ``DetectionParams``)
 # ---------------------------------------------------------------------------
 
@@ -627,10 +576,6 @@ def _threshold_from_wire(value: Any) -> float:
     return float(value)
 
 
-def _optional_float(value: Any) -> float | None:
-    """Coerce a nullable wire number (Rust ``Option<f32>``)."""
-    return None if value is None else float(value)
-
 
 @dataclass(slots=True)
 class ChessConfig:
@@ -681,10 +626,13 @@ class ChessConfig:
         # Pre-pipeline upscale for tiny markers:
         cfg = ChessConfig(upscale=UpscaleConfig.fixed(2))
 
-        # Known sensor noise (gray levels) for the position covariance, or
-        # skip the covariance and its per-image noise estimate entirely:
-        cfg = ChessConfig(noise_sigma=2.0)
-        cfg = ChessConfig(uncertainty=Uncertainty.OFF)
+        # Saddle-point image refiner instead of the center of mass:
+        cfg = ChessConfig(refiner=ImageRefiner.saddle_point())
+
+        # Report each corner's position covariance (off by default), with the
+        # noise estimated per image or a known sensor noise in gray levels:
+        cfg = ChessConfig(uncertainty=Uncertainty.propagated())
+        cfg = ChessConfig(uncertainty=Uncertainty.propagated(noise_sigma=2.0))
     """
 
     strategy: DetectionStrategy = field(default_factory=DetectionStrategy.chess)
@@ -698,12 +646,12 @@ class ChessConfig:
     #: ``Option<OrientationMethod>``); every descriptor then carries no axes.
     orientation_method: str | None = OrientationMethod.RING_FIT
     merge_radius: float = 3.0
-    #: Pixel-noise standard deviation in gray levels (``>= 0``) used to
-    #: express each corner's position covariance in px². ``None`` estimates it
-    #: from each image; set it when the sensor noise is known.
-    noise_sigma: float | None = None
-    #: Which position uncertainty to compute — an :class:`Uncertainty` value.
-    uncertainty: str = Uncertainty.PROPAGATED
+    #: Image-refinement stage, or ``None`` (the default) to keep the ChESS
+    #: center of mass.
+    refiner: ImageRefiner | None = None
+    #: Which position uncertainty each corner reports — an
+    #: :class:`Uncertainty` value. Off by default.
+    uncertainty: Uncertainty = field(default_factory=Uncertainty.off)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -714,8 +662,8 @@ class ChessConfig:
             "upscale": self.upscale.to_dict(),
             "orientation_method": self.orientation_method,
             "merge_radius": float(self.merge_radius),
-            "noise_sigma": _optional_float(self.noise_sigma),
-            "uncertainty": self.uncertainty,
+            "refiner": None if self.refiner is None else self.refiner.to_dict(),
+            "uncertainty": self.uncertainty.to_dict(),
         }
 
     @classmethod
@@ -736,10 +684,32 @@ class ChessConfig:
                 "a plain number for the threshold, "
                 "`MultiscaleConfig.pyramid(...)` for pyramid "
                 "settings, `UpscaleConfig.fixed(k)` for pre-pipeline "
-                "upscaling, and `ChessRefiner.forstner(...)` etc. for the "
+                "upscaling, and `ImageRefiner.saddle_point(...)` for the "
                 "refiner. See README and CHANGELOG."
             )
+        if "noise_sigma" in data:
+            raise ValueError(
+                "ChessConfig received 'noise_sigma', which moved in "
+                "chess-corners 2.0 into the uncertainty setting: "
+                "ChessConfig(uncertainty=Uncertainty.propagated(noise_sigma=...))."
+            )
+        _reject_unknown_keys(
+            "ChessConfig",
+            data,
+            {
+                "strategy",
+                "threshold",
+                "detection",
+                "multiscale",
+                "upscale",
+                "orientation_method",
+                "merge_radius",
+                "refiner",
+                "uncertainty",
+            },
+        )
         d = cls()
+        refiner = data.get("refiner")
         return cls(
             strategy=DetectionStrategy.from_dict(
                 data.get("strategy", d.strategy.to_dict())
@@ -754,8 +724,10 @@ class ChessConfig:
             upscale=UpscaleConfig.from_dict(data.get("upscale", d.upscale.to_dict())),
             orientation_method=data.get("orientation_method", d.orientation_method),
             merge_radius=float(data.get("merge_radius", d.merge_radius)),
-            noise_sigma=_optional_float(data.get("noise_sigma", d.noise_sigma)),
-            uncertainty=data.get("uncertainty", d.uncertainty),
+            refiner=None if refiner is None else ImageRefiner.from_dict(refiner),
+            uncertainty=Uncertainty.from_dict(
+                data.get("uncertainty", d.uncertainty.to_dict())
+            ),
         )
 
 # ---------------------------------------------------------------------------
@@ -2088,17 +2060,16 @@ class PuzzlePoleParams:
 __all__ = [
     # ChESS detector configuration (DetectorConfig tree).
     "CenterOfMassConfig",
-    "ForstnerConfig",
     "SaddlePointConfig",
     "MultiscaleConfig",
     "UpscaleConfig",
     "ChessRing",
     "OrientationMethod",
-    "ChessRefiner",
+    "ImageRefiner",
+    "Uncertainty",
     "ChessStrategyConfig",
     "DetectionParams",
     "DetectionStrategy",
-    "RefinerConfig",  # deprecated shim — forwards to ChessRefiner
     "ChessConfig",
     # Chessboard pipeline.
     "OrientationClusteringParams",

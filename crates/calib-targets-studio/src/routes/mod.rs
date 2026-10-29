@@ -16,10 +16,26 @@ use axum::Router;
 use tower_http::cors::CorsLayer;
 use tower_http::services::{ServeDir, ServeFile};
 
+use calib_targets::detect::{
+    default_chess_config, DetectorConfig, NoiseLevel, OrientationMethod, Uncertainty,
+};
+
 use crate::state::StudioState;
 
 /// Shared state handle passed to every handler.
 pub type AppState = Arc<StudioState>;
+
+/// The corner config every studio run uses: the workspace default with the
+/// requested axis-fit method and the position covariance switched on, so the
+/// viewer can draw uncertainty ellipses and report the detection quality (the
+/// library default reports no covariance). Positions do not depend on it.
+pub(crate) fn studio_chess_config(orientation_method: OrientationMethod) -> DetectorConfig {
+    let mut chess_cfg = default_chess_config().with_uncertainty(Uncertainty::Propagated {
+        noise: NoiseLevel::Estimate,
+    });
+    chess_cfg.orientation_method = Some(orientation_method);
+    chess_cfg
+}
 
 /// Build the full application router. `dev` skips static-file serving (the
 /// Vite dev server owns the UI and proxies `/api` here).

@@ -8,7 +8,8 @@
 ## Core data types
 
 - `AxisEstimate`: one local grid-axis direction — an angle in `[0, π)`
-  plus a 1σ angular uncertainty. A corner carries two of these as
+  plus `fit_std_error`, the standard error of the axis fit (a fit-quality
+  score in radians). A corner carries two of these as
   `axes: [AxisEstimate; 2]`; there is no single-orientation field
   (`Corner::orientation` was removed workspace-wide).
 - `Coord`: integer grid indices `(u, v)` in board space, with `u`

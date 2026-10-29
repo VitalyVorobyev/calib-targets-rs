@@ -71,8 +71,10 @@ ran on: the symmetric matrix `[[xx, xy], [xy, yy]]` that the corner detector
 reports for the refined position — image noise propagated through the
 localizer plus the localizer's own systematic error
 ([chess-corners, Part VIII: Uncertainty](https://vitalyvorobyev.github.io/chess-corners-rs/book/part-08-uncertainty.html)).
-Every typed corner has the field. Feed it to a calibration solver as a
-per-point weight. `sigma_max_px()` gives a single "worst-direction" σ in px;
+Every typed corner has the field; it is filled only when the ChESS config
+asks for it (`uncertainty: Propagated`, off by default — see
+[Corner uncertainty](uncertainty.md)). `sigma_max_px()` gives a single
+"worst-direction" σ in px;
 in Rust, `PositionCovariance::mahalanobis_sq` gates a residual against it
 (elsewhere, compute `dᵀ Σ⁻¹ d` from `xx`, `xy`, `yy`).
 
@@ -81,9 +83,9 @@ C) when no covariance was measured:
 
 | Cause | What to do |
 |---|---|
-| `uncertainty` is `Off` in the ChESS config, or the ML refiner | Leave the default `Propagated` tier and a classic refiner. |
+| `uncertainty` is `Off` in the ChESS config (the default) | Select `Uncertainty::Propagated`. |
 | `upscale` is active | Interpolated pixels carry correlated noise, so none is reported. |
-| The frame's noise estimate declined (typical of JPEG input) | Supply `noise_sigma`, measured on your camera's images. |
+| The frame's noise estimate declined (typical of JPEG input) | Supply the noise level (`NoiseLevel::Known`), measured on your camera's images. |
 | A saddle-point refinement did not converge for that corner | Give the corner a low weight or leave it out. |
 
 A covariance is only as good as its white-noise assumption. If *you* resample

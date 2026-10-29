@@ -2,7 +2,9 @@ use super::board_match::{match_board, BoardMatchConfig};
 #[cfg(feature = "diagnostics")]
 use super::board_match::{match_board_diag, BoardMatchDiagnostics};
 use super::corner_mapping::map_charuco_corners;
-use super::corner_refit::{validate_and_fix_corners, CornerValidationConfig, Redetector};
+use super::corner_refit::{
+    validate_and_fix_corners, CornerValidationConfig, FrameNoise, Redetector,
+};
 use super::grid_smoothness::smooth_grid_corners;
 use super::marker_sampling::{build_corner_map, build_marker_cells};
 use super::merge::merge_charuco_results;
@@ -10,7 +12,7 @@ use super::{CharucoDetectError, CharucoDetection, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::MarkerDetection;
-use calib_targets_chessboard::{detect_corner_frame, ChessCorner, CornerFrame, FrameNoise};
+use calib_targets_chessboard::{detect_corner_frame, ChessCorner, CornerFrame};
 use calib_targets_chessboard::{
     ChessboardCorner, ChessboardDetection, ChessboardDetector as ChessDetector,
 };
@@ -296,7 +298,7 @@ impl CharucoDetector {
         self.detect_core(
             image,
             &frame.corners,
-            Some(frame.noise),
+            FrameNoise::Known(frame.noise_sigma),
             &mut NoPipelineDiag,
         )
     }
@@ -316,7 +318,7 @@ impl CharucoDetector {
     /// position; the re-detection is a new measurement and carries its own
     /// covariance, following the uncertainty settings of
     /// [`CharucoParams::chess`](crate::CharucoParams::chess) (`uncertainty`,
-    /// `noise_sigma`, `upscale`). Without a supplied `noise_sigma` the frame's
+    /// `upscale`). Unless that config supplies a known noise level, the frame's
     /// noise level is then estimated once per call; [`Self::detect`] reuses the
     /// one its own corner pass measured.
     // The link target exists only with the `diagnostics` feature; link it then,
@@ -335,7 +337,7 @@ impl CharucoDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<CharucoDetection, CharucoDetectError> {
-        self.detect_core(image, corners, None, &mut NoPipelineDiag)
+        self.detect_core(image, corners, FrameNoise::Unresolved, &mut NoPipelineDiag)
     }
 
     /// [`Self::detect`] + per-component diagnostics.
@@ -355,7 +357,12 @@ impl CharucoDetector {
     ) {
         let frame = detect_corner_frame(image, &self.params.chess);
         let mut collector = DiagCollector::default();
-        let result = self.detect_core(image, &frame.corners, Some(frame.noise), &mut collector);
+        let result = self.detect_core(
+            image,
+            &frame.corners,
+            FrameNoise::Known(frame.noise_sigma),
+            &mut collector,
+        );
         (result, collector.diagnostics)
     }
 
@@ -375,7 +382,7 @@ impl CharucoDetector {
         CharucoDetectDiagnostics,
     ) {
         let mut collector = DiagCollector::default();
-        let result = self.detect_core(image, corners, None, &mut collector);
+        let result = self.detect_core(image, corners, FrameNoise::Unresolved, &mut collector);
         (result, collector.diagnostics)
     }
 
@@ -387,13 +394,14 @@ impl CharucoDetector {
     /// production path passes [`NoPipelineDiag`] (every hook inlines away).
     ///
     /// `noise` is the front end's noise level for this frame when the caller
-    /// ran the front end itself; `None` (caller-supplied corners) resolves it
-    /// from [`CharucoParams::chess`] the first time a corner is re-detected.
+    /// ran the front end itself; [`FrameNoise::Unresolved`] (caller-supplied
+    /// corners) resolves it from [`CharucoParams::chess`] the first time a
+    /// corner is re-detected.
     fn detect_core<S: PipelineSink>(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-        noise: Option<FrameNoise>,
+        noise: FrameNoise,
         sink: &mut S,
     ) -> Result<CharucoDetection, CharucoDetectError> {
         debug!(
@@ -500,9 +508,7 @@ impl CharucoDetector {
         // The covariances' noise level is known only when the front end ran
         // here; caller-supplied corners came from a pass this detector did
         // not see.
-        merged.quality = merged
-            .quality
-            .with_noise_sigma(noise.and_then(FrameNoise::sigma));
+        merged.quality = merged.quality.with_noise_sigma(noise.sigma());
         Ok(merged)
     }
 

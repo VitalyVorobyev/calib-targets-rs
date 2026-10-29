@@ -44,11 +44,11 @@ fn synth_chessboard(cols: i32, rows: i32, pitch: f32) -> Vec<ChessCorner> {
                 [
                     AxisEstimate {
                         angle: a0,
-                        sigma: 0.01,
+                        fit_std_error: 0.01,
                     },
                     AxisEstimate {
                         angle: a1,
-                        sigma: 0.01,
+                        fit_std_error: 0.01,
                     },
                 ],
                 1.0,

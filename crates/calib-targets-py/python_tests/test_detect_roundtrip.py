@@ -39,6 +39,17 @@ def _assert_roundtrip(result: Any) -> None:
     assert restored.to_dict() == serialized
 
 
+def _propagated() -> ct.ChessConfig:
+    """The default corner config with the position covariance switched on."""
+    return ct.ChessConfig(uncertainty=ct.Uncertainty.propagated())
+
+
+def _propagated_payload() -> dict[str, Any]:
+    from calib_targets._convert_in import chess_config_to_payload
+
+    return chess_config_to_payload(_propagated())
+
+
 def _charuco_params_small2() -> ct.CharucoParams:
     return ct.CharucoParams(
         board=ct.CharucoBoardSpec(
@@ -527,6 +538,7 @@ def _topological_corners(image: np.ndarray, chess_cfg: Any = None) -> list[dict[
 def test_detect_charuco_with_corners_matches_detect_charuco() -> None:
     image = _load_gray("small2.png")
     params = _charuco_params_small2()
+    params.chess = _propagated()
     corners = _topological_corners(image, params.chess)
 
     direct = ct.detect_charuco(image, params=params)
@@ -554,9 +566,20 @@ def test_diagnose_puzzleboard_with_corners_matches_diagnose_puzzleboard() -> Non
 # ---------------------------------------------------------------------------
 
 
+def test_default_config_reports_no_position_covariance() -> None:
+    # The covariance is opt-in (`Uncertainty.propagated()`); the default
+    # reports none and no noise level, while the local residual is measured.
+    result = ct.detect_chessboard(_load_gray("mid.png"))
+    assert result is not None and result.corners
+    assert all(c.position_covariance is None for c in result.corners)
+    assert result.quality.noise_sigma is None
+    assert result.quality.covariance_coverage == 0.0
+    assert result.quality.local_residual_rms_px is not None
+
+
 def test_chessboard_corners_carry_position_covariance() -> None:
     image = _load_gray("mid.png")
-    raw = _core.detect_chessboard(image, params=None)
+    raw = _core.detect_chessboard(image, chess_cfg=_propagated_payload(), params=None)
     assert raw is not None
     raw_corners = raw["corners"]
     assert raw_corners, "mid.png must detect"
@@ -582,7 +605,7 @@ def test_chessboard_corners_carry_position_covariance() -> None:
 
 def test_raw_trace_corners_carry_position_covariance() -> None:
     image = _load_gray("mid.png")
-    traced = _core.trace_chessboard_topological(image)
+    traced = _core.trace_chessboard_topological(image, chess_cfg=_propagated_payload())
     corners = traced["corners"]
     assert corners
     assert all("position_covariance" in c for c in corners)
@@ -609,7 +632,7 @@ def test_corner_dicts_without_covariance_still_parse() -> None:
     # are both accepted by the `*_with_corners` entry points.
     image = _load_gray("puzzleboard_small.png")
     params = _puzzleboard_params()
-    traced = _core.trace_chessboard_topological(image)
+    traced = _core.trace_chessboard_topological(image, chess_cfg=_propagated_payload())
     full = ct.detect_puzzleboard_with_corners(image, traced["corners"], params=params)
     stripped = [
         {k: v for k, v in c.items() if k != "position_covariance"} for c in traced["corners"]
@@ -622,7 +645,9 @@ def test_corner_dicts_without_covariance_still_parse() -> None:
 
 def test_charuco_corners_carry_position_covariance() -> None:
     image = _load_gray("small2.png")
-    result = ct.detect_charuco(image, params=_charuco_params_small2())
+    params = _charuco_params_small2()
+    params.chess = _propagated()
+    result = ct.detect_charuco(image, params=params)
     covs = [c.position_covariance for c in result.corners]
     assert sum(c is not None for c in covs) * 10 >= len(covs) * 9
     # The generic carrier keeps it.
@@ -649,7 +674,7 @@ _QUALITY_KEYS = {
 
 
 def _assert_quality_measured(quality: ct.DetectionQuality, corners: int) -> None:
-    # On a lossless camera image the default config estimates the noise and
+    # On a lossless camera image a propagated config estimates the noise and
     # measures a covariance on (nearly) every corner.
     assert isinstance(quality, ct.DetectionQuality)
     assert quality.noise_sigma is not None and quality.noise_sigma >= 0.0
@@ -664,7 +689,7 @@ def _assert_quality_measured(quality: ct.DetectionQuality, corners: int) -> None
 
 def test_chessboard_quality_matches_the_rust_payload() -> None:
     image = _load_gray("mid.png")
-    raw = _core.detect_chessboard(image, params=None)
+    raw = _core.detect_chessboard(image, chess_cfg=_propagated_payload(), params=None)
     assert raw is not None
     assert set(raw["quality"].keys()) == _QUALITY_KEYS
     result = ct.ChessboardDetectionResult.from_dict(raw)
@@ -675,31 +700,32 @@ def test_chessboard_quality_matches_the_rust_payload() -> None:
 
 
 def test_every_detection_result_carries_quality() -> None:
-    charuco = ct.detect_charuco(_load_gray("small2.png"), params=_charuco_params_small2())
+    charuco_params = _charuco_params_small2()
+    charuco_params.chess = _propagated()
+    charuco = ct.detect_charuco(_load_gray("small2.png"), params=charuco_params)
     _assert_quality_measured(charuco.quality, len(charuco.corners))
     # `puzzleboard_small.png` is a noise-free render: the noise estimate
     # declines, so no corner carries a covariance — but the local residual is
     # still measured.
-    puzzle = ct.detect_puzzleboard(
-        _load_gray("puzzleboard_small.png"), params=_puzzleboard_params()
-    )
+    puzzle_params = _puzzleboard_params()
+    puzzle_params.chess = _propagated()
+    puzzle = ct.detect_puzzleboard(_load_gray("puzzleboard_small.png"), params=puzzle_params)
     assert puzzle.quality.noise_sigma is None
     assert puzzle.quality.covariance_coverage == 0.0
     assert puzzle.quality.median_sigma_px is None
     assert puzzle.quality.variance_factor is None
     assert 0 < puzzle.quality.local_residual_count <= len(puzzle.corners)
     assert puzzle.quality.local_residual_rms_px is not None
-    spec = _puzzlepole_spec()
-    pole = ct.detect_puzzlepole(
-        _load_gray("puzzlepole_view.png"), params=ct.PuzzlePoleParams.for_pole(spec)
-    )
+    pole_params = ct.PuzzlePoleParams.for_pole(_puzzlepole_spec())
+    pole_params.chess = _propagated()
+    pole = ct.detect_puzzlepole(_load_gray("puzzlepole_view.png"), params=pole_params)
     # Covariance statistics only on a (non-planar) pole.
     assert pole.quality.local_residual_count == 0
     assert pole.quality.local_residual_rms_px is None
     assert pole.quality.variance_factor is None
-    marker = ct.detect_marker_board(
-        _load_gray("markerboard_crop.png"), params=_marker_board_params()
-    )
+    marker_params = _marker_board_params()
+    marker_params.chess = _propagated()
+    marker = ct.detect_marker_board(_load_gray("markerboard_crop.png"), params=marker_params)
     assert marker is not None
     _assert_quality_measured(marker.quality, len(marker.corners))
     for result in (charuco, puzzle, pole, marker):
@@ -711,6 +737,7 @@ def test_with_corners_quality_has_no_noise_level() -> None:
     # the covariances were computed with; the rest is still measured.
     image = _load_gray("small2.png")
     params = _charuco_params_small2()
+    params.chess = _propagated()
     result = ct.detect_charuco_with_corners(
         image, _topological_corners(image, params.chess), params=params
     )

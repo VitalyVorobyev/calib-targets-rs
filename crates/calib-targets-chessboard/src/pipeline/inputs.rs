@@ -18,11 +18,11 @@ fn axes_from(c: &ChessCorner) -> [AxisEstimate; 2] {
     [
         AxisEstimate {
             angle: c.axes[0].angle,
-            sigma: c.axes[0].sigma,
+            fit_std_error: c.axes[0].fit_std_error,
         },
         AxisEstimate {
             angle: c.axes[1].angle,
-            sigma: c.axes[1].sigma,
+            fit_std_error: c.axes[1].fit_std_error,
         },
     ]
 }
@@ -34,7 +34,7 @@ fn prefilter(corners: &[ChessCorner], params: &ChessboardParams) -> Vec<bool> {
         .iter()
         .map(|c| {
             c.strength >= min_corner_strength
-                && c.axes[0].sigma.max(c.axes[1].sigma) <= max_axis_sigma
+                && c.axes[0].fit_std_error.max(c.axes[1].fit_std_error) <= max_axis_sigma
         })
         .collect()
 }

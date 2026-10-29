@@ -74,7 +74,6 @@ static ct_chessboard_detector_config_t default_config() {
   chess.min_cluster_size = 2;
   chess.refiner.kind = CT_REFINER_KIND_CENTER_OF_MASS;
   chess.refiner.center_of_mass.radius = 2;
-  chess.refiner.forstner = {2, 25.0f, 1e-3f, 50.0f, 1.5f};
   chess.refiner.saddle_point = {2, 1e-3f, 1.5f, 1e-4f};
 
   config.chess.multiscale.pyramid.num_levels = 1;

@@ -63,8 +63,8 @@ largest *owned* costs are the dense-board grid build and, on marker-dense
 boards, decode.
 
 Per-stage p50 (ms) on the four public report frames (`full_stage_timing`, M4
-Pro, 200 reps, `chess-corners` 1.6 with the default `Propagated` covariance
-tier):
+Pro, 200 reps, `chess-corners` 1.6 with the covariance on — the 1.6 default;
+from 0.16 / `chess-corners` 2.0 the default is `Off`, see below):
 
 | Frame | px | corner detect | grid build | decode | end-to-end |
 |---|---|---:|---:|---:|---:|
@@ -77,12 +77,12 @@ The published report (`.github/pages/performance/`) still shows the pre-1.6
 run until `scripts/gen-perf-data.sh` is re-run.
 
 **Covariance and quality cost.** Corner detection with the covariance on
-(`Uncertainty::Propagated`, the default) against `Off`, median of 100 runs:
+(`Uncertainty::Propagated`, opt-in since 0.16) against `Off` (the default),
+median of 100 runs on `chess-corners` 1.6:
 `mid.png` 1.09 vs 0.96 ms, `small.png` 1.28 vs 0.92, `oblique.png` 0.99 vs 0.72,
 `large.png` 5.27 vs 4.70 — a per-frame noise estimate plus a per-corner
 Jacobian, paid for every raw corner, including the ones the grid builder later
-discards. The upstream API asks that would let the workspace pay only for
-labelled corners are [backlog B-4](backlog.md#b-4). Measuring the per-detection
+discards ([backlog B-4](backlog.md#b-4), resolved by making it opt-in). Measuring the per-detection
 `DetectionQuality` (covariance statistics plus the leave-one-out local check)
 costs 3–19 µs per frame on the same images (≈ 0.02–0.05 µs per labelled
 corner) — under 0.5 % of end-to-end even where a compound detector measures

@@ -32,8 +32,8 @@ use crate::types::{
     CT_PUZZLEBOARD_SCORING_MODE_SOFT_LOG_LIKELIHOOD, CT_PUZZLEBOARD_SEARCH_MODE_FIXED_BOARD,
     CT_PUZZLEBOARD_SEARCH_MODE_FULL, CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS,
     CT_PUZZLEBOARD_SYMMETRY_MODE_ROTATIONS_AND_REFLECTIONS, CT_REFINER_KIND_CENTER_OF_MASS,
-    CT_REFINER_KIND_FORSTNER, CT_REFINER_KIND_SADDLE_POINT, CT_TRUE, CT_UNCERTAINTY_OFF,
-    CT_UNCERTAINTY_PROPAGATED, CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
+    CT_REFINER_KIND_SADDLE_POINT, CT_TRUE, CT_UNCERTAINTY_OFF, CT_UNCERTAINTY_PROPAGATED,
+    CT_UPSCALE_MODE_DISABLED, CT_UPSCALE_MODE_FIXED,
 };
 use crate::validate::{
     flag_to_bool, require_finite, require_fraction, require_nonnegative, require_positive,
@@ -60,16 +60,23 @@ use calib_targets::puzzleboard::{
 // the `calib-targets` facade re-exports only `DetectorConfig` +
 // `OrientationMethod`.
 use chess_corners::{
-    CenterOfMassConfig, ChessRefiner, ChessRing, ForstnerConfig, MultiscaleConfig,
-    SaddlePointConfig, Uncertainty, UpscaleConfig,
+    CenterOfMassConfig, ChessRing, ImageRefiner, MultiscaleConfig, NoiseLevel, SaddlePointConfig,
+    Uncertainty, UpscaleConfig,
 };
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
 
+/// The C refiner selection, lowered onto `chess-corners`' two stages: the
+/// ChESS center-of-mass tuning and the optional image refiner.
+pub(crate) struct ConvertedRefiner {
+    pub(crate) center_of_mass: CenterOfMassConfig,
+    pub(crate) image_refiner: Option<ImageRefiner>,
+}
+
 pub(crate) fn convert_refiner_kind(
     value: crate::types::ct_refiner_kind_t,
     cfg: &crate::types::ct_refiner_config_t,
-) -> FfiResult<ChessRefiner> {
+) -> FfiResult<ConvertedRefiner> {
     match value {
         CT_REFINER_KIND_CENTER_OF_MASS => {
             if cfg.center_of_mass.radius < 0 {
@@ -77,28 +84,12 @@ pub(crate) fn convert_refiner_kind(
                     "refiner.center_of_mass.radius must be >= 0",
                 ));
             }
-            let mut out = CenterOfMassConfig::default();
-            out.radius = cfg.center_of_mass.radius;
-            Ok(ChessRefiner::CenterOfMass(out))
-        }
-        CT_REFINER_KIND_FORSTNER => {
-            if cfg.forstner.radius < 0 {
-                return Err(FfiError::config_error(
-                    "refiner.forstner.radius must be >= 0",
-                ));
-            }
-            let mut out = ForstnerConfig::default();
-            out.radius = cfg.forstner.radius;
-            out.min_trace =
-                require_nonnegative(cfg.forstner.min_trace, "refiner.forstner.min_trace")?;
-            out.min_det = require_positive(cfg.forstner.min_det, "refiner.forstner.min_det")?;
-            out.max_condition_number = require_positive(
-                cfg.forstner.max_condition_number,
-                "refiner.forstner.max_condition_number",
-            )?;
-            out.max_offset =
-                require_nonnegative(cfg.forstner.max_offset, "refiner.forstner.max_offset")?;
-            Ok(ChessRefiner::Forstner(out))
+            let mut center_of_mass = CenterOfMassConfig::default();
+            center_of_mass.radius = cfg.center_of_mass.radius;
+            Ok(ConvertedRefiner {
+                center_of_mass,
+                image_refiner: None,
+            })
         }
         CT_REFINER_KIND_SADDLE_POINT => {
             if cfg.saddle_point.radius < 0 {
@@ -120,7 +111,10 @@ pub(crate) fn convert_refiner_kind(
                 cfg.saddle_point.min_abs_det,
                 "refiner.saddle_point.min_abs_det",
             )?;
-            Ok(ChessRefiner::SaddlePoint(out))
+            Ok(ConvertedRefiner {
+                center_of_mass: CenterOfMassConfig::default(),
+                image_refiner: Some(ImageRefiner::SaddlePoint(out)),
+            })
         }
         other => Err(FfiError::config_error(format!(
             "refiner.kind must be a valid ct_refiner_kind_t constant, got {other}"
@@ -167,10 +161,21 @@ fn convert_upscale_config(config: &ct_upscale_config_t) -> FfiResult<UpscaleConf
     Ok(cfg)
 }
 
-fn convert_uncertainty(uncertainty: ct_uncertainty_t) -> FfiResult<Uncertainty> {
+fn convert_uncertainty(
+    uncertainty: ct_uncertainty_t,
+    noise_sigma: Option<f32>,
+) -> FfiResult<Uncertainty> {
     match uncertainty {
-        CT_UNCERTAINTY_PROPAGATED => Ok(Uncertainty::Propagated),
-        CT_UNCERTAINTY_OFF => Ok(Uncertainty::Off),
+        CT_UNCERTAINTY_OFF => match noise_sigma {
+            None => Ok(Uncertainty::Off),
+            Some(_) => Err(FfiError::config_error(
+                "chess.noise_sigma is read only under CT_UNCERTAINTY_PROPAGATED; \
+                 leave it unset under CT_UNCERTAINTY_OFF",
+            )),
+        },
+        CT_UNCERTAINTY_PROPAGATED => Ok(Uncertainty::Propagated {
+            noise: noise_sigma.map_or(NoiseLevel::Estimate, NoiseLevel::Known),
+        }),
         other => Err(FfiError::config_error(format!(
             "chess.uncertainty must be a valid ct_uncertainty_t constant, got {other}"
         ))),
@@ -203,7 +208,7 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
     let noise_sigma = optional_f32_to_option(&config.noise_sigma, "chess.noise_sigma")?
         .map(|sigma| require_nonnegative(sigma, "chess.noise_sigma"))
         .transpose()?;
-    let uncertainty = convert_uncertainty(config.uncertainty)?;
+    let uncertainty = convert_uncertainty(config.uncertainty, noise_sigma)?;
 
     // A 1-level pyramid is a no-op; collapse it to `SingleScale` so the
     // detector skips the pyramid path entirely.
@@ -217,7 +222,7 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         }
     };
 
-    let cfg = DetectorConfig::chess()
+    let detector = DetectorConfig::chess()
         .with_threshold(threshold)
         .with_multiscale(multiscale)
         .with_upscale(upscale)
@@ -229,12 +234,12 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         })
         .with_chess(|c| {
             c.ring = ring;
-            c.refiner = refiner;
+            c.center_of_mass = refiner.center_of_mass;
         })
         .with_uncertainty(uncertainty);
-    Ok(match noise_sigma {
-        Some(sigma) => cfg.with_noise_sigma(sigma),
-        None => cfg,
+    Ok(match refiner.image_refiner {
+        Some(image_refiner) => detector.with_refiner(image_refiner),
+        None => detector,
     })
 }
 

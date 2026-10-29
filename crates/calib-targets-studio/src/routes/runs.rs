@@ -5,7 +5,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use calib_targets::detect::default_chess_config;
 use calib_targets_bench::dataset::ImageKind;
 use calib_targets_bench::Engine;
 use serde::Deserialize;
@@ -86,8 +85,7 @@ pub async fn create(
             "no available images match the dataset filter".into(),
         ));
     }
-    let mut chess_cfg = default_chess_config();
-    chess_cfg.orientation_method = Some(req.orientation_method.into());
+    let chess_cfg = super::studio_chess_config(req.orientation_method.into());
     let config_id = format!(
         "{}.{:?}",
         match engine {

@@ -104,8 +104,8 @@ pub fn diagnose_topological(
     let mut survives_axis = 0usize;
     for c in corners {
         let strong = c.strength >= params.min_corner_strength;
-        let axis_ok =
-            c.axes[0].sigma < topo.max_axis_sigma_rad || c.axes[1].sigma < topo.max_axis_sigma_rad;
+        let axis_ok = c.axes[0].fit_std_error < topo.max_axis_sigma_rad
+            || c.axes[1].fit_std_error < topo.max_axis_sigma_rad;
         if strong {
             survives_strength += 1;
         }
@@ -166,8 +166,8 @@ pub fn diagnose_topological(
         .map(|(k, c)| DiagnoseCorner {
             x: c.position.x,
             y: c.position.y,
-            sigma0: c.axes[0].sigma,
-            sigma1: c.axes[1].sigma,
+            sigma0: c.axes[0].fit_std_error,
+            sigma1: c.axes[1].fit_std_error,
             labelled: labelled_corner_set.contains(&k),
         })
         .collect();

@@ -6,31 +6,37 @@ use serde::{Deserialize, Serialize};
 
 /// Local estimate of one undirected grid axis at a detected corner.
 ///
-/// `angle` is in radians. `sigma` is the 1σ angular uncertainty in radians.
-/// Default-constructed axes carry `sigma = π`, the workspace's no-information
-/// sentinel for axis-aware grid builders.
+/// `angle` is in radians. `fit_std_error` is the least-squares standard error
+/// of the axis fit, in radians: a fit-quality score for ranking and gating
+/// axes (lower is a cleaner fit), not a calibrated 1σ bound on the angle.
+/// Default-constructed axes carry `fit_std_error = π`, the workspace's
+/// no-information sentinel for axis-aware grid builders.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AxisEstimate {
     /// Axis angle in radians.
     pub angle: f32,
-    /// 1σ angular uncertainty in radians.
-    pub sigma: f32,
+    /// Standard error of the axis fit in radians (a fit-quality score; `π`
+    /// means no information).
+    pub fit_std_error: f32,
 }
 
 impl Default for AxisEstimate {
     fn default() -> Self {
         Self {
             angle: 0.0,
-            sigma: std::f32::consts::PI,
+            fit_std_error: std::f32::consts::PI,
         }
     }
 }
 
 impl AxisEstimate {
     /// Construct an axis estimate from a bare angle with no uncertainty
-    /// penalty (`sigma = 0.0`).
+    /// penalty (`fit_std_error = 0.0`).
     pub fn from_angle(angle: f32) -> Self {
-        Self { angle, sigma: 0.0 }
+        Self {
+            angle,
+            fit_std_error: 0.0,
+        }
     }
 }
 
@@ -40,7 +46,7 @@ impl AxisEstimate {
 /// local-axis shape.
 #[inline]
 pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis {
-    NextLocalAxis::new(a.angle, Some(a.sigma))
+    NextLocalAxis::new(a.angle, Some(a.fit_std_error))
 }
 
 #[cfg(test)]
@@ -51,21 +57,21 @@ mod axis_tests {
     fn default_axis_is_no_information_sentinel() {
         let axis = AxisEstimate::default();
         assert_eq!(axis.angle, 0.0);
-        assert_eq!(axis.sigma, std::f32::consts::PI);
+        assert_eq!(axis.fit_std_error, std::f32::consts::PI);
     }
 
     #[test]
-    fn from_angle_sets_zero_sigma() {
+    fn from_angle_sets_zero_fit_std_error() {
         let axis = AxisEstimate::from_angle(1.25);
         assert_eq!(axis.angle, 1.25);
-        assert_eq!(axis.sigma, 0.0);
+        assert_eq!(axis.fit_std_error, 0.0);
     }
 
     #[test]
     fn to_next_carries_angle_and_sigma() {
         let axis = AxisEstimate {
             angle: 0.75,
-            sigma: 0.02,
+            fit_std_error: 0.02,
         };
         let next = axis_estimate_to_next(axis);
         assert_eq!(next.angle_rad, 0.75);

@@ -22,7 +22,7 @@ nalgebra = "0.34"
 
 | Type | Role |
 |---|---|
-| [`AxisEstimate`] | One local grid-axis direction: an angle in `[0, π)` plus a 1σ uncertainty. Corners carry two. |
+| [`AxisEstimate`] | One local grid-axis direction: an angle in `[0, π)` plus the standard error of its fit. Corners carry two. |
 | [`LabeledCorner`] | A detected corner with grid label: `position`, `grid: Option<(i, j)>`, `id`, `target_position`, `score`. The common detector output. |
 | [`TargetDetection`] | `{ kind: TargetKind, corners: Vec<LabeledCorner> }`. Uniform wrapper across all detector types. |
 | [`TargetKind`] | `Chessboard`, `Charuco`, `CheckerboardMarker`, `PuzzleBoard`, `PuzzlePole`. Non-exhaustive. |

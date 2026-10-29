@@ -4,12 +4,12 @@
 //! unchanged — it must then carry exactly that corner's covariance — or a
 //! corner the detector re-detected near its marker-predicted position, which
 //! is a fresh measurement with a covariance of its own. Under
-//! `Uncertainty::Off` no corner carries one.
+//! `Uncertainty::Off`, the default, no corner carries one.
 
 use calib_targets_aruco::builtins;
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 use calib_targets_core::{GrayImageView, PositionCovariance};
-use chess_corners::Uncertainty;
+use chess_corners::{NoiseLevel, Uncertainty};
 use std::path::Path;
 
 fn load(name: &str) -> image::GrayImage {
@@ -36,6 +36,10 @@ fn params(dict: &str, cell_size: f32) -> CharucoParams {
     let mut params = CharucoParams::for_board(board);
     params.px_per_square = 60.0;
     params.min_marker_inliers = 1;
+    // The covariance is opt-in.
+    params.chess = params.chess.with_uncertainty(Uncertainty::Propagated {
+        noise: NoiseLevel::Estimate,
+    });
     params
 }
 

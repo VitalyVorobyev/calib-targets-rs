@@ -387,7 +387,10 @@ pub fn trace_topological_detection(
         .enumerate()
         .map(|(corner_index, (corner, aug))| {
             let strength_admitted = corner.strength >= params.min_corner_strength;
-            let sigma_admitted = corner.axes[0].sigma.max(corner.axes[1].sigma) <= max_axis_sigma;
+            let sigma_admitted = corner.axes[0]
+                .fit_std_error
+                .max(corner.axes[1].fit_std_error)
+                <= max_axis_sigma;
             let prefilter_admitted = strength_admitted && sigma_admitted;
             let cluster = match (&aug.stage, aug.label) {
                 (_, Some(ClusterLabel::Canonical)) => ChessboardClusterTrace::Canonical,

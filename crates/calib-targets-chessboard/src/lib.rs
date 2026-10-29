@@ -50,8 +50,8 @@
 //!         corners.push(ChessCorner::new(
 //!             Point2::new(i as f32 * 20.0 + 50.0, j as f32 * 20.0 + 50.0),
 //!             [
-//!                 AxisEstimate { angle: a0, sigma: 0.01 },
-//!                 AxisEstimate { angle: a1, sigma: 0.01 },
+//!                 AxisEstimate { angle: a0, fit_std_error: 0.01 },
+//!                 AxisEstimate { angle: a1, fit_std_error: 0.01 },
 //!             ],
 //!             // Above the default `min_corner_strength` floor (33.0).
 //!             100.0,
@@ -84,7 +84,7 @@ mod rectified_view;
 
 // --- Public contract ---------------------------------------------------
 #[doc(hidden)]
-pub use corner::{detect_corner_frame, CornerFrame, FrameNoise};
+pub use corner::{detect_corner_frame, CornerFrame};
 pub use corner::{detect_corners, ChessCorner};
 pub use detector::{ChessboardCorner, ChessboardDetection, ChessboardDetector};
 pub use mesh_warp::{rectify_mesh_from_grid, MeshWarpError, RectifiedMeshView};

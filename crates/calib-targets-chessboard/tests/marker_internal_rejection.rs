@@ -30,22 +30,22 @@ fn board_corner(x: f32, y: f32, parity: usize) -> ChessCorner {
         [
             AxisEstimate {
                 angle: 0.0,
-                sigma: 0.02,
+                fit_std_error: 0.02,
             },
             AxisEstimate {
                 angle: std::f32::consts::FRAC_PI_2,
-                sigma: 0.02,
+                fit_std_error: 0.02,
             },
         ]
     } else {
         [
             AxisEstimate {
                 angle: std::f32::consts::FRAC_PI_2,
-                sigma: 0.02,
+                fit_std_error: 0.02,
             },
             AxisEstimate {
                 angle: std::f32::consts::PI,
-                sigma: 0.02,
+                fit_std_error: 0.02,
             },
         ]
     };
@@ -59,11 +59,11 @@ fn marker_internal_corner(x: f32, y: f32, angle_rad: f32) -> ChessCorner {
     let axes = [
         AxisEstimate {
             angle: angle_rad,
-            sigma: 0.02,
+            fit_std_error: 0.02,
         },
         AxisEstimate {
             angle: angle_rad + std::f32::consts::FRAC_PI_2,
-            sigma: 0.02,
+            fit_std_error: 0.02,
         },
     ];
     // Strength 50.0 is above the floor as well, so the markers reach the
