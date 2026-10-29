@@ -372,28 +372,18 @@ fn assemble_square_oriented2_components_observed(
     };
     #[cfg(not(feature = "tracing"))]
     let usable: Vec<bool> = build_usable_mask(features, &axes, topo);
-    if let Some(trace) = trace.as_mut() {
-        trace.usable.clone_from(&usable);
-    }
     let n_usable = usable.iter().filter(|&&b| b).count();
     if n_usable < MIN_USABLE_FOR_DELAUNAY {
         return Err(GridError::InsufficientEvidence);
     }
 
-    // Triangulate over the packed usable set; remap triangles back into
-    // the global feature index space so the downstream stages share
-    // indices with `features` / `axes`.
     let positions: Vec<Point2<f32>> = features.iter().map(|f| f.point.position).collect();
-    let triangulation = triangulate_usable(&positions, &usable);
-    if triangulation.num_tri() == 0 {
-        return Err(GridError::DegenerateGeometry);
-    }
+    let (usable, triangulation, edge_kinds) =
+        triangulate_lattice_candidates(&positions, &axes, usable, topo.axis_align_tol_rad)?;
     if let Some(trace) = trace.as_mut() {
+        trace.usable.clone_from(&usable);
         trace.triangles = triangulation.triangles.as_chunks::<3>().0.to_vec();
     }
-
-    let edge_kinds =
-        classify::classify_all_edges(&positions, &axes, &triangulation, topo.axis_align_tol_rad);
     if let Some(trace) = trace.as_mut() {
         trace.edges = edge_kinds
             .iter()
@@ -875,6 +865,72 @@ fn axes_pass_cluster_gate(
     false
 }
 
+/// Triangulate the usable features and classify every edge, after pruning
+/// features that cannot be a lattice-cell corner.
+///
+/// A feature none of whose Delaunay edges is a Grid edge belongs to no cell:
+/// every cell corner has two Grid edges on the cell's perimeter. Such a
+/// feature — typically clutter inside a cell, where its edges run to the
+/// cell's corners at roughly the diagonal angle — still splits the
+/// surrounding cells into fans of triangles that no longer pair into quads,
+/// so a few of them along a narrow strip of cells can disconnect a board.
+/// Pruning them and triangulating once more recovers those cells.
+///
+/// The pass cannot lose a cell. Removing a vertex from a Delaunay
+/// triangulation leaves every triangle not incident to it in place (their
+/// circumcircles stay empty), and no triangle of a quad is incident to a
+/// pruned feature, since quad corners have Grid edges. Edges between the
+/// remaining features are only added, so no remaining feature loses a Grid
+/// edge, and a second pass would prune nothing. A pruned feature stays in the
+/// input; only the triangulation leaves it out. The criterion is the cell
+/// test's own alignment test, so it adds no parameter.
+///
+/// Returns the final usable mask with the triangulation and edge classes
+/// built over it.
+fn triangulate_lattice_candidates(
+    positions: &[Point2<f32>],
+    axes: &[AxisCache],
+    mut usable: Vec<bool>,
+    axis_align_tol_rad: f32,
+) -> Result<(Vec<bool>, delaunay::Triangulation, Vec<classify::EdgeClass>)> {
+    let triangulate_and_classify = |usable: &[bool]| {
+        let triangulation = triangulate_usable(positions, usable);
+        let edge_kinds =
+            classify::classify_all_edges(positions, axes, &triangulation, axis_align_tol_rad);
+        (triangulation, edge_kinds)
+    };
+    let (triangulation, edge_kinds) = triangulate_and_classify(&usable);
+    if triangulation.num_tri() == 0 {
+        return Err(GridError::DegenerateGeometry);
+    }
+
+    let mut has_grid_edge = vec![false; positions.len()];
+    for (edge, &kind) in edge_kinds.iter().enumerate() {
+        if kind == classify::EdgeClass::Grid {
+            has_grid_edge[triangulation.triangles[edge]] = true;
+            has_grid_edge[triangulation.triangles[delaunay::Triangulation::next_edge(edge)]] = true;
+        }
+    }
+    let mut pruned = false;
+    for (usable, &has_grid_edge) in usable.iter_mut().zip(&has_grid_edge) {
+        if *usable && !has_grid_edge {
+            *usable = false;
+            pruned = true;
+        }
+    }
+    if !pruned {
+        return Ok((usable, triangulation, edge_kinds));
+    }
+    if usable.iter().filter(|&&u| u).count() < MIN_USABLE_FOR_DELAUNAY {
+        return Err(GridError::InsufficientEvidence);
+    }
+    let (triangulation, edge_kinds) = triangulate_and_classify(&usable);
+    if triangulation.num_tri() == 0 {
+        return Err(GridError::DegenerateGeometry);
+    }
+    Ok((usable, triangulation, edge_kinds))
+}
+
 /// Triangulate only the usable features and remap triangle vertex
 /// indices back into the global feature index space.
 pub(in crate::topological) fn triangulate_usable(
@@ -1018,6 +1074,50 @@ mod tests {
         assert_eq!(solution.detection.grid().entries().len(), 25);
         let fit = solution.detection.fit();
         assert!(fit.residuals.max_px < 0.01, "{}", fit.residuals.max_px);
+    }
+
+    /// Clutter inside every cell — a feature with confident axes that no
+    /// lattice edge passes through — splits each cell's triangle pair into a
+    /// fan, so no cell would pair into a quad. Pruning features without a
+    /// Grid edge before the cell test recovers the whole grid, and the
+    /// clutter itself is never labelled.
+    #[test]
+    fn clutter_inside_every_cell_costs_no_cell() {
+        let (rows, cols, s) = (6, 6, 20.0_f32);
+        let mut features = axis_aligned_features(rows, cols, s);
+        let lattice = features.len();
+        let origin = 50.0_f32;
+        for j in 0..rows - 1 {
+            for i in 0..cols - 1 {
+                // Off-centre, with axes 30° off the lattice: every Delaunay
+                // edge to a cell corner or to the neighbouring cell's clutter
+                // is more than the 15° alignment tolerance off an axis at
+                // one end at least.
+                let x = origin + (i as f32 + 0.4) * s;
+                let y = origin + (j as f32 + 0.35) * s;
+                let point = PointFeature::new(features.len(), Point2::new(x, y));
+                let axes = [
+                    LocalAxis::new(30.0_f32.to_radians(), Some(0.05)),
+                    LocalAxis::new(120.0_f32.to_radians(), Some(0.05)),
+                ];
+                features.push(OrientedFeature::new(point, axes));
+            }
+        }
+
+        let solutions = detect_square_oriented2_all(
+            &features,
+            None,
+            &DetectionParams::default(),
+            SquareAxisProvenance::FullyMeasured,
+        )
+        .unwrap();
+        assert_eq!(solutions.len(), 1);
+        let entries = solutions[0].detection.grid().entries();
+        assert_eq!(entries.len(), (rows * cols) as usize);
+        assert!(
+            entries.iter().all(|entry| entry.source_index < lattice),
+            "a clutter feature was labelled"
+        );
     }
 
     #[test]

@@ -145,6 +145,25 @@ without committing to a prior cell size — which matters because
 cross-cluster nearest-neighbour distances are unreliable on boards with
 markers.
 
+**Pruning features that belong to no cell.** After Step 2 classifies the
+edges, every usable feature none of whose Delaunay edges is a Grid edge is
+dropped from the usable set, and the survivors are triangulated and classified
+once more (`triangulate_lattice_candidates`). Every cell corner has two Grid
+edges on the cell's perimeter, so such a feature is not a cell corner — it is
+typically clutter inside a cell (print texture, a dot, an occluder's edge),
+whose edges run to the cell's corners at roughly the diagonal angle. Left in,
+it turns the cell's two triangles into a fan around itself, the cell never
+pairs into a quad, and a few such cells along a narrow strip of the board
+disconnect it.
+
+*Why it cannot cost a cell:* removing a vertex from a Delaunay triangulation
+leaves every triangle not incident to it in place (their circumcircles stay
+empty), and no triangle of a quad is incident to a pruned feature. Edges
+between the survivors are only added, so no survivor loses a Grid edge and a
+second pass would prune nothing. The criterion is the cell test's own
+alignment test, so it adds no parameter. A pruned feature stays in the input:
+the chessboard's recovery boosters can still attach it.
+
 ### Step 2 — Edge classification: Grid / Diagonal / Spurious (generic)
 
 `projective-grid/src/topological/classify.rs::classify_all_edges`

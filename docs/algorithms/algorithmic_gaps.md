@@ -270,6 +270,26 @@ predicate on that sector symmetry — not on a strength ratio, which would be a
 threshold fitted to this frame — closes the gap; it needs the image, or a
 symmetry descriptor from the corner detector.
 
+### Gap 28 — Clutter inside cells disconnects a board — **resolved**
+
+`testdata/puzzleboard_reference/example5.png` (a dense PuzzleBoard photo with a
+hole in the visible board) labelled 2270 corners only because the per-axis
+admission gate happened to keep most of the in-cell clutter out. With the
+axis-fit scores of `chess-corners` 2.0 — about 15% smaller at the median,
+positions and angles bit-identical — 470 more clutter features passed the
+gate. None of them is a lattice corner, yet each one inside a cell split that
+cell's triangle pair into a fan; along the thin bridges around the hole that
+cost 108 corners and the board fell apart into 1368 + 814. The score does not
+separate clutter from corners at any threshold (3880 clutter features already
+passed before), so tightening the gate would only have fitted it to the frame.
+
+**Fix.** Structural: a feature with no Grid edge belongs to no cell, so the
+builder prunes such features and triangulates again
+([topological-grid-detection.md](topological-grid-detection.md#step-1--delaunay-triangulation-generic)).
+The frame now labels 2514 corners in one component under either score scale,
+with the same label frame and no corner off its row or column by more than
+the pre-existing localisation outliers.
+
 ---
 
 ## Architectural-direction summary
