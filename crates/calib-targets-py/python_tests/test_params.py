@@ -87,6 +87,19 @@ def test_dict_inputs_are_rejected() -> None:
         calib_targets.detect_puzzleboard(_image(), params=puzzle_params, chess_cfg={"threshold": {"absolute": 15.0}})  # type: ignore[arg-type]
 
 
+def test_on_refiner_reject_round_trips_and_absent_is_drop() -> None:
+    ChessStrategyConfig = calib_targets.ChessStrategyConfig
+    OnRefinerReject = calib_targets.OnRefinerReject
+    cfg = ChessStrategyConfig(on_refiner_reject=OnRefinerReject.DROP)
+    assert "on_refiner_reject" not in cfg.to_dict()
+    assert ChessStrategyConfig.from_dict(cfg.to_dict()).on_refiner_reject == OnRefinerReject.DROP
+    keep = ChessStrategyConfig()
+    assert keep.on_refiner_reject == OnRefinerReject.KEEP_CENTER_OF_MASS
+    assert ChessStrategyConfig.from_dict(keep.to_dict()) == keep
+    with pytest.raises(ValueError, match="on_refiner_reject"):
+        ChessStrategyConfig.from_dict({"on_refiner_reject": "maybe"})
+
+
 def test_chess_config_default_matches_rust_shape() -> None:
     # The default ``ChessConfig()`` must produce the exact wire shape
     # that ``calib_targets::detect::default_chess_config()`` emits via
@@ -98,6 +111,7 @@ def test_chess_config_default_matches_rust_shape() -> None:
             "chess": {
                 "ring": "canonical",
                 "center_of_mass": {"radius": 2},
+                "on_refiner_reject": "keep_center_of_mass",
             }
         },
         "threshold": 15.0,

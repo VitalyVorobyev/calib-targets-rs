@@ -9,7 +9,7 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
-Moves to `chess-corners` 2.0, can report each corner's position covariance on
+Moves to `chess-corners` 2 (2.1), can report each corner's position covariance on
 every detection result (opt-in), and summarises every detection's localization
 quality. A breaking release: the `ml-refiner` feature and the Förstner refiner
 are gone, the corner config's refiner and uncertainty settings take
@@ -52,6 +52,17 @@ moves to 6.0.0. See
   field on every corner shape. C ABI: `ct_position_covariance_t`, and
   `ct_labeled_corner_t` / `ct_chessboard_corner_t` append
   `has_position_covariance` + `position_covariance`.
+- **`on_refiner_reject` on the ChESS strategy** (`OnRefinerReject`, from
+  `chess-corners` 2.1), on every binding. It says what happens to a corner the
+  saddle-point refiner rejects. `default_chess_config()` sets
+  `KeepCenterOfMass`, so a user who opts into the refiner keeps those corners
+  at their center-of-mass position instead of losing them. Default output is
+  unchanged: the setting has no effect without a refiner. Rust:
+  `OnRefinerReject`, re-exported from `calib_targets::detect` and
+  `calib_targets_core`. Python: `OnRefinerReject` and
+  `ChessStrategyConfig.on_refiner_reject`. WASM typings: `OnRefinerReject`.
+  C ABI: the saddle-point refiner kind keeps the center of mass. JSON Schemas
+  updated.
 - WASM typings declare the Radon strategy (`RadonConfig`, `PeakFitMode`) and
   `PuzzleBoardAdvancedTuning.edge_consensus`.
 - **Per-detection localization quality.** `ChessboardDetection`,
@@ -87,6 +98,17 @@ moves to 6.0.0. See
   uncertainty page.
 
 ### Changed
+
+- **Requires `chess-corners` 2.1.** It is semver-compatible with 2.0 and has
+  the same MSRV.
+- **The localizer default is decided on real images, and stays the center of
+  mass.** On real calibration images, measured as paired held-out
+  reprojection and homography residuals, the saddle-point refiner helps on
+  sharp chessboards. It does not help on strongly blurred corners or on
+  small-cell ChArUco boards. It stays an opt-in, and the book's uncertainty
+  page says when to enable it. The same study found that thresholding corners
+  by their reported covariance does not improve a calibration, so the
+  covariance stays a report and no threshold is recommended.
 
 - **`chess-corners` 2.0.** The position covariance is off by default
   (`Uncertainty::Off`): weighting a real calibration by it has not been shown

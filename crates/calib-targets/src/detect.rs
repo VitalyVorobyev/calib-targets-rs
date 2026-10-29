@@ -62,7 +62,9 @@ use tracing::instrument;
 // (`ChessConfig`, `RadonConfig`, `SaddlePointConfig`, …) come from the
 // `chess-corners` crate directly — re-exporting the whole upstream surface
 // would freeze it into this crate's semver contract.
-pub use core::{DetectorConfig, ImageRefiner, NoiseLevel, OrientationMethod, Uncertainty};
+pub use core::{
+    DetectorConfig, ImageRefiner, NoiseLevel, OnRefinerReject, OrientationMethod, Uncertainty,
+};
 
 /// Errors produced by the high-level facade helpers.
 #[non_exhaustive]

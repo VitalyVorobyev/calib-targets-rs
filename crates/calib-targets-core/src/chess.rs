@@ -4,9 +4,9 @@
 //! API legitimately exposes: [`DetectorConfig`], the high-level ChESS config
 //! object callers construct, and the types of the top-level fields callers
 //! routinely set on it — [`OrientationMethod`], [`ImageRefiner`] (the
-//! saddle-point refiner) and [`Uncertainty`] / [`NoiseLevel`] (the opt-in
-//! position covariance). They are part of `DetectorConfig`'s shape, so naming
-//! them adds no contract.
+//! saddle-point refiner) with [`OnRefinerReject`], and [`Uncertainty`] /
+//! [`NoiseLevel`] (the opt-in position covariance). They are part of
+//! `DetectorConfig`'s shape, so naming them adds no contract.
 //!
 //! Advanced ChESS tuning types (`ChessConfig`, `RadonConfig`,
 //! `SaddlePointConfig`, …) are intentionally *not* re-exported here —
@@ -26,7 +26,9 @@
 //! image as supplied so the library no longer conflates preprocessing
 //! with detection.
 
-pub use chess_corners::{DetectorConfig, ImageRefiner, NoiseLevel, OrientationMethod, Uncertainty};
+pub use chess_corners::{
+    DetectorConfig, ImageRefiner, NoiseLevel, OnRefinerReject, OrientationMethod, Uncertainty,
+};
 
 /// The workspace's ChESS acceptance threshold.
 ///
@@ -56,14 +58,34 @@ const WORKSPACE_CHESS_THRESHOLD: f32 = 15.0;
 /// the upstream default, and the ChESS response scale did not change in 1.0,
 /// so `15.0` keeps producing exactly the corner set it did under 0.11.
 ///
+/// **Localizer: the ChESS center of mass.** No image refiner is set, so each
+/// corner sits at the center of mass of its response. The saddle-point image
+/// refiner ([`ImageRefiner::saddle_point`], via
+/// [`DetectorConfig::with_refiner`]) is an opt-in. Measured by held-out
+/// calibration on real images:
+/// - On sharp chessboard images it lowers the held-out reprojection error,
+///   typically by a few hundredths to a tenth of a pixel.
+/// - On strongly blurred corners, and on ChArUco boards whose markers sit
+///   close to the corners relative to the blur, it is no better than the
+///   center of mass, and sometimes worse.
+///
+/// So it is not the default. Measure it on your own setup before switching.
+///
+/// The one non-upstream localizer setting here applies only once you opt in:
+/// a corner the saddle-point fit rejects keeps its center-of-mass position
+/// ([`OnRefinerReject::KeepCenterOfMass`]) instead of being dropped, so the
+/// refiner does not cost corners. It was measured in that form.
+///
 /// Every other field keeps the upstream default — including the
 /// position-uncertainty tier, which is `Uncertainty::Off`: corners carry no
 /// position covariance. Select `Uncertainty::Propagated` to get one (it costs
 /// a per-image noise estimate plus a few percent of the corner pass); corner
-/// positions do not depend on the tier. The covariance is a report: weighting
-/// a calibration by it has not been shown to help, and its absolute scale is
-/// fitted on one camera, so compare it across frames of one setup rather than
-/// across setups.
+/// positions do not depend on the tier. The covariance is a report:
+/// - weighting a calibration by it has not been shown to help;
+/// - on real images dropping the corners with the largest σ did not lower the
+///   held-out error either;
+/// - its absolute scale is fitted on one camera, so compare it across frames
+///   of one setup rather than across setups.
 ///
 /// This is the default value of the `chess` field carried by the
 /// compound-target params structs — `CharucoParams`, `PuzzleBoardParams`, and
@@ -80,7 +102,9 @@ const WORKSPACE_CHESS_THRESHOLD: f32 = 15.0;
 /// Callers wanting the raw upstream behaviour can construct
 /// [`DetectorConfig::chess`] directly.
 pub fn default_chess_config() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(WORKSPACE_CHESS_THRESHOLD)
+    DetectorConfig::chess()
+        .with_threshold(WORKSPACE_CHESS_THRESHOLD)
+        .with_chess(|c| c.on_refiner_reject = OnRefinerReject::KeepCenterOfMass)
 }
 
 #[cfg(test)]
@@ -128,8 +152,9 @@ mod tests {
         assert_eq!(cfg.uncertainty, chess_corners::Uncertainty::Off);
         assert_eq!(cfg.refiner, baseline.refiner);
 
-        // The nested ChESS strategy fields stay at upstream defaults so
-        // the override is purely the acceptance threshold.
+        // The nested ChESS strategy fields stay at upstream defaults, except
+        // that a corner an opted-in image refiner rejects keeps its
+        // center-of-mass position (inert while no refiner is set).
         let DetectionStrategy::Chess(chess) = cfg.strategy else {
             unreachable!("matched above");
         };
@@ -138,5 +163,6 @@ mod tests {
         };
         assert_eq!(chess.ring, chess_baseline.ring);
         assert_eq!(chess.center_of_mass, chess_baseline.center_of_mass);
+        assert_eq!(chess.on_refiner_reject, OnRefinerReject::KeepCenterOfMass);
     }
 }

@@ -32,7 +32,8 @@ here.
 | [B-15](#b-15) | Print target specs mirror detector board specs | P2 | M | semver |
 | [B-16](#b-16) | Dead code, dead features, forwarding modules | P3 | S | semver |
 | [B-17](#b-17) | `#[non_exhaustive]` + constructor convention gaps | P3 | S | semver |
-| [B-18](#b-18) | The accuracy suite does not test covariance calibration | P2 | M | none |
+| [B-18](#b-18) | The accuracy suite does not test covariance calibration | P3 | M | none |
+| [B-19](#b-19) | Upstream `chess-corners` findings from the real-data localizer study | P3 | S | none |
 
 ---
 
@@ -296,7 +297,7 @@ chessboard trace types, `DiagHypothesis`; `PuzzleBoardDecodeInfo` has no
 constructor.
 
 ## <a id="b-18"></a>B-18 · The accuracy suite does not test covariance calibration
-**Sev P2 · Effort M · API none**
+**Sev P3 · Effort M · API none** (was P2; lowered in 0.16 — see "Status" below)
 
 - **Problem.** `tests/accuracy.rs` bounds σ̂₀² from above only. No lower bound
   (over-conservative covariances pass), no χ²₂ coverage (fraction of corners
@@ -309,3 +310,29 @@ constructor.
   refiner.
 - **Fix.** A coverage band and a two-sided σ̂₀² band per family × refiner;
   count correctly labelled corners beyond the match radius as their own metric.
+- **Status (0.16).** The premise, the covariance used *in* detection or as a
+  corner filter, was tested directly on real calibration images.
+  - σ is close to constant across real corners.
+  - Dropping the corners with the largest σ did not lower held-out error.
+  - Even an oracle that drops each view's worst held-out corners barely moved
+    the calibration.
+
+  The covariance stays a report (book: uncertainty page), so this item is
+  suite hygiene now, not a prerequisite.
+
+## <a id="b-19"></a>B-19 · Upstream `chess-corners` findings from the real-data localizer study
+**Sev P3 · Effort S · API none**
+
+Filed upstream as
+[chess-corners-rs#135](https://github.com/VitalyVorobyev/chess-corners-rs/issues/135),
+[#136](https://github.com/VitalyVorobyev/chess-corners-rs/issues/136) and
+[#137](https://github.com/VitalyVorobyev/chess-corners-rs/issues/137); delete
+this item when they are resolved.
+- **The center-of-mass covariance ranks real corners backwards.** On most real
+  sets its σ correlates *negatively* with the held-out residual.
+- **A saddle-point fit that does not converge is still accepted.** It sits at
+  an integer-grid position and is not handed to the `KeepCenterOfMass`
+  fallback.
+- **The `edge_width` estimate saturates on blurred corners.** It compresses a
+  wide range of measured edge blur into a narrow one, so an adaptive window
+  driven by it would barely adapt.

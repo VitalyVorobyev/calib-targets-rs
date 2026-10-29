@@ -342,9 +342,9 @@ checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
 name = "box-image-pyramid"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb679eff3604a3fa1e84e827b29d6cedefb36847c34614aee14170bac845b6a0"
+checksum = "e031e4803a4caefa880dac40cd076d20f3214dc11e04f86fcb5e894e752095c8"
 dependencies = [
  "rayon",
 ]
@@ -694,9 +694,9 @@ checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
 name = "chess-corners"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2288492a86015479024b981dd99ed1dd0faed370272166c26b8b5c3163bfe959"
+checksum = "a0f60935a4a23518060c763b18a6f4f8a096fd247fc46ece6a16408b0b286436"
 dependencies = [
  "box-image-pyramid",
  "chess-corners-core",
@@ -708,9 +708,9 @@ dependencies = [
 
 [[package]]
 name = "chess-corners-core"
-version = "2.0.0"
+version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13672a2ae1724d5cb59f57f094621f86fed7deb939781acd67707ec0d645c01d"
+checksum = "20b0b6ef278dad7a0fb51284e62dd41d804081716271b867f28229e547ac74db"
 dependencies = [
  "rayon",
  "schemars",

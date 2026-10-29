@@ -63,10 +63,12 @@ pub const K1: f64 = 0.15;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum Refiner {
-    /// `chess-corners`' default: the ChESS detector's own centre of mass of
-    /// the response, no image refiner.
+    /// The workspace default: the ChESS detector's own centre of mass of the
+    /// response, no image refiner.
     CenterOfMass,
-    /// The saddle-point image refiner: a fit of the image patch.
+    /// The saddle-point image refiner — a fit of the image patch — as a user
+    /// opts into it on the workspace default config: a corner the fit rejects
+    /// keeps its centre-of-mass position.
     SaddlePoint,
 }
 

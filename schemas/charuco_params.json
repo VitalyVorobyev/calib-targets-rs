@@ -126,7 +126,7 @@
     },
     "ChessConfig": {
       "additionalProperties": false,
-      "description": "Configuration for the ChESS detector branch of `DetectionStrategy`.\n\nCarries the detector ring choice and the tuning of ChESS's own subpixel\nlocalizer. The shared NMS / clustering thresholds\n(`DetectionParams`), multiscale, upscale and the optional image\nrefiner (`DetectorConfig::refiner`) live at the top level of\n`DetectorConfig` and apply to both strategies. Descriptors\nalways sample at the detector ring radius.\n\n# Common knobs\n\n- `ring` — choose the detector kernel radius.\n- `center_of_mass` — tune the subpixel\n  localizer.",
+      "description": "Configuration for the ChESS detector branch of `DetectionStrategy`.\n\nCarries the detector ring choice and the tuning of ChESS's own subpixel\nlocalizer. The shared NMS / clustering thresholds\n(`DetectionParams`), multiscale, upscale and the optional image\nrefiner (`DetectorConfig::refiner`) live at the top level of\n`DetectorConfig` and apply to both strategies. Descriptors\nalways sample at the detector ring radius.\n\n# Common knobs\n\n- `ring` — choose the detector kernel radius.\n- `center_of_mass` — tune the subpixel\n  localizer.\n- `on_refiner_reject` — keep the\n  corners an image refiner rejects at their center-of-mass position.",
       "properties": {
         "center_of_mass": {
           "$ref": "#/$defs/CenterOfMassConfig",
@@ -134,6 +134,10 @@
             "radius": 2
           },
           "description": "ChESS's subpixel localizer: the response-weighted center of mass of\nthe response map around each integer peak. It gives every corner its\nfinal position unless an image refiner\n(`DetectorConfig::refiner`) is set;\nthe image refiner then starts from the integer peak instead."
+        },
+        "on_refiner_reject": {
+          "$ref": "#/$defs/OnRefinerReject",
+          "description": "What happens to a corner the image refiner\n(`DetectorConfig::refiner`) rejects.\nIgnored when no image refiner is set. Default\n`OnRefinerReject::Drop`, which serializes as an absent key so a\ndefault config stays readable by loaders that predate the field."
         },
         "ring": {
           "$ref": "#/$defs/ChessRing",
@@ -675,6 +679,26 @@
         }
       ]
     },
+    "OnRefinerReject": {
+      "description": "What a ChESS detection does with a corner the image refiner rejects (see\n`ChessConfig::on_refiner_reject`).\n\nThe image refiner rejects a peak whose patch it cannot fit — not a clear\nsaddle, a fit that leaves its window, a seed too close to the border. On\na clean board those are rare; on a cluttered or blurred one they include\nreal corners the center of mass localizes. The Radon detector always\nkeeps such a corner at its peak-fit position.",
+      "enum": [
+        "drop",
+        "keep_center_of_mass"
+      ],
+      "oneOf": [
+        {
+          "const": "drop",
+          "description": "Drop the corner: every reported corner was localized by the image\nrefiner.",
+          "type": "string"
+        },
+        {
+          "const": "keep_center_of_mass",
+          "description": "Keep the corner at the ChESS center-of-mass position (with that\nlocalizer's position covariance). The corners the image refiner\naccepts are unchanged, so a single-scale detection returns the `Drop`\noutput plus these corners. Under a pyramid the coarse seeds follow\nthe same rule, so a seed kept at the coarse level can also yield a\ncorner the image refiner localizes at the base level.",
+          "type": "string"
+        }
+      ],
+      "type": "string"
+    },
     "OrientationMethod": {
       "description": "Method used to fit the two grid axes at a detected corner.\n\n`RingFit` is the default. `DiskFit` samples a larger\nlocal support region and is intended for corners with strong\nprojective skew (axis separation far from 90°).\n\nAll variants emit `axes[0]` and `axes[1]` under the same canonical\nconvention documented on `CornerDescriptor`:\n`axes[0].angle ∈ [0, π)`, `axes[1].angle ∈ (axes[0].angle,\naxes[0].angle + π)`, and the CCW arc `(axes[0], axes[1])` is a *dark*\nsector of the corner. Downstream consumers can therefore compare\n`axes[0]` slot parity between corners regardless of which method\nproduced them.",
       "enum": [
@@ -964,6 +988,7 @@
             "center_of_mass": {
               "radius": 2
             },
+            "on_refiner_reject": "keep_center_of_mass",
             "ring": "canonical"
           }
         },

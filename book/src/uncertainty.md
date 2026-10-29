@@ -115,6 +115,12 @@ carries the covariance statistics only; the local fields stay unset.
 
 - **Comparing frames of one setup.** The quality's σ and σ̂₀² rank frames taken
   with the same camera and target; a frame that stands out deserves a look.
+- **Not a corner filter.** On real calibration sets the reported σ barely
+  varies from corner to corner: it sits near the model's floor. Dropping a
+  view's corners with the largest σ from a calibration did not lower its
+  held-out reprojection error, and neither did dropping the corners with the
+  largest *held-out* error, which a σ threshold could at best approximate. No
+  threshold is recommended.
 - **Not a calibration weight, as measured so far.** Whitening each
   reprojection residual with its corner's covariance (`Σ eᵀ Σ⁻¹ e`) has not
   lowered the held-out error of a real calibration: on real data most of a
@@ -145,17 +151,25 @@ reported covariances (mean form); **local σ̂₀²** is the detection's own
 |---|---|---|---|---|---|---|
 | Chessboard | CenterOfMass (default) | 80 / 80 | 1.00 | 0.079 / 0.207 | 0.26 | 0.16 |
 | Chessboard | SaddlePoint | 80 / 80 | 1.00 | 0.020 / 0.051 | 0.07 | 0.11 |
-| ChArUco | CenterOfMass | 59 / 80 | 0.66 | 0.134 / 0.393 | 0.65 | 0.63 |
-| ChArUco | SaddlePoint | 56 / 80 | 0.67 | 0.025 / 0.058 | 0.10 | 0.16 |
+| ChArUco | CenterOfMass | 56 / 80 | 0.65 | 0.122 / 0.349 | 0.60 | 0.58 |
+| ChArUco | SaddlePoint | 56 / 80 | 0.65 | 0.027 / 0.320 | 0.11 | 0.18 |
 | PuzzleBoard | CenterOfMass | 58 / 80 | 0.72 | 0.282 / 0.507 | 3.79 | 1.69 |
-| PuzzleBoard | SaddlePoint | 51 / 80 | 0.63 | 0.050 / 0.391 | 0.33 | 0.29 |
+| PuzzleBoard | SaddlePoint | 61 / 80 | 0.76 | 0.057 / 0.391 | 0.42 | 0.38 |
 | Marker board | CenterOfMass | 48 / 80 | 0.60 | 0.075 / 0.209 | 0.25 | 0.19 |
 | Marker board | SaddlePoint | 48 / 80 | 0.60 | 0.018 / 0.049 | 0.06 | 0.19 |
 
+**SaddlePoint** is the opt-in image refiner as you get it on the default
+config: a corner the saddle-point fit rejects keeps its center-of-mass
+position.
+
 What the table shows:
 
-- **SaddlePoint is three to six times more accurate** than the default
-  CenterOfMass on every family, and its covariances are conservative (σ̂₀² < 1).
+- **On these renders SaddlePoint's median error is three to five times lower**
+  than the default CenterOfMass on every family, and its covariances are
+  conservative (σ̂₀² < 1). Its worst case is not always lower: on ChArUco and
+  PuzzleBoard the corners the fit rejects keep the center of mass's error.
+  Real images do not show a gap of this size; see
+  [below](#measured-on-real-calibrations).
 - **CenterOfMass is biased by PuzzleBoard edge dots** next to each corner
   (≈ 0.3 px, σ̂₀² ≈ 4) and, on sharp boards rotated a few degrees, by the
   rotation itself (up to 0.2 px, σ̂₀² ≈ 1.8, close to the 1.6 the chess-corners
@@ -165,8 +179,8 @@ What the table shows:
 - **Recall** is lower where the board's identification needs resolution the
   image does not have: 8 px cells for marker boards and PuzzleBoards, strong blur
   at 24 px for ChArUco. The refiner changes which corners are found as well as
-  where: SaddlePoint loses some recall on the smallest PuzzleBoard and ChArUco
-  cells.
+  where: with its center-of-mass fallback SaddlePoint finds the same ChArUco
+  boards and more PuzzleBoards.
 - **Marker boards decline when their circles are not resolved.** At 8 px
   cells the three disks are 4 px across, and no 8 px condition identifies the
   board: a disk must move its square's reading at least half the
@@ -179,3 +193,35 @@ Every condition of every family has zero wrong labels.
 Reproduce with
 `cargo run -p calib-targets-bench --release --bin bench -- accuracy` (full grid,
 a few seconds) or `-- accuracy --quick`.
+
+## Measured on real calibrations
+
+Synthetic renders are ideal: perfect squares, Gaussian blur, white noise. They
+favour a model-based localizer, so the choice of default was checked on real
+calibration images instead. The comparison is paired, on the same labelled
+corners of the same images, with only the localizer changed. The judge is
+geometry, since there is no ground truth:
+
+- the **held-out reprojection error**: calibrate on the other views, then
+  predict a view the calibration never saw;
+- the **homography residual** of that view's corners after the lens is
+  undistorted.
+
+Both are measured over several real chessboard and ChArUco sets.
+
+- **Sharp chessboards: the saddle-point refiner helps.** It lowers the held-out
+  error on every chessboard set, typically by a few hundredths to a tenth of a
+  pixel.
+- **Blurred corners and small-cell ChArUco: it does not.** On strongly blurred
+  corners, and on ChArUco boards whose markers sit close to the corners relative
+  to the blur, it is no better than the center of mass, and sometimes worse.
+  A larger fit window helps some sets and hurts others, and no rule tried
+  (blur-scaled or chosen per image) was better everywhere.
+- **So CenterOfMass stays the default.** Enable SaddlePoint
+  (`with_refiner(ImageRefiner::saddle_point())`,
+  `ChessConfig(refiner=ImageRefiner.saddle_point())`) for sharp images, and
+  check the held-out error of your own calibration before keeping it.
+- **The covariance does not rank real corners usefully.** σ is close to
+  constant across corners, and the center-of-mass σ tends to be largest where
+  the geometry agrees best. Keep it as a frame-level report (see
+  [above](#what-it-is-good-for)).
