@@ -7,6 +7,18 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Clutter inside cells no longer costs cells.** The topological builder
+  drops every usable feature none of whose Delaunay edges is a Grid edge — it
+  belongs to no cell — and triangulates once more before pairing triangles
+  into quads. Such a feature (clutter inside a cell) split the cell's triangle
+  pair into a fan, and a few along a narrow strip of cells could disconnect a
+  board. Removing a Delaunay vertex keeps every other triangle, so no cell is
+  lost; the criterion is the cell test's own alignment test, so there is no new
+  parameter. The diagnostics trace's per-corner `usable` flag now reports the
+  pruned set, the features the final triangulation used.
+
 ## [0.14.2] - 2026-10-03
 
 ### Added

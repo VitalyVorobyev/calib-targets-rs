@@ -57,6 +57,11 @@ The generic, image-free core runs these stages (full source under
    third edge promoted to **Diagonal**. Crucially, diagonals are *not*
    found by a fixed `axis ± π/4` rule — under a projective warp a
    projected diagonal is not the angle bisector in image space.
+   A feature with no Grid edge at all belongs to no cell — typically clutter
+   inside a cell, which would otherwise split that cell into a fan of
+   triangles. Such features are dropped and the rest triangulated and
+   classified once more; removing a Delaunay vertex keeps every other
+   triangle, so this never costs a cell.
 4. **Triangle-pair → quad merge.** A triangle with exactly one Diagonal
    edge is fused with its neighbour across that diagonal; removing the
    shared diagonal yields a quadrilateral whose four edges are all Grid
