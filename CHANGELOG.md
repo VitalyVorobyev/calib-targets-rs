@@ -126,9 +126,10 @@ corner structs and the four result headers grow).
   triangle, so no cell is lost. On `testdata/puzzleboard_reference/example5.png`
   the chessboard detector labels 2514 corners in one component instead of
   2270, and the regression sets gain recall throughout; a few corners at board
-  frontiers that a recovery booster used to add are no longer added. Two wrong
-  labels the previous builder delivered at a board's edge are gone. Grid
-  building is also faster on cluttered frames (fewer fragments downstream).
+  frontiers that a recovery booster used to add are no longer added, and wrong
+  labels the previous builder delivered at a board's edge on some frames are
+  gone. Grid building is also faster on cluttered frames (fewer fragments
+  downstream).
 
 - **Marker boards were labelled in the wrong frame when their circles were not
   resolved** (synthetic boards with 8 px squares and a 1.5 px blur, disks 4 px
