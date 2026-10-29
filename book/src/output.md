@@ -97,10 +97,11 @@ own `upscale`, which reports none rather than a wrong one.
 Positions are identical whether or not the covariance is computed.
 
 **ChArUco re-measured corners.** A ChArUco corner whose position disagrees with
-the one its markers predict is re-measured near the prediction, with the
-SaddlePoint refiner whatever the configured front-end refiner. Its `position`
-and `position_covariance` are that re-measurement's, so one detection can mix
-corners from two localizers, each with its own bias and covariance model.
+the one its markers predict is re-measured near the prediction with the
+saddle-point refiner, the default front-end localizer too. Its `position` and
+`position_covariance` are that re-measurement's. If you switch the front end to
+the center of mass alone (`refiner: None`), one detection can mix corners from
+two localizers, each with its own bias and covariance model.
 
 Every detection result also has a `quality` field summarising the delivered
 corners' covariances and how well they describe the corners' local scatter;

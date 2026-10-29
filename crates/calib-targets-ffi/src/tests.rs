@@ -62,7 +62,7 @@ fn last_error_string() -> String {
 
 fn default_refiner() -> ct_refiner_config_t {
     ct_refiner_config_t {
-        kind: CT_REFINER_KIND_CENTER_OF_MASS,
+        kind: CT_REFINER_KIND_SADDLE_POINT,
         center_of_mass: ct_center_of_mass_config_t { radius: 2 },
         saddle_point: ct_saddle_point_config_t {
             radius: 2,
@@ -243,7 +243,10 @@ fn shared_chess_config_zero_initialised_uncertainty_is_the_default() {
     assert_eq!(CT_UNCERTAINTY_OFF, 0);
     let converted = convert::convert_chess_config(&default_shared_chess_config()).unwrap();
     assert_eq!(converted.uncertainty, chess_corners::Uncertainty::Off);
-    assert_eq!(converted.refiner, None);
+    assert!(matches!(
+        converted.refiner,
+        Some(chess_corners::ImageRefiner::SaddlePoint(_))
+    ));
     assert_eq!(converted, calib_targets::detect::default_chess_config());
 }
 

@@ -143,19 +143,22 @@ reported covariances (mean form); **local σ̂₀²** is the detection's own
 
 | Family | Refiner | Detected | Recall | RMSE (px) median / worst | σ̂₀² truth | Local σ̂₀² |
 |---|---|---|---|---|---|---|
-| Chessboard | CenterOfMass (default) | 80 / 80 | 1.00 | 0.079 / 0.207 | 0.26 | 0.16 |
-| Chessboard | SaddlePoint | 80 / 80 | 1.00 | 0.020 / 0.051 | 0.07 | 0.11 |
-| ChArUco | CenterOfMass | 59 / 80 | 0.66 | 0.134 / 0.393 | 0.65 | 0.63 |
-| ChArUco | SaddlePoint | 56 / 80 | 0.67 | 0.025 / 0.058 | 0.10 | 0.16 |
+| Chessboard | CenterOfMass | 80 / 80 | 1.00 | 0.079 / 0.207 | 0.26 | 0.16 |
+| Chessboard | SaddlePoint (default) | 80 / 80 | 1.00 | 0.020 / 0.051 | 0.07 | 0.11 |
+| ChArUco | CenterOfMass | 56 / 80 | 0.65 | 0.122 / 0.349 | 0.60 | 0.58 |
+| ChArUco | SaddlePoint (default) | 56 / 80 | 0.65 | 0.027 / 0.320 | 0.11 | 0.18 |
 | PuzzleBoard | CenterOfMass | 58 / 80 | 0.72 | 0.282 / 0.507 | 3.79 | 1.69 |
-| PuzzleBoard | SaddlePoint | 51 / 80 | 0.63 | 0.050 / 0.391 | 0.33 | 0.29 |
+| PuzzleBoard | SaddlePoint (default) | 61 / 80 | 0.76 | 0.057 / 0.391 | 0.42 | 0.38 |
 | Marker board | CenterOfMass | 48 / 80 | 0.60 | 0.075 / 0.209 | 0.25 | 0.19 |
-| Marker board | SaddlePoint | 48 / 80 | 0.60 | 0.018 / 0.049 | 0.06 | 0.19 |
+| Marker board | SaddlePoint (default) | 48 / 80 | 0.60 | 0.018 / 0.049 | 0.06 | 0.19 |
 
 What the table shows:
 
-- **SaddlePoint is three to six times more accurate** than the default
-  CenterOfMass on every family, and its covariances are conservative (σ̂₀² < 1).
+- **SaddlePoint is four to five times more accurate** than CenterOfMass on
+  every family, and its covariances are conservative (σ̂₀² < 1). It is the
+  default: the saddle-point refiner places each corner, and a corner it
+  rejects keeps its center-of-mass position, so it finds at least as many
+  corners as CenterOfMass does.
 - **CenterOfMass is biased by PuzzleBoard edge dots** next to each corner
   (≈ 0.3 px, σ̂₀² ≈ 4) and, on sharp boards rotated a few degrees, by the
   rotation itself (up to 0.2 px, σ̂₀² ≈ 1.8, close to the 1.6 the chess-corners
@@ -165,8 +168,10 @@ What the table shows:
 - **Recall** is lower where the board's identification needs resolution the
   image does not have: 8 px cells for marker boards and PuzzleBoards, strong blur
   at 24 px for ChArUco. The refiner changes which corners are found as well as
-  where: SaddlePoint loses some recall on the smallest PuzzleBoard and ChArUco
-  cells.
+  where: PuzzleBoard gains conditions under SaddlePoint, whose corners next to
+  an edge dot are not pulled off by it; their worst-case RMSE and σ̂₀² come
+  from corners the saddle fit rejected, which keep the center of mass's
+  accuracy.
 - **Marker boards decline when their circles are not resolved.** At 8 px
   cells the three disks are 4 px across, and no 8 px condition identifies the
   board: a disk must move its square's reading at least half the

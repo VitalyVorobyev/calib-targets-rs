@@ -42,7 +42,7 @@ pub mod render;
 use std::fmt::Write as _;
 
 use calib_targets::detect::DetectorConfig;
-use chess_corners::{ImageRefiner, NoiseLevel, Uncertainty};
+use chess_corners::{ImageRefiner, NoiseLevel, OnRefinerReject, Uncertainty};
 use serde::{Deserialize, Serialize};
 
 use families::{Board, Family};
@@ -63,15 +63,16 @@ pub const K1: f64 = 0.15;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
 #[serde(rename_all = "snake_case")]
 pub enum Refiner {
-    /// `chess-corners`' default: the ChESS detector's own centre of mass of
-    /// the response, no image refiner.
+    /// The ChESS detector's own centre of mass of the response, no image
+    /// refiner (`chess-corners`' default).
     CenterOfMass,
-    /// The saddle-point image refiner: a fit of the image patch.
+    /// The saddle-point image refiner — a fit of the image patch — with the
+    /// center of mass for the corners it rejects: the workspace default.
     SaddlePoint,
 }
 
 impl Refiner {
-    /// Both refiners, default first.
+    /// Both refiners, the center of mass first.
     pub const ALL: [Refiner; 2] = [Refiner::CenterOfMass, Refiner::SaddlePoint];
 
     /// Short report label.
@@ -89,7 +90,9 @@ impl Refiner {
         });
         match self {
             Refiner::CenterOfMass => cfg.without_refiner(),
-            Refiner::SaddlePoint => cfg.with_refiner(ImageRefiner::saddle_point()),
+            Refiner::SaddlePoint => cfg
+                .with_refiner(ImageRefiner::saddle_point())
+                .with_chess(|c| c.on_refiner_reject = OnRefinerReject::KeepCenterOfMass),
         }
     }
 }

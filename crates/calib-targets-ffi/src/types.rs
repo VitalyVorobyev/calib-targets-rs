@@ -39,12 +39,13 @@ pub const CT_DICTIONARY_DICT_ARUCO_ORIGINAL: ct_dictionary_id_t = 22;
 /// ABI note (6.0.0): `2` (the Förstner refiner) is gone with chess-corners
 /// 2.0; the other values are unchanged.
 pub type ct_refiner_kind_t = u32;
-/// The ChESS detector's own center of mass of the response (the default),
-/// tuned by `ct_refiner_config_t::center_of_mass`.
+/// The ChESS detector's own center of mass of the response, tuned by
+/// `ct_refiner_config_t::center_of_mass`.
 pub const CT_REFINER_KIND_CENTER_OF_MASS: ct_refiner_kind_t = 1;
 /// The saddle-point image refiner, tuned by
-/// `ct_refiner_config_t::saddle_point`. It replaces the center of mass and
-/// drops a corner it rejects.
+/// `ct_refiner_config_t::saddle_point` (the workspace default). It replaces
+/// the center of mass; a corner it rejects keeps its center-of-mass position,
+/// tuned by `ct_refiner_config_t::center_of_mass`.
 pub const CT_REFINER_KIND_SADDLE_POINT: ct_refiner_kind_t = 3;
 
 /// Fixed upscaling mode identifier type for ChESS pre-detection upscaling.

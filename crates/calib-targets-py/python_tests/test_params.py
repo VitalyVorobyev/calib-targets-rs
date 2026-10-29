@@ -98,6 +98,7 @@ def test_chess_config_default_matches_rust_shape() -> None:
             "chess": {
                 "ring": "canonical",
                 "center_of_mass": {"radius": 2},
+                "on_refiner_reject": "keep_center_of_mass",
             }
         },
         "threshold": 15.0,
@@ -106,7 +107,14 @@ def test_chess_config_default_matches_rust_shape() -> None:
         "upscale": "disabled",
         "orientation_method": "ring_fit",
         "merge_radius": 3.0,
-        "refiner": None,
+        "refiner": {
+            "saddle_point": {
+                "radius": 2,
+                "det_margin": 1e-3,
+                "max_offset": 1.5,
+                "min_abs_det": 1e-4,
+            }
+        },
         "uncertainty": "off",
     }
     assert cfg.to_dict() == expected

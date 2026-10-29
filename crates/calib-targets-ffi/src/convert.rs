@@ -59,8 +59,8 @@ use calib_targets::puzzleboard::{
 // the `calib-targets` facade re-exports only `DetectorConfig` +
 // `OrientationMethod`.
 use chess_corners::{
-    CenterOfMassConfig, ChessRing, ImageRefiner, MultiscaleConfig, NoiseLevel, SaddlePointConfig,
-    Uncertainty, UpscaleConfig,
+    CenterOfMassConfig, ChessRing, ImageRefiner, MultiscaleConfig, NoiseLevel, OnRefinerReject,
+    SaddlePointConfig, Uncertainty, UpscaleConfig,
 };
 
 // ─── Shared ChESS config ────────────────────────────────────────────────────
@@ -110,8 +110,17 @@ pub(crate) fn convert_refiner_kind(
                 cfg.saddle_point.min_abs_det,
                 "refiner.saddle_point.min_abs_det",
             )?;
+            // A corner the saddle-point fit rejects keeps its center-of-mass
+            // position, tuned like the center-of-mass refiner.
+            if cfg.center_of_mass.radius < 0 {
+                return Err(FfiError::config_error(
+                    "refiner.center_of_mass.radius must be >= 0",
+                ));
+            }
+            let mut center_of_mass = CenterOfMassConfig::default();
+            center_of_mass.radius = cfg.center_of_mass.radius;
             Ok(ConvertedRefiner {
-                center_of_mass: CenterOfMassConfig::default(),
+                center_of_mass,
                 image_refiner: Some(ImageRefiner::SaddlePoint(out)),
             })
         }
@@ -234,6 +243,9 @@ pub(crate) fn convert_chess_config(config: &ct_chess_config_t) -> FfiResult<Dete
         .with_chess(|c| {
             c.ring = ring;
             c.center_of_mass = refiner.center_of_mass;
+            // The C ABI's saddle-point refiner is the workspace's: the
+            // center of mass keeps the corners it rejects.
+            c.on_refiner_reject = OnRefinerReject::KeepCenterOfMass;
         })
         .with_uncertainty(uncertainty);
     Ok(match refiner.image_refiner {

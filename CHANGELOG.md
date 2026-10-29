@@ -9,7 +9,8 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
-Moves to `chess-corners` 2.0, can report each corner's position covariance on
+Moves to `chess-corners` 2.1, makes the saddle-point refiner the default corner
+localizer, can report each corner's position covariance on
 every detection result (opt-in), and summarises every detection's localization
 quality. A breaking release: the `ml-refiner` feature and the Förstner refiner
 are gone, the corner config's refiner and uncertainty settings take
@@ -94,6 +95,22 @@ moves to 6.0.0. See
   `Uncertainty::Propagated`. When it is on, ChArUco reuses the frame's noise
   level for the corners it re-detects (the `*_best` ChArUco sweep shares it
   across configs). Corner sets and positions are unchanged by the tier.
+- **The saddle-point refiner is the default corner localizer.**
+  `default_chess_config()` places each corner with the saddle-point image
+  refiner (`ImageRefiner::saddle_point()`), and a corner the refiner rejects
+  keeps its center-of-mass position (`OnRefinerReject::KeepCenterOfMass`, new
+  in `chess-corners` 2.1). On the ground-truth accuracy suite this is four to
+  five times more accurate than the center of mass on every target family,
+  with zero wrong labels and at least the same detections (PuzzleBoard gains
+  conditions). Every corner position moves by a fraction of a pixel; labels
+  are unchanged where corners match on the regression sets, and recall is
+  about equal (a few frames gain corners, a few lose some in strong defocus —
+  see algorithmic Gap 29). ChArUco's re-measured corners now use the same
+  localizer as the rest. `refiner: None` restores the center of mass alone.
+  `OnRefinerReject` is re-exported from `calib_targets::detect`; Python
+  `OnRefinerReject` and `ChessStrategyConfig.on_refiner_reject`; WASM typings
+  `OnRefinerReject`; the C ABI's `CT_REFINER_KIND_SADDLE_POINT` keeps the
+  center of mass for rejected corners.
 - **The refiner moved out of the ChESS strategy.** `chess-corners` 2.0 makes
   image refinement one optional stage: `DetectorConfig::refiner:
   Option<ImageRefiner>` (`None`, the default, keeps the ChESS center of mass),

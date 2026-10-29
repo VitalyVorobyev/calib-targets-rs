@@ -253,6 +253,19 @@ class ChessRing:
     BROAD = "broad"
 
 
+class OnRefinerReject:
+    """What a ChESS detection does with a corner the image refiner rejects
+    (Rust unit-enum ``chess_corners::OnRefinerReject``).
+
+    ``KEEP_CENTER_OF_MASS`` (the workspace default) keeps it at the ChESS
+    center-of-mass position; ``DROP`` drops it. Ignored without an image
+    refiner.
+    """
+
+    DROP = "drop"
+    KEEP_CENTER_OF_MASS = "keep_center_of_mass"
+
+
 class OrientationMethod:
     """Orientation-fit method used when building corner descriptors."""
 
@@ -369,12 +382,19 @@ class ChessStrategyConfig:
     #: The ChESS detector's own subpixel localizer. An image refiner
     #: (``ChessConfig.refiner``) replaces it.
     center_of_mass: CenterOfMassConfig = field(default_factory=CenterOfMassConfig)
+    #: What happens to a corner the image refiner rejects — an
+    #: :class:`OnRefinerReject` value.
+    on_refiner_reject: str = OnRefinerReject.KEEP_CENTER_OF_MASS
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "ring": self.ring,
             "center_of_mass": self.center_of_mass.to_dict(),
         }
+        # `drop` is the Rust default and serializes as an absent key.
+        if self.on_refiner_reject != OnRefinerReject.DROP:
+            data["on_refiner_reject"] = self.on_refiner_reject
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessStrategyConfig:
@@ -387,12 +407,18 @@ class ChessStrategyConfig:
                 "strategy.chess.center_of_mass, and an image refiner is the "
                 "top-level ChessConfig(refiner=ImageRefiner.saddle_point())."
             )
-        _reject_unknown_keys("ChessStrategyConfig", data, {"ring", "center_of_mass"})
+        _reject_unknown_keys(
+            "ChessStrategyConfig", data, {"ring", "center_of_mass", "on_refiner_reject"}
+        )
+        on_reject = data.get("on_refiner_reject", OnRefinerReject.DROP)
+        if on_reject not in (OnRefinerReject.DROP, OnRefinerReject.KEEP_CENTER_OF_MASS):
+            raise ValueError(f"unknown on_refiner_reject: {on_reject!r}")
         return cls(
             ring=data.get("ring", d.ring),
             center_of_mass=CenterOfMassConfig.from_dict(
                 data.get("center_of_mass", d.center_of_mass.to_dict())
             ),
+            on_refiner_reject=on_reject,
         )
 
 
@@ -588,8 +614,10 @@ class ChessConfig:
 
     Defaults match
     ``calib_targets::detect::default_chess_config()`` — a single-scale
-    ChESS strategy with an absolute threshold of ``15.0``, no upscaling,
-    ring-fit orientation, and a 3.0-pixel merge radius. The threshold is
+    ChESS strategy with an absolute threshold of ``15.0``, the saddle-point
+    image refiner with the center of mass for the corners it rejects, no
+    upscaling, ring-fit orientation, and a 3.0-pixel merge radius. The
+    threshold is
     a small noise floor that keeps the topological pipeline from drowning
     in weak responses (chosen by sweeping the public testdata regression
     set; see ``crates/calib-targets/examples/threshold_sweep.rs``).
@@ -626,8 +654,8 @@ class ChessConfig:
         # Pre-pipeline upscale for tiny markers:
         cfg = ChessConfig(upscale=UpscaleConfig.fixed(2))
 
-        # Saddle-point image refiner instead of the center of mass:
-        cfg = ChessConfig(refiner=ImageRefiner.saddle_point())
+        # The ChESS center of mass alone, without the saddle-point refiner:
+        cfg = ChessConfig(refiner=None)
 
         # Report each corner's position covariance (off by default), with the
         # noise estimated per image or a known sensor noise in gray levels:
@@ -646,9 +674,9 @@ class ChessConfig:
     #: ``Option<OrientationMethod>``); every descriptor then carries no axes.
     orientation_method: str | None = OrientationMethod.RING_FIT
     merge_radius: float = 3.0
-    #: Image-refinement stage, or ``None`` (the default) to keep the ChESS
-    #: center of mass.
-    refiner: ImageRefiner | None = None
+    #: Image-refinement stage: the saddle-point refiner by default; ``None``
+    #: keeps the ChESS center of mass alone.
+    refiner: ImageRefiner | None = field(default_factory=ImageRefiner.saddle_point)
     #: Which position uncertainty each corner reports — an
     #: :class:`Uncertainty` value. Off by default.
     uncertainty: Uncertainty = field(default_factory=Uncertainty.off)
@@ -1958,6 +1986,7 @@ __all__ = [
     "MultiscaleConfig",
     "UpscaleConfig",
     "ChessRing",
+    "OnRefinerReject",
     "OrientationMethod",
     "ImageRefiner",
     "Uncertainty",

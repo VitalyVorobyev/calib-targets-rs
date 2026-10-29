@@ -4,8 +4,8 @@
 //! API legitimately exposes: [`DetectorConfig`], the high-level ChESS config
 //! object callers construct, and the types of the top-level fields callers
 //! routinely set on it — [`OrientationMethod`], [`ImageRefiner`] (the
-//! saddle-point refiner) and [`Uncertainty`] / [`NoiseLevel`] (the opt-in
-//! position covariance). They are part of `DetectorConfig`'s shape, so naming
+//! saddle-point refiner) with [`OnRefinerReject`], and [`Uncertainty`] /
+//! [`NoiseLevel`] (the opt-in position covariance). They are part of `DetectorConfig`'s shape, so naming
 //! them adds no contract.
 //!
 //! Advanced ChESS tuning types (`ChessConfig`, `RadonConfig`,
@@ -26,7 +26,9 @@
 //! image as supplied so the library no longer conflates preprocessing
 //! with detection.
 
-pub use chess_corners::{DetectorConfig, ImageRefiner, NoiseLevel, OrientationMethod, Uncertainty};
+pub use chess_corners::{
+    DetectorConfig, ImageRefiner, NoiseLevel, OnRefinerReject, OrientationMethod, Uncertainty,
+};
 
 /// The workspace's ChESS acceptance threshold.
 ///
@@ -56,6 +58,17 @@ const WORKSPACE_CHESS_THRESHOLD: f32 = 15.0;
 /// the upstream default, and the ChESS response scale did not change in 1.0,
 /// so `15.0` keeps producing exactly the corner set it did under 0.11.
 ///
+/// **Localizer: the saddle-point image refiner, with the center of mass as
+/// its fallback.** Each corner is placed by a saddle-point fit of the image
+/// patch ([`ImageRefiner::saddle_point`]); a corner the fit rejects keeps the
+/// ChESS center-of-mass position ([`OnRefinerReject::KeepCenterOfMass`])
+/// instead of being dropped. On the workspace's ground-truth accuracy suite
+/// the saddle-point fit is four to five times more accurate than the center
+/// of mass on every target family, and with the fallback it finds at least as
+/// many corners — without it, a cluttered or blurred board loses real corners
+/// the fit rejects. Select [`DetectorConfig::without_refiner`] for the center
+/// of mass alone.
+///
 /// Every other field keeps the upstream default — including the
 /// position-uncertainty tier, which is `Uncertainty::Off`: corners carry no
 /// position covariance. Select `Uncertainty::Propagated` to get one (it costs
@@ -80,7 +93,10 @@ const WORKSPACE_CHESS_THRESHOLD: f32 = 15.0;
 /// Callers wanting the raw upstream behaviour can construct
 /// [`DetectorConfig::chess`] directly.
 pub fn default_chess_config() -> DetectorConfig {
-    DetectorConfig::chess().with_threshold(WORKSPACE_CHESS_THRESHOLD)
+    DetectorConfig::chess()
+        .with_threshold(WORKSPACE_CHESS_THRESHOLD)
+        .with_refiner(ImageRefiner::saddle_point())
+        .with_chess(|c| c.on_refiner_reject = OnRefinerReject::KeepCenterOfMass)
 }
 
 #[cfg(test)]
@@ -122,14 +138,18 @@ mod tests {
         // here from the per-strategy config in 1.0) stay at upstream defaults.
         assert_eq!(cfg.detection, baseline.detection);
 
-        // The position-uncertainty tier and the image refiner stay at upstream
-        // defaults too: no covariance, and the ChESS center of mass.
+        // The position-uncertainty tier stays at the upstream default: no
+        // covariance.
         assert_eq!(cfg.uncertainty, baseline.uncertainty);
         assert_eq!(cfg.uncertainty, chess_corners::Uncertainty::Off);
-        assert_eq!(cfg.refiner, baseline.refiner);
 
-        // The nested ChESS strategy fields stay at upstream defaults so
-        // the override is purely the acceptance threshold.
+        // The localizer is the workspace's own choice: the saddle-point
+        // refiner, keeping the center of mass for the corners it rejects.
+        assert_eq!(cfg.refiner, Some(ImageRefiner::saddle_point()));
+        assert_ne!(cfg.refiner, baseline.refiner);
+
+        // The nested ChESS strategy fields stay at upstream defaults, except
+        // that a corner the refiner rejects keeps its center-of-mass position.
         let DetectionStrategy::Chess(chess) = cfg.strategy else {
             unreachable!("matched above");
         };
@@ -138,5 +158,6 @@ mod tests {
         };
         assert_eq!(chess.ring, chess_baseline.ring);
         assert_eq!(chess.center_of_mass, chess_baseline.center_of_mass);
+        assert_eq!(chess.on_refiner_reject, OnRefinerReject::KeepCenterOfMass);
     }
 }

@@ -290,6 +290,27 @@ The frame now labels 2514 corners in one component under either score scale,
 with the same label frame and no corner off its row or column by more than
 the pre-existing localisation outliers.
 
+### Gap 29 — Saddle-point corners in strong defocus can lose grid attachment — **open, measured**
+
+Since 0.16 the default localizer is the saddle-point image refiner, with the
+center of mass for the corners it rejects (`OnRefinerReject::KeepCenterOfMass`,
+chess-corners 2.1). On the ground-truth accuracy suite it is four to five times
+more accurate than the center of mass and finds at least as many corners, and
+across the real regression sets labels are unchanged where corners match.
+
+What is lost: in a band of strong defocus on a real frame, the saddle fit
+converges 0.5–1.5 px from the center-of-mass position (cells ≈ 29 px) and the
+axis fit at the new position scores slightly worse; about twenty corners there
+that the center of mass attached are no longer attached. Treating non-converged
+saddle fits as rejections does not change it — these fits converge. Elsewhere
+the same frames gain corners, and no corner changes label.
+
+**Open questions.** Which position is closer to the truth in strong defocus
+(no ground truth on that frame; the synthetic suite's heaviest blur, 1.5 px,
+favours the saddle fit), and whether the attachment loss is the grid's
+local-geometry gates reacting to a real position change or to a biased one. A
+synthetic defocus sweep beyond 1.5 px would settle the first.
+
 ---
 
 ## Architectural-direction summary
