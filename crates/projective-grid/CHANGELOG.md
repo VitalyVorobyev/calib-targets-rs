@@ -7,6 +7,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.3] - 2026-10-29
+
 ### Fixed
 
 - **Clutter inside cells no longer costs cells.** The topological builder
@@ -202,7 +204,10 @@ See [Road to 1.0](https://github.com/VitalyVorobyev/calib-targets-rs/blob/projec
 for the compact 0.11 → 0.12 request example, release process, readiness status,
 and remaining stabilization work.
 
-[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.0...HEAD
+[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.3...HEAD
+[0.14.3]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.2...projective-grid-v0.14.3
+[0.14.2]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.1...projective-grid-v0.14.2
+[0.14.1]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.0...projective-grid-v0.14.1
 [0.14.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.13.0...projective-grid-v0.14.0
 [0.13.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.12.0...projective-grid-v0.13.0
 [0.12.0]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/v0.11.2...projective-grid-v0.12.0

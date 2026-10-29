@@ -7,7 +7,7 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.16.0
 
 Moves to `chess-corners` 2 (2.1), can report each corner's position covariance on
 every detection result (opt-in), and summarises every detection's localization
@@ -16,9 +16,8 @@ are gone, the corner config's refiner and uncertainty settings take
 `chess-corners` 2.0's shape, and `AxisEstimate::sigma` is renamed
 `fit_std_error`. Corner positions, labels and ids are unchanged, except where
 noted below (the grid builder's clutter fix, the marker board and ChArUco
-re-detection). The C ABI
-moves to 6.0.0. See
-[`docs/migrations/0.16.0.md`](docs/migrations/0.16.0.md).
+re-detection). The C ABI moves to 6.0.0, and `projective-grid` to 0.14.3 (the
+clutter fix). See [`docs/migrations/0.16.0.md`](docs/migrations/0.16.0.md).
 
 ### Added
 
@@ -136,9 +135,6 @@ moves to 6.0.0. See
   regression set, and elsewhere a few frontier corners a recovery booster used
   to add are no longer added. JSON key `axes[].fit_std_error` (WASM typings,
   Python corner dicts, diagnostics traces).
-- ChArUco corners re-detected near a marker can move by a fraction of a pixel:
-  `chess-corners` 1.5 re-centres its saddle-point refiner. Labels and ids are
-  unchanged.
 - The Python `detect_chessboard` / `detect_chessboard_all`, the WASM
   `detect_chessboard*`, `detect_marker_board` and `diagnose_*`, and the C
   chessboard detector now run the corner pass through the same front end as

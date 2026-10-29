@@ -34,7 +34,7 @@ per target, with a shared corner vocabulary.
 
 Full documentation: [book][book] · [API reference][api] · [getting-started tutorial][getting-started].
 Upgrading from an earlier release? See the [Migration Guide](docs/migrations/0.16.0.md)
-([book chapter][migration]); the [0.14.0 guide](docs/migrations/0.14.0.md) is kept
+([book chapter][migration]); the [0.15.0 guide](docs/migrations/0.15.0.md) is kept
 for consumers upgrading across two releases.
 
 [book]: https://vitalyvorobyev.github.io/calib-targets-rs/book/

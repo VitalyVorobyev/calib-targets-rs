@@ -11,20 +11,62 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
-## Current ABI: 5.0.0 (workspace 0.15.5)
+## Current ABI: 6.0.0 (workspace 0.16.0)
 
-The ABI has been 5.0.0 since workspace 0.15.0 and is unchanged through the
-0.15.x patch releases: none of them touches a symbol, struct or enum in the C
-API, so a consumer already linked against 5.0.0 needs to do nothing. The latest
-patch, 0.15.5, fixes ChArUco and marker-board corner labels for boards seen
-turned by more than 45° (they were one square off); the C API simply returns the
-corrected ids and positions. The notes below are the 5.0.0 release notes,
-retained because the archive filename is the ABI version and this is still the
-ABI being shipped.
+Workspace 0.16.0 ships a new ABI, 6.0.0. The notes below say what changed since
+5.0.0; older notes follow for consumers upgrading across several releases.
+
+## ABI 6.0.0 — breaking
+
+Paired with workspace 0.16.0, which moves to `chess-corners` 2.
+**Relink and rebuild every caller-allocated array.** Several structs change
+size, so a caller built against 5.0.0 passes structs with the wrong layout. It
+is silently misaligned rather than failing to link.
+
+**Corner position covariance (opt-in).**
+
+- `ct_chess_config_t` appends `uncertainty` (`ct_uncertainty_t`) and
+  `noise_sigma` (`ct_optional_f32_t`). `CT_UNCERTAINTY_OFF` is `0`, so a
+  zero-initialised config computes no covariance.
+  `CT_UNCERTAINTY_PROPAGATED` computes one, with `noise_sigma` as the known
+  image noise level or estimated per image when unset.
+- `ct_labeled_corner_t` and `ct_chessboard_corner_t` append
+  `has_position_covariance` and `position_covariance`
+  (`ct_position_covariance_t`, `{xx, xy, yy}` in px²). Caller-allocated
+  corner arrays must be rebuilt against the new header.
+- `ct_chessboard_result_t`, `ct_charuco_result_t`, `ct_marker_board_result_t`
+  and `ct_puzzleboard_result_t` append `quality` (`ct_detection_quality_t`),
+  the per-detection localization summary.
+
+**Refiners.**
+
+- The Förstner refiner is gone: `CT_REFINER_KIND_FORSTNER` and
+  `ct_forstner_config_t` are removed, and so is the matching tuning in
+  `ct_refiner_config_t`. The remaining values are unchanged.
+- `CT_REFINER_KIND_SADDLE_POINT` is the saddle-point image refiner. A corner
+  it rejects keeps its center-of-mass position, tuned by
+  `ct_refiner_config_t::center_of_mass`. The default stays
+  `CT_REFINER_KIND_CENTER_OF_MASS`.
+
+**ChArUco and PuzzleBoard params.**
+
+- `ct_charuco_detector_params_t::inset_frac` replaces `scan`. The marker's
+  size and border come from the board, and `ct_charuco_board_spec_t` gains
+  `border_bits`.
+- `ct_scan_decode_config_t` and `ct_puzzleboard_params_t::px_per_square` are
+  removed. Nothing read them.
+
+**Status codes.** A detection error that is not a miss is now
+`CT_STATUS_CONFIG_ERROR`, not `CT_STATUS_NOT_FOUND`. `CT_STATUS_NOT_FOUND`
+means only that no board was found.
+
+Full Rust-side context is in the
+[0.16 migration guide](../migrations/0.16.0.md) and
+[`CHANGELOG.md`](../../CHANGELOG.md).
 
 ## ABI 5.0.0 — breaking
 
-Paired with workspace 0.15.0. **Relink; recompiling is not enough** — three
+Paired with workspace 0.15.0, and unchanged through 0.15.5. **Relink; recompiling is not enough** — three
 marker-board structs change size, so a caller built against 4.0.0 passes
 structs of the wrong layout and is silently misaligned rather than failing to
 link. Nothing outside the marker board is touched: a consumer using only the
