@@ -123,11 +123,7 @@ mod tests {
             height: 1,
         };
         let front_end = calib_targets_core::default_chess_config();
-        let mut detector = Redetector::new(
-            crate::detector::params::default_redetect_params(),
-            &front_end,
-            FrameNoise::Unresolved,
-        );
+        let mut detector = Redetector::new(&front_end, FrameNoise::Unresolved);
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -151,11 +147,7 @@ mod tests {
             height: 1,
         };
         let front_end = calib_targets_core::default_chess_config();
-        let mut detector = Redetector::new(
-            crate::detector::params::default_redetect_params(),
-            &front_end,
-            FrameNoise::Unresolved,
-        );
+        let mut detector = Redetector::new(&front_end, FrameNoise::Unresolved);
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -188,11 +180,7 @@ mod tests {
             height: 1,
         };
         let front_end = calib_targets_core::default_chess_config();
-        let mut detector = Redetector::new(
-            crate::detector::params::default_redetect_params(),
-            &front_end,
-            FrameNoise::Unresolved,
-        );
+        let mut detector = Redetector::new(&front_end, FrameNoise::Unresolved);
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -214,11 +202,7 @@ mod tests {
             height: 1,
         };
         let front_end = calib_targets_core::default_chess_config();
-        let mut detector = Redetector::new(
-            crate::detector::params::default_redetect_params(),
-            &front_end,
-            FrameNoise::Unresolved,
-        );
+        let mut detector = Redetector::new(&front_end, FrameNoise::Unresolved);
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 
@@ -243,11 +227,7 @@ mod tests {
             height: 1,
         };
         let front_end = calib_targets_core::default_chess_config();
-        let mut detector = Redetector::new(
-            crate::detector::params::default_redetect_params(),
-            &front_end,
-            FrameNoise::Unresolved,
-        );
+        let mut detector = Redetector::new(&front_end, FrameNoise::Unresolved);
 
         smooth_grid_corners(&mut map, &dummy_image, spacing, 0.05, &mut detector);
 

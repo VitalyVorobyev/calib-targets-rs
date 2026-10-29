@@ -44,6 +44,7 @@
 
 use crate::alignment::CharucoAlignment;
 use crate::board::CharucoBoard;
+use crate::detector::params::redetect_params;
 use calib_targets_aruco::MarkerDetection;
 use calib_targets_core::{
     estimate_homography_rect_to_img, DetectorConfig, GrayImageView, LabeledCorner,
@@ -74,10 +75,9 @@ pub(crate) struct CornerValidationConfig<'a, 'r> {
 
 /// Local corner re-detection engine, built once per detect call.
 ///
-/// Wraps the single-scale ROI detector configured by
-/// [`CharucoParams::corner_redetect_params`](crate::CharucoParams) and threads
-/// it as `&mut` so its scratch buffers are reused across corners and both
-/// validation stages.
+/// Wraps a single-scale ROI detector that localizes like the front end (see
+/// [`redetect_params`]) and threads it as `&mut` so its scratch buffers are
+/// reused across corners and both validation stages.
 ///
 /// It runs in two modes. [`Self::locate`] (grid smoothness) needs only a
 /// position, so it runs with the covariance off. [`Self::measure`] (corner
@@ -122,14 +122,11 @@ impl Redetected {
 }
 
 impl<'a> Redetector<'a> {
-    /// `base` is the ROI detector config, `front_end` the config the frame's
-    /// corners were detected with, and `noise` what is known about the front
-    /// end's noise level.
-    pub(crate) fn new(
-        base: DetectorConfig,
-        front_end: &'a DetectorConfig,
-        noise: FrameNoise,
-    ) -> Self {
+    /// `front_end` is the config the frame's corners were detected with (the
+    /// ROI detector is derived from it), and `noise` what is known about the
+    /// front end's noise level.
+    pub(crate) fn new(front_end: &'a DetectorConfig, noise: FrameNoise) -> Self {
+        let base = redetect_params(front_end);
         Self {
             detector: Detector::new(at_noise_level(base, None))
                 .expect("internal corner-redetect config is always valid"),
@@ -154,15 +151,28 @@ impl<'a> Redetector<'a> {
     }
 
     /// The strongest corner within `roi_half_px` of `seed`, with its position
-    /// covariance, or `None` if there is none.
+    /// covariance — or `None` if there is none, or if it lies farther than
+    /// `max_offset_px` from `seed`.
+    ///
+    /// The window has to be wider than `max_offset_px` to reach a corner the
+    /// front end mislocated, so its strongest response can be another feature
+    /// (a marker-bit saddle, a neighbouring edge) several pixels from the
+    /// seed. The offset bound keeps such a feature from standing in for the
+    /// corner. It is the check itself, not a localizer's fit rejection, that
+    /// makes this hold for every localizer.
     pub(crate) fn measure(
         &mut self,
         image: &GrayImageView<'_>,
         seed: Point2<f32>,
         roi_half_px: i32,
+        max_offset_px: f32,
     ) -> Option<Redetected> {
         self.set_measuring(image, true);
         self.strongest(image, seed, roi_half_px)
+            .filter(|c| {
+                let (dx, dy) = (c.x - seed.x, c.y - seed.y);
+                dx * dx + dy * dy <= max_offset_px * max_offset_px
+            })
             .map(|c| Redetected {
                 position: Point2::new(c.x, c.y),
                 position_covariance: c.position_covariance.map(PositionCovariance::from),
@@ -404,8 +414,9 @@ fn collect_board_to_image_correspondences(
 ///    b. `|corner - seed| ≤ threshold_px` → consistent, keep unchanged.
 ///    c. `|corner - seed| > threshold_px` → false corner detected:
 ///       - Run [`Redetector::measure`] centred on `seed`.
-///       - Re-detection succeeds → replace position and its covariance.
-///       - Re-detection fails → discard corner.
+///       - Re-detection finds a corner within `threshold_px` of `seed` (the
+///         test the kept corners passed) → replace position and covariance.
+///       - Otherwise → discard corner.
 ///
 /// `threshold_px = threshold_rel * px_per_square`; the re-detection window is
 /// sized per corner by [`roi_half_px_at`], and a re-detected corner may be
@@ -478,8 +489,14 @@ pub(crate) fn validate_and_fix_corners(
         // used to adopt one physical corner and ship a detection no homography
         // admits (issue #86).
         let roi_half_px = roi_half_px_at(&homography, board_pos, seed, cell_size, threshold_px);
-        let Some(found) = cfg.redetector.measure(image, seed, roi_half_px) else {
-            // No valid corner found near the seed — discard.
+        // The corner was flagged because it disagrees with the board, so its
+        // replacement must agree: it passes the same consistency test as the
+        // corners kept above (`threshold_px` from the seed).
+        let Some(found) = cfg
+            .redetector
+            .measure(image, seed, roi_half_px, threshold_px)
+        else {
+            // No consistent corner near the seed — discard.
             out[slot] = None;
             continue;
         };
@@ -570,6 +587,62 @@ mod tests {
         assert_eq!(corner.position, found.position);
         assert_eq!(corner.position_covariance, found.position_covariance);
         assert_eq!(corner.score, 210.0);
+    }
+
+    /// A synthetic X-junction centred on `(cx, cy)` (pixel centres at
+    /// integers), smoothed over about a pixel.
+    fn x_junction(size: usize, cx: f32, cy: f32) -> Vec<u8> {
+        let mut data = vec![0u8; size * size];
+        for y in 0..size {
+            for x in 0..size {
+                let (u, v) = (x as f32 - cx, y as f32 - cy);
+                let s = (u.tanh() * v.tanh()).clamp(-1.0, 1.0);
+                data[y * size + x] = (128.0 + 100.0 * s).round() as u8;
+            }
+        }
+        data
+    }
+
+    #[test]
+    fn measure_finds_the_corner_and_its_covariance() {
+        let data = x_junction(64, 31.3, 32.6);
+        let image = GrayImageView {
+            data: &data,
+            width: 64,
+            height: 64,
+        };
+        let front_end =
+            calib_targets_core::default_chess_config().with_uncertainty(Uncertainty::Propagated {
+                noise: NoiseLevel::Estimate,
+            });
+        let mut redetector = Redetector::new(&front_end, FrameNoise::Known(Some(1.0)));
+        let seed = Point2::new(35.0, 32.0);
+        let found = redetector
+            .measure(&image, seed, 12, 6.0)
+            .expect("the corner lies within the bound");
+        assert!(
+            (found.position - Point2::new(31.3, 32.6)).norm() < 0.3,
+            "re-detected at {:?}",
+            found.position
+        );
+        assert!(found.position_covariance.is_some());
+    }
+
+    #[test]
+    fn measure_rejects_a_corner_beyond_the_offset_bound() {
+        let data = x_junction(64, 31.3, 32.6);
+        let image = GrayImageView {
+            data: &data,
+            width: 64,
+            height: 64,
+        };
+        let front_end = calib_targets_core::default_chess_config();
+        let mut redetector = Redetector::new(&front_end, FrameNoise::Known(None));
+        // The window (12 px) reaches the corner, 6 px from the seed; the
+        // consistency bound (4 px) does not.
+        let seed = Point2::new(37.3, 32.6);
+        assert!(redetector.measure(&image, seed, 12, 4.0).is_none());
+        assert!(redetector.locate(&image, seed, 12).is_some());
     }
 
     #[test]

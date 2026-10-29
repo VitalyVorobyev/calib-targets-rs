@@ -70,23 +70,34 @@ fn output_corners_carry_the_covariance_of_their_measurement() {
                 r.position.x.to_bits() == c.position.x.to_bits()
                     && r.position.y.to_bits() == c.position.y.to_bits()
             });
-            match source {
-                Some(src) => {
-                    assert_eq!(
-                        bits(c.position_covariance),
-                        bits(src.position_covariance),
-                        "{name}: corner {} must keep its front-end covariance",
-                        c.id
-                    );
-                    assert_eq!(
-                        c.score.to_bits(),
-                        src.strength.to_bits(),
-                        "{name}: corner {} must keep its front-end score",
-                        c.id
-                    );
+            let carried = source.filter(|src| {
+                bits(c.position_covariance) == bits(src.position_covariance)
+                    && c.score.to_bits() == src.strength.to_bits()
+            });
+            match (source, carried) {
+                (_, Some(_)) => {
                     carried_with_cov += usize::from(c.position_covariance.is_some());
                 }
-                None => {
+                (Some(src), None) => {
+                    // Re-detection localizes like the front end, so it can
+                    // land on the very peak the front end reported. It is a
+                    // fresh measurement from the window's own response map,
+                    // so its covariance agrees with the front end's to within
+                    // that map's border effects, not bit for bit.
+                    redetected_total += 1;
+                    let (Some(a), Some(b)) = (c.position_covariance, src.position_covariance)
+                    else {
+                        panic!("{name}: corner {} re-measured without a covariance", c.id);
+                    };
+                    let rel = (a.sigma_max_px() / b.sigma_max_px() - 1.0).abs();
+                    assert!(
+                        rel < 0.01,
+                        "{name}: corner {} re-measured σ off by {rel}",
+                        c.id
+                    );
+                    redetected_with_cov += 1;
+                }
+                (None, _) => {
                     redetected_total += 1;
                     redetected_with_cov += usize::from(c.position_covariance.is_some());
                 }
@@ -105,13 +116,51 @@ fn output_corners_carry_the_covariance_of_their_measurement() {
     // Re-detected corners are measured on the same frame with the same noise
     // level; only a saddle-point fit that fails to converge reports none.
     assert!(
-        redetected_total > 0,
-        "the public frames exercise corner re-detection"
-    );
-    assert!(
         redetected_with_cov * 10 >= redetected_total * 9,
         "{redetected_with_cov} of {redetected_total} re-detected corners carry a covariance"
     );
+}
+
+/// A front-end corner moved off its true position is flagged by corner
+/// validation and re-detected: the output corner is back at the true position
+/// and carries the covariance of that fresh measurement.
+#[test]
+fn a_repaired_corner_is_re_measured_with_a_covariance() {
+    let img = load("large.png");
+    let detector = CharucoDetector::new(params("DICT_4X4_1000", 1.0)).expect("detector");
+    let corners = detector.detect_corners(&view(&img));
+    let reference = detector.detect(&view(&img)).expect("reference detection");
+    let mut repaired = 0;
+    for c in reference.corners.iter().step_by(7) {
+        let Some(k) = corners.iter().position(|r| r.position == c.position) else {
+            continue;
+        };
+        // 6 px: past the validation threshold (0.08 × 60 px), well inside the
+        // re-detection window.
+        let mut moved = corners.clone();
+        moved[k].position.y -= 6.0;
+        let result = detector
+            .detect_with_corners(&view(&img), &moved)
+            .expect("detection with one corner moved");
+        let out = result
+            .corners
+            .iter()
+            .find(|o| o.id == c.id)
+            .unwrap_or_else(|| panic!("corner {} was dropped, not repaired", c.id));
+        assert!(
+            (out.position - c.position).norm() < 0.05,
+            "corner {} re-detected {:?} away from its true position",
+            c.id,
+            out.position - c.position
+        );
+        let (Some(a), Some(b)) = (out.position_covariance, c.position_covariance) else {
+            panic!("corner {} lost its covariance", c.id);
+        };
+        let rel = (a.sigma_max_px() / b.sigma_max_px() - 1.0).abs();
+        assert!(rel < 0.01, "corner {}: re-measured σ off by {rel}", c.id);
+        repaired += 1;
+    }
+    assert!(repaired >= 10, "only {repaired} corners exercised");
 }
 
 #[test]

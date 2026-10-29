@@ -14,11 +14,9 @@ fn write_file(path: &Path, contents: &str) {
 /// `CharucoAdvancedTuning`, and the `with_advanced` builder — and set the
 /// opt-in advanced tuning knobs across the crate boundary.
 ///
-/// `corner_redetect_params` is deliberately **not** part of this contract: it
-/// is `pub(crate)` (an internal knob that leaks the upstream `chess_corners`
-/// parameter type and is `#[serde(skip)]`), so a downstream consumer can no
-/// longer name or mutate it. That revocation is exercised implicitly here — the
-/// generated crate builds without any `chess-corners*` dependency.
+/// Corner re-detection has no config of its own (it is derived from `chess`),
+/// so nothing here needs the upstream `chess_corners` types — the generated
+/// crate builds without any `chess-corners*` dependency.
 #[test]
 fn downstream_can_name_and_configure_advanced_tuning() {
     let dir = tempdir().expect("tempdir");
