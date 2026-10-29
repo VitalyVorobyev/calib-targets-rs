@@ -20,7 +20,7 @@ here.
 | [B-3](#b-3) | The soft ChArUco path reports a `hamming` it did not compute | P3 | S | none |
 | [B-4](#b-4) | Covariance cost: upstream `chess-corners` API asks — **resolved** | — | — | — |
 | [B-5](#b-5) | Config knobs that nothing reads — **resolved** | — | — | — |
-| [B-6](#b-6) | Two corner-strength floors on one response | P2 | S | semver |
+| [B-6](#b-6) | Two corner-strength floors on one response — **kept, roles documented** | P3 | — | none |
 | [B-7](#b-7) | "Board not found" is reported differently on every surface — **resolved** | — | — | — |
 | [B-8](#b-8) | Bindings mirror Rust params and defaults by hand | P2 | L | semver |
 | [B-9](#b-9) | PuzzleBoard binding helpers fix `cell_size = 1` and require unused `rows`/`cols` | P2 | S | semver |
@@ -117,17 +117,29 @@ Resolved in 0.16 (see `docs/migrations/0.16.0.md`).
   one field the user has a reason to set (`inset_frac`) and derive the rest from
   the board — the audit B-2 asks for.
 
-## <a id="b-6"></a>B-6 · Two corner-strength floors on one response
-**Sev P2 · Effort S · API semver**
+## <a id="b-6"></a>B-6 · Two corner-strength floors on one response — **kept, roles documented**
+**Sev P3 · Effort — · API none**
 
-- **Problem.** `default_chess_config()` accepts ChESS responses ≥ 15;
-  `ChessboardParams.min_corner_strength` (default 33) then drops corners whose
-  `strength` — the same response — is below 33. Lowering the ChESS
-  `threshold` therefore does nothing unless `min_corner_strength` is lowered
-  too, and every family's params carry both.
-- **Fix.** One floor at one level. Either `min_corner_strength` goes and the
-  ChESS threshold default becomes the floor, or the ChESS threshold becomes
-  internal (the paper-faithful `0`) and `min_corner_strength` is the knob.
+- **What was claimed.** `default_chess_config()` accepts ChESS responses ≥ 15
+  and `ChessboardParams.min_corner_strength` (33) then drops those below 33, so
+  "lowering the ChESS threshold does nothing unless `min_corner_strength` is
+  lowered too".
+- **What the code does (checked for 0.16).** On the default image path the
+  claim holds in effect: a corner below `min_corner_strength` never reaches the
+  `Strong` stage, so it is neither triangulated nor eligible for any recovery
+  booster. But the two floors have different jobs, and merging them breaks one:
+  - `min_corner_strength` is the chessboard detector's own admission floor for
+    **any** corner cloud, including the custom clouds `ChessboardDetector::detect`
+    and every `*_with_corners` entry point accept. Moving it into the ChESS
+    config would leave those callers with no floor.
+  - The ChESS `threshold` gates the image pass only, and it also shapes
+    non-maximum suppression (`min_cluster_size` counts above-threshold pixels),
+    so raising it to 33 to make it the one floor can change which peaks
+    survive — a label-moving change with no principled gain.
+- **Decision.** Keep both; `min_corner_strength` is the knob that binds and the
+  docs say so (book tuning, the Python `ChessConfig` docstring, the chessboard
+  README). Revisit only if a measured benefit appears — e.g. corner-pass time
+  spent on corners the admission floor discards.
 
 ## <a id="b-7"></a>B-7 · "Board not found" is reported differently on every surface — **resolved**
 
