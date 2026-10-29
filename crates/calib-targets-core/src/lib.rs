@@ -54,7 +54,8 @@ pub use rectify::{RectToImgMapper, RectifiedView};
 // `chess-corners` crate directly, where they belong — re-exporting the whole
 // upstream surface would freeze it into this crate's semver contract.
 pub use chess::{
-    default_chess_config, DetectorConfig, ImageRefiner, NoiseLevel, OrientationMethod, Uncertainty,
+    default_chess_config, DetectorConfig, ImageRefiner, NoiseLevel, OnRefinerReject,
+    OrientationMethod, Uncertainty,
 };
 pub use corner::{axis_estimate_to_next, AxisEstimate, LabeledCorner, TargetDetection, TargetKind};
 pub use corner_map::{complete_cell_corners, corner_map_bounds, CornerMap};

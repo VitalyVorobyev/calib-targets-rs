@@ -290,6 +290,57 @@ The frame now labels 2514 corners in one component under either score scale,
 with the same label frame and no corner off its row or column by more than
 the pre-existing localisation outliers.
 
+### Gap 29 — ChArUco validation measures a corner against a global homography at a nominal scale — **open, measured**
+
+ChArUco corner validation keeps a corner if it lies within
+`corner_validation_threshold_rel × px_per_square` of the position predicted
+by the board homography fitted to the decoded markers. Both parts of that are
+global:
+- one homography for the whole board, which is wrong under lens distortion
+  and on non-planar views;
+- the *nominal* `px_per_square` (60 px by default), not the cell size actually
+  measured at the corner.
+
+On small cells the threshold (≈ 4.8 px) is a large fraction of a cell. On
+real blurred, oblique images some delivered corners sit several pixels off the
+position a local homography of their own neighbours predicts. They pass
+because the global prediction is off by about as much.
+
+Re-detected corners have to pass the same test since 0.16. The remaining
+cases are front-end corners that validation keeps.
+
+**Fix.**
+- Validate against a *local* prediction: the neighbours' homography, or the
+  line-intersection prediction of `DetectionQuality`'s local check.
+- Express the tolerance in the locally measured cell size, as
+  `roi_half_px_at` already does for the window.
+
+This is structural, not a smaller threshold. It needs the regression gate and
+a real-data before/after; the held-out calibration harness used for the
+localizer study answers the accuracy side.
+
+### Gap 30 — No saddle-point fit window suits both sharp and blurred corners — **open, measured**
+
+The saddle-point refiner fits a fixed 5 × 5 window (radius 2). On real images:
+- **Blurred corners need a larger window.** A larger window turns their loss
+  against the center of mass into a win.
+- **Small cells next to ChArUco markers need a smaller one.** The window
+  starts to take in the marker border, which sits about an eighth of a cell
+  from the corner.
+
+Two emulated per-corner and per-image rules were tested on held-out
+calibration and neither held everywhere:
+- the radius scaled with a measured edge blur;
+- the radius that minimizes the local grid residual.
+
+This is why the center of mass stays the default (see the book's uncertainty
+page).
+
+**Fix direction.** Make the window respect the scene's structure, not only
+its blur: stop it at the marker border or the nearest strong non-corner
+edge. Then re-measure on the same held-out harness. It belongs upstream, in
+`chess-corners`.
+
 ---
 
 ## Architectural-direction summary

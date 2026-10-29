@@ -253,6 +253,19 @@ class ChessRing:
     BROAD = "broad"
 
 
+class OnRefinerReject:
+    """What a ChESS detection does with a corner the image refiner rejects
+    (Rust unit-enum ``chess_corners::OnRefinerReject``).
+
+    ``KEEP_CENTER_OF_MASS`` (the workspace default) keeps it at the ChESS
+    center-of-mass position; ``DROP`` drops it. Ignored without an image
+    refiner.
+    """
+
+    DROP = "drop"
+    KEEP_CENTER_OF_MASS = "keep_center_of_mass"
+
+
 class OrientationMethod:
     """Orientation-fit method used when building corner descriptors."""
 
@@ -369,12 +382,19 @@ class ChessStrategyConfig:
     #: The ChESS detector's own subpixel localizer. An image refiner
     #: (``ChessConfig.refiner``) replaces it.
     center_of_mass: CenterOfMassConfig = field(default_factory=CenterOfMassConfig)
+    #: What happens to a corner the image refiner rejects — an
+    #: :class:`OnRefinerReject` value. Ignored without an image refiner.
+    on_refiner_reject: str = OnRefinerReject.KEEP_CENTER_OF_MASS
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data: dict[str, Any] = {
             "ring": self.ring,
             "center_of_mass": self.center_of_mass.to_dict(),
         }
+        # `drop` is the Rust default and serializes as an absent key.
+        if self.on_refiner_reject != OnRefinerReject.DROP:
+            data["on_refiner_reject"] = self.on_refiner_reject
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> ChessStrategyConfig:
@@ -387,12 +407,19 @@ class ChessStrategyConfig:
                 "strategy.chess.center_of_mass, and an image refiner is the "
                 "top-level ChessConfig(refiner=ImageRefiner.saddle_point())."
             )
-        _reject_unknown_keys("ChessStrategyConfig", data, {"ring", "center_of_mass"})
+        _reject_unknown_keys(
+            "ChessStrategyConfig", data, {"ring", "center_of_mass", "on_refiner_reject"}
+        )
+        # An absent key is the Rust default, `drop`.
+        on_reject = data.get("on_refiner_reject", OnRefinerReject.DROP)
+        if on_reject not in (OnRefinerReject.DROP, OnRefinerReject.KEEP_CENTER_OF_MASS):
+            raise ValueError(f"unknown on_refiner_reject: {on_reject!r}")
         return cls(
             ring=data.get("ring", d.ring),
             center_of_mass=CenterOfMassConfig.from_dict(
                 data.get("center_of_mass", d.center_of_mass.to_dict())
             ),
+            on_refiner_reject=on_reject,
         )
 
 
@@ -1958,6 +1985,7 @@ __all__ = [
     "MultiscaleConfig",
     "UpscaleConfig",
     "ChessRing",
+    "OnRefinerReject",
     "OrientationMethod",
     "ImageRefiner",
     "Uncertainty",

@@ -52,8 +52,11 @@ const BOUNDS: [(Family, Refiner, usize, f64, f64, f64); 8] = [
         0.248,
         2.26,
     ),
-    // 3/4, recall 0.718, RMSE 0.050, σ̂₀² 0.33
-    (Family::Charuco, Refiner::SaddlePoint, 3, 0.668, 0.068, 0.55),
+    // 2/4, recall 0.500, RMSE 0.096, σ̂₀² 0.44 (re-measured when a corner the
+    // saddle-point fit rejects began keeping its centre-of-mass position: the
+    // 24 px / 45° board that the rejecting fit alone detected now misses, as
+    // under the centre of mass)
+    (Family::Charuco, Refiner::SaddlePoint, 2, 0.450, 0.125, 0.71),
     // 4/4, recall 0.996, RMSE 0.379, σ̂₀² 5.57
     (
         Family::PuzzleBoard,
@@ -63,14 +66,16 @@ const BOUNDS: [(Family, Refiner, usize, f64, f64, f64); 8] = [
         0.479,
         8.41,
     ),
-    // 3/4, recall 0.746, RMSE 0.105, σ̂₀² 1.42
+    // 4/4, recall 0.996, RMSE 0.266, σ̂₀² 7.64 (re-measured with the
+    // centre-of-mass fallback: the corners the saddle-point fit rejects next to
+    // an edge dot now count, at the centre of mass's accuracy)
     (
         Family::PuzzleBoard,
         Refiner::SaddlePoint,
-        3,
-        0.696,
-        0.137,
-        2.18,
+        4,
+        0.946,
+        0.338,
+        11.51,
     ),
     // 3/5, recall 0.600, RMSE 0.203, σ̂₀² 1.80 (the unresolved-disk guard
     // condition declines; it delivered wrong labels before the empty-square

@@ -538,10 +538,20 @@ export type MultiscaleConfig =
       pyramid: { levels: number; min_size: number; refinement_radius: number };
     };
 
+/**
+ * What a ChESS detection does with a corner the image refiner rejects:
+ * `"keep_center_of_mass"` (the workspace default) keeps it at the ChESS
+ * center-of-mass position, `"drop"` drops it. Ignored without an image
+ * refiner.
+ */
+export type OnRefinerReject = "drop" | "keep_center_of_mass";
+
 /** Strategy payload nested under {@link ChessConfig.strategy}. */
 export interface ChessStrategyConfig {
   ring: ChessRing;
   center_of_mass: CenterOfMassConfig;
+  /** Omitted means `"drop"`, the `chess-corners` default. */
+  on_refiner_reject?: OnRefinerReject;
 }
 
 /** 3-point subpixel fit of the Radon response-map peak. */
