@@ -236,19 +236,23 @@ See [Corner uncertainty & detection quality](https://vitalyvorobyev.github.io/ca
 
 ## Functions
 
+Every `detect_*` function returns `null` when the image holds no board it can
+identify, and throws only on a misuse — a malformed image, an invalid board
+spec or invalid parameters.
+
 | Function | Returns |
 |---|---|
 | `detect_corners(w, h, px, cfg)` | `Corner[]` |
 | `detect_chessboard(w, h, px, cfg, params)` | `ChessboardDetection \| null` |
 | `detect_chessboard_best(w, h, px, cfg, configs)` | `ChessboardDetection \| null` |
-| `detect_charuco(w, h, px, cfg, params)` | `CharucoDetection` (throws on error) |
-| `detect_charuco_with_corners(w, h, px, corners, params)` | `CharucoDetection` (throws on error) |
-| `detect_charuco_best(w, h, px, configs)` | `CharucoDetection` (throws on all-fail) |
+| `detect_charuco(w, h, px, cfg, params)` | `CharucoDetection \| null` |
+| `detect_charuco_with_corners(w, h, px, corners, params)` | `CharucoDetection \| null` |
+| `detect_charuco_best(w, h, px, configs)` | `CharucoDetection \| null` |
 | `diagnose_charuco(w, h, px, cfg, params)` | `{ result: CharucoDetection \| null, diagnostics: CharucoDetectDiagnostics }` |
 | `diagnose_charuco_with_corners(w, h, px, corners, params)` | same as `diagnose_charuco` |
-| `detect_puzzleboard(w, h, px, cfg, params)` | `PuzzleBoardDetection` (throws on error) |
-| `detect_puzzleboard_with_corners(w, h, px, corners, params)` | `PuzzleBoardDetection` (throws on error) |
-| `detect_puzzleboard_best(w, h, px, configs)` | `PuzzleBoardDetection` (throws on all-fail) |
+| `detect_puzzleboard(w, h, px, cfg, params)` | `PuzzleBoardDetection \| null` |
+| `detect_puzzleboard_with_corners(w, h, px, corners, params)` | `PuzzleBoardDetection \| null` |
+| `detect_puzzleboard_best(w, h, px, configs)` | `PuzzleBoardDetection \| null` |
 | `diagnose_puzzleboard(w, h, px, cfg, params)` | `{ result: PuzzleBoardDetection \| null, diagnostics: PuzzleBoardDiagnostics }` |
 | `diagnose_puzzleboard_with_corners(w, h, px, corners, params)` | same as `diagnose_puzzleboard` |
 | `detect_marker_board(w, h, px, cfg, params)` | `MarkerBoardDetection \| null` |

@@ -87,10 +87,9 @@ def main() -> int:
         chessboard=ct.ChessboardParams(),
         min_marker_inliers=4,
     )
-    try:
-        result = ct.detect_charuco(image, params=params)
-    except RuntimeError as exc:
-        print(f"detection failed: {exc}", file=sys.stderr)
+    result = ct.detect_charuco(image, params=params)
+    if result is None:
+        print("detection failed: no ChArUco board found", file=sys.stderr)
         return 1
     print(
         f"detected {len(result.corners)} labelled corners, "

@@ -77,3 +77,19 @@ pub enum PuzzlePoleDetectError {
         cyclic: u32,
     },
 }
+
+impl PuzzlePoleDetectError {
+    /// Whether this is a miss — no pole fragment in the image decodes to a
+    /// unique position — rather than a misuse (an invalid pole spec).
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            Self::Spec(_) => false,
+            Self::ChessboardNotDetected
+            | Self::NotEnoughEdges { .. }
+            | Self::FragmentTooSmall { .. }
+            | Self::NotEnoughLogicalBits { .. }
+            | Self::DecodeFailed
+            | Self::InconsistentPosition { .. } => true,
+        }
+    }
+}

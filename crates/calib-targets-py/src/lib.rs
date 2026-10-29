@@ -270,6 +270,26 @@ struct TopologicalCornerPayload {
     strength: f32,
 }
 
+/// A facade detection result as Python sees it: the detection as a dict, or
+/// `None` for a miss (`DetectError::is_not_found`). Any other error is a
+/// misuse — a malformed image, an invalid board spec or parameters — and
+/// raises `ValueError` with its message. Every `detect_*` function follows
+/// this one convention.
+pub(crate) fn detection_result_to_py<T: serde::Serialize>(
+    py: Python<'_>,
+    result: Result<T, detect::DetectError>,
+) -> PyResult<Option<Py<PyAny>>> {
+    match result {
+        Ok(detection) => {
+            let json = serde_json::to_value(detection)
+                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+            Ok(Some(json_to_py(py, &json)?))
+        }
+        Err(err) if err.is_not_found() => Ok(None),
+        Err(err) => Err(value_error(err.to_string())),
+    }
+}
+
 /// Detect a ChArUco board in a grayscale image.
 ///
 /// Args:
@@ -279,7 +299,8 @@ struct TopologicalCornerPayload {
 ///   params: dict with CharucoParams fields (must include `board`).
 ///
 /// Returns:
-///   dict with detection data, or raises RuntimeError on detection errors.
+///   dict with detection data, or None when no board is found. Raises
+///   ValueError on an invalid image, board spec or parameters.
 #[pyfunction]
 #[pyo3(signature = (image, *, chess_cfg=None, params))]
 fn detect_charuco(
@@ -287,15 +308,12 @@ fn detect_charuco(
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let mut params = charuco_params_from_py(Some(params))?;
     apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
     let result = py.detach(move || detect::detect_charuco(&img, &params));
-    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json =
-        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
+    detection_result_to_py(py, result)
 }
 
 /// Detect a ChArUco board from a pre-detected corner cloud.
@@ -308,7 +326,8 @@ fn detect_charuco(
 ///   params: dict with CharucoParams fields (must include `board`).
 ///
 /// Returns:
-///   dict with detection data, or raises RuntimeError on detection errors.
+///   dict with detection data, or None when no board is found. Raises
+///   ValueError on an invalid image, board spec or parameters.
 #[pyfunction]
 #[pyo3(signature = (image, corners, *, params))]
 fn detect_charuco_with_corners(
@@ -316,15 +335,12 @@ fn detect_charuco_with_corners(
     image: &Bound<'_, PyAny>,
     corners: &Bound<'_, PyAny>,
     params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let corners = chess_corners_from_py(corners)?;
     let params = charuco_params_from_py(Some(params))?;
     let result = py.detach(move || detect::detect_charuco_with_corners(&img, &corners, &params));
-    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json =
-        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
+    detection_result_to_py(py, result)
 }
 
 /// Detect a chessboard in a grayscale image.
@@ -350,16 +366,9 @@ fn detect_chessboard(
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
     // The facade helper also records the frame's noise level on the result's
-    // `quality`; a miss and a rejected config both map to `None`.
-    let result = py.detach(move || detect::detect_chessboard(&img, &chess_cfg, &params).ok());
-    match result {
-        Some(res) => {
-            let json = serde_json::to_value(res)
-                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-            Ok(Some(json_to_py(py, &json)?))
-        }
-        None => Ok(None),
-    }
+    // `quality`.
+    let result = py.detach(move || detect::detect_chessboard(&img, &chess_cfg, &params));
+    detection_result_to_py(py, result)
 }
 
 /// Detect all chessboard components in a grayscale image.
@@ -496,19 +505,7 @@ fn detect_marker_board(
     apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let result = py.detach(move || detect::detect_marker_board(&img, &params));
-    match result {
-        Ok(res) => {
-            let json = serde_json::to_value(res)
-                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-            Ok(Some(json_to_py(py, &json)?))
-        }
-        // A miss — no chessboard grid, or a grid whose circles did not match
-        // the expected layout — is reported to Python as `None`, matching
-        // this function's documented contract. Any other error (e.g. a
-        // rejected `chessboard` sub-config) raises with the specific message.
-        Err(detect::DetectError::MarkerBoardDetect(_)) => Ok(None),
-        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
-    }
+    detection_result_to_py(py, result)
 }
 
 /// Detect a marker-board target from a pre-detected corner cloud.
@@ -536,15 +533,7 @@ fn detect_marker_board_with_corners(
 
     let result =
         py.detach(move || detect::detect_marker_board_with_corners(&img, &corners, &params));
-    match result {
-        Ok(res) => {
-            let json = serde_json::to_value(res)
-                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-            Ok(Some(json_to_py(py, &json)?))
-        }
-        Err(detect::DetectError::MarkerBoardDetect(_)) => Ok(None),
-        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
-    }
+    detection_result_to_py(py, result)
 }
 
 /// Detect a PuzzleBoard in a grayscale image.
@@ -564,16 +553,13 @@ fn detect_puzzleboard(
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let mut params = puzzleboard_params_from_py(Some(params))?;
     apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let result = py.detach(move || detect::detect_puzzleboard(&img, &params));
-    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json =
-        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
+    detection_result_to_py(py, result)
 }
 
 /// Detect a PuzzleBoard from a pre-detected corner cloud.
@@ -594,17 +580,14 @@ fn detect_puzzleboard_with_corners(
     image: &Bound<'_, PyAny>,
     corners: &Bound<'_, PyAny>,
     params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let corners = chess_corners_from_py(corners)?;
     let params = puzzleboard_params_from_py(Some(params))?;
 
     let result =
         py.detach(move || detect::detect_puzzleboard_with_corners(&img, &corners, &params));
-    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json =
-        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
+    detection_result_to_py(py, result)
 }
 
 /// Build the `{"result": ..., "diagnostics": ...}` payload shared by every
@@ -624,7 +607,7 @@ fn diagnostics_payload<T: Serialize, D: Serialize>(
         let err = result
             .err()
             .expect("diagnose_*: None diagnostics implies detector construction failed");
-        return Err(PyRuntimeError::new_err(err.to_string()));
+        return Err(value_error(err.to_string()));
     };
     let result_json = match result {
         Ok(value) => {
@@ -827,17 +810,7 @@ fn detect_chessboard_best(
     let chess_cfg = chess_cfg_from_py(chess_cfg)?;
 
     let result = py.detach(move || detect::detect_chessboard_best(&img, &chess_cfg, &params_vec));
-    match result {
-        Ok(res) => {
-            let json = serde_json::to_value(res)
-                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-            Ok(Some(json_to_py(py, &json)?))
-        }
-        // A miss is reported to Python as `None`, exactly as before the facade
-        // unified on `Result`; any other error is a genuine failure and raises.
-        Err(detect::DetectError::NoDetection { .. }) => Ok(None),
-        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
-    }
+    detection_result_to_py(py, result)
 }
 
 /// Try multiple ChArUco parameter configs, return the best result
@@ -855,7 +828,7 @@ fn detect_charuco_best(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     configs: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let list = configs
         .cast::<PyList>()
@@ -867,10 +840,7 @@ fn detect_charuco_best(
     }
 
     let result = py.detach(move || detect::detect_charuco_best(&img, &params_vec));
-    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json =
-        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
+    detection_result_to_py(py, result)
 }
 
 /// Try multiple marker board parameter configs, return the best result (most corners).
@@ -901,22 +871,7 @@ fn detect_marker_board_best(
     }
 
     let result = py.detach(move || detect::detect_marker_board_best(&img, &params_vec));
-    match result {
-        Ok(res) => {
-            let json = serde_json::to_value(res)
-                .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-            Ok(Some(json_to_py(py, &json)?))
-        }
-        // A miss is reported to Python as `None`. `NoDetection` covers the
-        // edge case where no config even attempted a detection (an empty
-        // `configs`, or every config rejected by construction);
-        // `MarkerBoardDetect` covers the ordinary case where a config ran and
-        // found no board. Any other error is a genuine failure and raises.
-        Err(
-            detect::DetectError::NoDetection { .. } | detect::DetectError::MarkerBoardDetect(_),
-        ) => Ok(None),
-        Err(err) => Err(PyRuntimeError::new_err(err.to_string())),
-    }
+    detection_result_to_py(py, result)
 }
 
 /// Try multiple PuzzleBoard parameter configs, return the best result
@@ -934,7 +889,7 @@ fn detect_puzzleboard_best(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     configs: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let list = configs
         .cast::<PyList>()
@@ -948,10 +903,7 @@ fn detect_puzzleboard_best(
     }
 
     let result = py.detach(move || detect::detect_puzzleboard_best(&img, &params_vec));
-    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json =
-        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
+    detection_result_to_py(py, result)
 }
 
 // ---------------------------------------------------------------------------

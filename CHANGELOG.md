@@ -129,6 +129,17 @@ moves to 6.0.0. See
   `has_position_covariance` and `position_covariance`, so caller-allocated
   corner arrays must be rebuilt against the new header. The four result headers
   append `quality` (`ct_detection_quality_t`).
+- **One "board not found" convention on every surface.** New
+  `DetectError::is_not_found()` (and `is_not_found` on
+  `CharucoDetectError`, `PuzzleBoardDetectError`, `PuzzlePoleDetectError`,
+  `MarkerBoardDetectError`) separates a miss from a misuse. Python: every
+  `detect_*` function returns `None` for a miss — ChArUco, PuzzleBoard and
+  PuzzlePole (and their `_with_corners` / `_best` forms) used to raise
+  `RuntimeError` — and raises `ValueError` for a misuse; `detect_chessboard`
+  and the chessboard / marker-board sweeps no longer turn an invalid config
+  into `None`. WASM: `null` for a miss, a thrown error for a misuse (ChArUco
+  and PuzzleBoard used to throw on a miss). C: a detection error that is not a
+  miss is `CT_STATUS_CONFIG_ERROR` rather than `CT_STATUS_NOT_FOUND`.
 - **ChArUco takes its marker sampling geometry from the board.**
   `CharucoParams.scan` (a `ScanDecodeConfig`) is replaced by `inset_frac`
   (default `0.06`), the one sampling knob the detector reads; the marker's

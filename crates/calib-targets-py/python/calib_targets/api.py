@@ -107,7 +107,7 @@ def detect_charuco(
     *,
     chess_cfg: ChessConfig | None = None,
     params: CharucoDetectorParams,
-) -> CharucoDetection:
+) -> CharucoDetection | None:
     if chess_cfg is not None:
         _check_type("chess_cfg", chess_cfg, ChessConfig)
     _check_type("params", params, CharucoDetectorParams)
@@ -117,7 +117,7 @@ def detect_charuco(
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=charuco_detector_params_to_payload(params),
     )
-    return CharucoDetection.from_dict(raw)
+    return None if raw is None else CharucoDetection.from_dict(raw)
 
 
 def detect_charuco_with_corners(
@@ -125,7 +125,7 @@ def detect_charuco_with_corners(
     corners: list[dict[str, Any]],
     *,
     params: CharucoDetectorParams,
-) -> CharucoDetection:
+) -> CharucoDetection | None:
     """Detect a ChArUco board from a pre-detected corner cloud.
 
     ``corners`` is a list of ``ChessCorner``-shaped dicts —
@@ -142,7 +142,7 @@ def detect_charuco_with_corners(
         corners,
         params=charuco_detector_params_to_payload(params),
     )
-    return CharucoDetection.from_dict(raw)
+    return None if raw is None else CharucoDetection.from_dict(raw)
 
 
 def detect_marker_board(
@@ -294,7 +294,7 @@ def detect_puzzleboard(
     *,
     chess_cfg: ChessConfig | None = None,
     params: PuzzleBoardParams,
-) -> PuzzleBoardDetection:
+) -> PuzzleBoardDetection | None:
     if chess_cfg is not None:
         _check_type("chess_cfg", chess_cfg, ChessConfig)
     _check_type("params", params, PuzzleBoardParams)
@@ -304,7 +304,7 @@ def detect_puzzleboard(
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=puzzleboard_params_to_payload(params),
     )
-    return PuzzleBoardDetection.from_dict(raw)
+    return None if raw is None else PuzzleBoardDetection.from_dict(raw)
 
 
 def detect_puzzleboard_with_corners(
@@ -312,7 +312,7 @@ def detect_puzzleboard_with_corners(
     corners: list[dict[str, Any]],
     *,
     params: PuzzleBoardParams,
-) -> PuzzleBoardDetection:
+) -> PuzzleBoardDetection | None:
     """Detect a PuzzleBoard from a pre-detected corner cloud.
 
     ``corners`` is a list of ``ChessCorner``-shaped dicts — see
@@ -325,7 +325,7 @@ def detect_puzzleboard_with_corners(
         corners,
         params=puzzleboard_params_to_payload(params),
     )
-    return PuzzleBoardDetection.from_dict(raw)
+    return None if raw is None else PuzzleBoardDetection.from_dict(raw)
 
 
 def diagnose_puzzleboard(
@@ -403,7 +403,7 @@ def detect_chessboard_best(
 def detect_charuco_best(
     image: npt.NDArray[np.uint8],
     configs: list[CharucoDetectorParams],
-) -> CharucoDetection:
+) -> CharucoDetection | None:
     """Try multiple ChArUco configs, return the best result (most markers, then corners)."""
     payloads = []
     for i, cfg in enumerate(configs):
@@ -411,7 +411,7 @@ def detect_charuco_best(
         payloads.append(cfg.to_dict())
 
     raw = _core.detect_charuco_best(image, payloads)
-    return CharucoDetection.from_dict(raw)
+    return None if raw is None else CharucoDetection.from_dict(raw)
 
 
 def detect_marker_board_best(
@@ -433,7 +433,7 @@ def detect_marker_board_best(
 def detect_puzzleboard_best(
     image: npt.NDArray[np.uint8],
     configs: list[PuzzleBoardParams],
-) -> PuzzleBoardDetection:
+) -> PuzzleBoardDetection | None:
     """Try multiple PuzzleBoard configs, return the best result."""
     payloads = []
     for i, cfg in enumerate(configs):
@@ -441,7 +441,7 @@ def detect_puzzleboard_best(
         payloads.append(cfg.to_dict())
 
     raw = _core.detect_puzzleboard_best(image, payloads)
-    return PuzzleBoardDetection.from_dict(raw)
+    return None if raw is None else PuzzleBoardDetection.from_dict(raw)
 
 
 def default_puzzleboard_params(rows: int, cols: int) -> PuzzleBoardParams:
@@ -455,7 +455,7 @@ def detect_puzzlepole(
     *,
     chess_cfg: ChessConfig | None = None,
     params: PuzzlePoleParams,
-) -> PuzzlePoleDetection:
+) -> PuzzlePoleDetection | None:
     """Detect a PuzzlePole — the PuzzleBoard pattern wrapped round a cylinder.
 
     Unlike every planar target here, each identified corner carries a 3-D
@@ -471,7 +471,7 @@ def detect_puzzlepole(
         chess_cfg=chess_config_to_payload(chess_cfg),
         params=puzzlepole_params_to_payload(params),
     )
-    return PuzzlePoleDetection.from_dict(raw)
+    return None if raw is None else PuzzlePoleDetection.from_dict(raw)
 
 
 def detect_puzzlepole_with_corners(
@@ -479,7 +479,7 @@ def detect_puzzlepole_with_corners(
     corners: list[dict[str, Any]],
     *,
     params: PuzzlePoleParams,
-) -> PuzzlePoleDetection:
+) -> PuzzlePoleDetection | None:
     """Detect a PuzzlePole from a pre-detected corner cloud.
 
     ``corners`` is a list of ``ChessCorner``-shaped dicts — see
@@ -492,13 +492,13 @@ def detect_puzzlepole_with_corners(
         corners,
         params=puzzlepole_params_to_payload(params),
     )
-    return PuzzlePoleDetection.from_dict(raw)
+    return None if raw is None else PuzzlePoleDetection.from_dict(raw)
 
 
 def detect_puzzlepole_best(
     image: npt.NDArray[np.uint8],
     configs: list[PuzzlePoleParams],
-) -> PuzzlePoleDetection:
+) -> PuzzlePoleDetection | None:
     """Try multiple PuzzlePole configs, return the best result.
 
     Build the list with :meth:`PuzzlePoleParams.sweep_for_pole`. The second
@@ -512,7 +512,7 @@ def detect_puzzlepole_best(
         payloads.append(cfg.to_dict())
 
     raw = _core.detect_puzzlepole_best(image, payloads)
-    return PuzzlePoleDetection.from_dict(raw)
+    return None if raw is None else PuzzlePoleDetection.from_dict(raw)
 
 
 def default_puzzlepole_params(

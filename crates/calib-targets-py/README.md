@@ -91,8 +91,9 @@ params = ct.CharucoParams(
     chessboard=ct.ChessboardParams(),
     min_marker_inliers=4,
 )
-result = ct.detect_charuco(image, params=params)   # raises on failure
-print(len(result.corners), "corners,", len(result.markers), "markers")
+result = ct.detect_charuco(image, params=params)   # None when no board is found
+if result is not None:
+    print(len(result.corners), "corners,", len(result.markers), "markers")
 ```
 
 Runnable: [`examples/charuco_roundtrip.py`](examples/charuco_roundtrip.py).
@@ -179,6 +180,10 @@ OpenCV; nothing else does).
   are rejected; use the typed classes.
 
 ## Outputs
+
+Every `detect_*` function returns `None` when the image holds no board it can
+identify, and raises `ValueError` only on a misuse — a malformed image, an
+invalid board spec or invalid parameters.
 
 Every detection result is a typed dataclass with full attribute access,
 editor autocomplete, and type stubs. Round-trip through JSON with

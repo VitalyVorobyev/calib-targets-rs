@@ -65,3 +65,19 @@ pub enum PuzzleBoardDetectError {
     #[error("decoded position is inconsistent with other components")]
     InconsistentPosition,
 }
+
+impl PuzzleBoardDetectError {
+    /// Whether this is a miss — no PuzzleBoard fragment in the image decodes to
+    /// a unique position — rather than a misuse (an invalid board spec).
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            Self::BoardSpec(_) => false,
+            Self::ChessboardNotDetected
+            | Self::NotEnoughEdges { .. }
+            | Self::WindowTooThin { .. }
+            | Self::NotEnoughLogicalBits { .. }
+            | Self::DecodeFailed
+            | Self::InconsistentPosition => true,
+        }
+    }
+}

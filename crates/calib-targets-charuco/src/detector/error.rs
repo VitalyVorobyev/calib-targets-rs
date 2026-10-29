@@ -15,3 +15,14 @@ pub enum CharucoDetectError {
         inliers: usize,
     },
 }
+
+impl CharucoDetectError {
+    /// Whether this is a miss — the image holds no ChArUco board this detector
+    /// can identify — rather than a misuse. Every variant today is a miss; a
+    /// bad board spec is reported by `CharucoDetector::new` instead.
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            Self::ChessboardNotDetected | Self::NoMarkers | Self::AlignmentFailed { .. } => true,
+        }
+    }
+}

@@ -60,10 +60,9 @@ def main() -> None:
         min_marker_inliers=8,
     )
 
-    try:
-        result = ct.detect_charuco_best(image, [base, loose, tight])
-    except RuntimeError as exc:
-        print(f"all configs failed: {exc}")
+    result = ct.detect_charuco_best(image, [base, loose, tight])
+    if result is None:
+        print("no config found the board")
         return
 
     print(f"corners: {len(result.corners)}")

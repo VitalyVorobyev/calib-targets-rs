@@ -105,7 +105,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     c.position.x, c.position.y, c.grid.u, c.grid.v);
             }
         }
-        Err(err) => println!("no board detected: {err}"),
+        // `is_not_found` separates a miss from a misuse (a bad image or config).
+        Err(err) if err.is_not_found() => println!("no board detected: {err}"),
+        Err(err) => return Err(err.into()),
     }
     Ok(())
 }

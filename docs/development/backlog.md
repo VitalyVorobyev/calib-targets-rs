@@ -21,7 +21,7 @@ here.
 | [B-4](#b-4) | Covariance cost: upstream `chess-corners` API asks — **resolved** | — | — | — |
 | [B-5](#b-5) | Config knobs that nothing reads — **resolved** | — | — | — |
 | [B-6](#b-6) | Two corner-strength floors on one response | P2 | S | semver |
-| [B-7](#b-7) | "Board not found" is reported differently on every surface | P2 | M | semver |
+| [B-7](#b-7) | "Board not found" is reported differently on every surface — **resolved** | — | — | — |
 | [B-8](#b-8) | Bindings mirror Rust params and defaults by hand | P2 | L | semver |
 | [B-9](#b-9) | PuzzleBoard binding helpers fix `cell_size = 1` and require unused `rows`/`cols` | P2 | S | semver |
 | [B-10](#b-10) | Binding and tooling parity gaps | P2 | M | additive |
@@ -129,7 +129,11 @@ Resolved in 0.16 (see `docs/migrations/0.16.0.md`).
   ChESS threshold default becomes the floor, or the ChESS threshold becomes
   internal (the paper-faithful `0`) and `min_corner_strength` is the knob.
 
-## <a id="b-7"></a>B-7 · "Board not found" is reported differently on every surface
+## <a id="b-7"></a>B-7 · "Board not found" is reported differently on every surface — **resolved**
+
+Resolved in 0.16: `DetectError::is_not_found()`; `None` / `null` for a miss
+and `ValueError` / a thrown error for a misuse in Python and WASM.
+
 **Sev P2 · Effort M · API semver**
 
 - **Problem.** Rust: a miss is one of ~10 nested `DetectError` variants with no
