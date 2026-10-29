@@ -323,7 +323,11 @@ constructor.
 ## <a id="b-19"></a>B-19 · Upstream `chess-corners` findings from the real-data localizer study
 **Sev P3 · Effort S · API none**
 
-To file upstream:
+Filed upstream as
+[chess-corners-rs#135](https://github.com/VitalyVorobyev/chess-corners-rs/issues/135),
+[#136](https://github.com/VitalyVorobyev/chess-corners-rs/issues/136) and
+[#137](https://github.com/VitalyVorobyev/chess-corners-rs/issues/137); delete
+this item when they are resolved.
 - **The center-of-mass covariance ranks real corners backwards.** On most real
   sets its σ correlates *negatively* with the held-out residual.
 - **A saddle-point fit that does not converge is still accepted.** It sits at
