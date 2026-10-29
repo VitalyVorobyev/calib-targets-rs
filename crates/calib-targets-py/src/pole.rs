@@ -16,8 +16,8 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::{
-    apply_chess_cfg_override, chess_corners_from_py, from_py_json, gray_image_from_py, json_to_py,
-    sweep_preset_to_py, value_error,
+    apply_chess_cfg_override, chess_corners_from_py, detection_result_to_py, from_py_json,
+    gray_image_from_py, json_to_py, sweep_preset_to_py, value_error,
 };
 
 /// Parse the required `params` argument.
@@ -33,17 +33,6 @@ fn params_from_py(obj: &Bound<'_, PyAny>) -> PyResult<puzzleboard::PuzzlePolePar
     from_py_json(obj, "params")
 }
 
-/// Serialize a detection result into a Python dict.
-fn detection_to_py(
-    py: Python<'_>,
-    result: Result<puzzleboard::PuzzlePoleDetection, detect::DetectError>,
-) -> PyResult<Py<PyAny>> {
-    let result = result.map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let json =
-        serde_json::to_value(result).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
-}
-
 /// Detect a PuzzlePole in a grayscale image.
 ///
 /// Args:
@@ -55,7 +44,8 @@ fn detection_to_py(
 /// Returns:
 ///   dict with detection data — each corner carries both `surface_position`
 ///   (the unrolled strip, in mm) and `object_position` (the 3-D point on the
-///   cylinder, in mm). Raises RuntimeError on detection errors.
+///   cylinder, in mm). None when no pole is found; raises ValueError on an invalid
+///   image, spec or parameters.
 #[pyfunction]
 #[pyo3(signature = (image, *, chess_cfg=None, params))]
 pub(crate) fn detect_puzzlepole(
@@ -63,13 +53,13 @@ pub(crate) fn detect_puzzlepole(
     image: &Bound<'_, PyAny>,
     chess_cfg: Option<&Bound<'_, PyAny>>,
     params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let mut params = params_from_py(params)?;
     apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
     let result = py.detach(move || detect::detect_puzzlepole(&img, &params));
-    detection_to_py(py, result)
+    detection_result_to_py(py, result)
 }
 
 /// Detect a PuzzlePole from a pre-detected corner cloud.
@@ -82,7 +72,8 @@ pub(crate) fn detect_puzzlepole(
 ///   params: dict with PuzzlePoleParams fields (must include `pole`).
 ///
 /// Returns:
-///   dict with detection data. Raises RuntimeError on detection errors.
+///   dict with detection data. None when no pole is found; raises ValueError on an invalid
+///   image, spec or parameters.
 #[pyfunction]
 #[pyo3(signature = (image, corners, *, params))]
 pub(crate) fn detect_puzzlepole_with_corners(
@@ -90,13 +81,13 @@ pub(crate) fn detect_puzzlepole_with_corners(
     image: &Bound<'_, PyAny>,
     corners: &Bound<'_, PyAny>,
     params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let corners = chess_corners_from_py(corners)?;
     let params = params_from_py(params)?;
 
     let result = py.detach(move || detect::detect_puzzlepole_with_corners(&img, &corners, &params));
-    detection_to_py(py, result)
+    detection_result_to_py(py, result)
 }
 
 /// Try multiple PuzzlePole parameter configs, return the best result
@@ -114,7 +105,7 @@ pub(crate) fn detect_puzzlepole_best(
     py: Python<'_>,
     image: &Bound<'_, PyAny>,
     configs: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
+) -> PyResult<Option<Py<PyAny>>> {
     let img = gray_image_from_py(image)?;
     let list = configs
         .cast::<PyList>()
@@ -128,7 +119,7 @@ pub(crate) fn detect_puzzlepole_best(
     }
 
     let result = py.detach(move || detect::detect_puzzlepole_best(&img, &params_vec));
-    detection_to_py(py, result)
+    detection_result_to_py(py, result)
 }
 
 /// Multi-config sweep preset for a pole.

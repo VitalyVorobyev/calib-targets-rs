@@ -75,17 +75,23 @@ export const detectChessboardBest = (
 ): ChessboardDetection | null =>
   (raw.detect_chessboard_best(w, h, gray, chess, configs) as ChessboardDetection | null | undefined) ?? null;
 
-/** Throws on a miss. */
+/** `null` on a miss; throws on bad parameters. */
 export const detectCharuco = (
   w: number,
   h: number,
   gray: Gray,
   chess: ChessConfig,
   params: CharucoParams,
-): CharucoDetection => raw.detect_charuco(w, h, gray, chess, params) as CharucoDetection;
-/** Throws when every config misses. */
-export const detectCharucoBest = (w: number, h: number, gray: Gray, configs: CharucoParams[]): CharucoDetection =>
-  raw.detect_charuco_best(w, h, gray, configs) as CharucoDetection;
+): CharucoDetection | null =>
+  (raw.detect_charuco(w, h, gray, chess, params) as CharucoDetection | null | undefined) ?? null;
+/** `null` when every config misses; throws on bad parameters. */
+export const detectCharucoBest = (
+  w: number,
+  h: number,
+  gray: Gray,
+  configs: CharucoParams[],
+): CharucoDetection | null =>
+  (raw.detect_charuco_best(w, h, gray, configs) as CharucoDetection | null | undefined) ?? null;
 
 export const detectMarkerBoardBest = (
   w: number,
@@ -106,13 +112,14 @@ export const diagnoseMarkerBoard = (
     MarkerBoardDiagnostics
   >;
 
-/** Throws when every config misses. */
+/** `null` when every config misses; throws on bad parameters. */
 export const detectPuzzleBoardBest = (
   w: number,
   h: number,
   gray: Gray,
   configs: PuzzleBoardParams[],
-): PuzzleBoardDetection => raw.detect_puzzleboard_best(w, h, gray, configs) as PuzzleBoardDetection;
+): PuzzleBoardDetection | null =>
+  (raw.detect_puzzleboard_best(w, h, gray, configs) as PuzzleBoardDetection | null | undefined) ?? null;
 export const diagnosePuzzleBoard = (
   w: number,
   h: number,

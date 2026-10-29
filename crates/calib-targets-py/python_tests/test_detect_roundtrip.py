@@ -750,3 +750,29 @@ def test_quality_dicts_parse_without_the_key() -> None:
         ct.DetectionQuality.from_dict({"bogus": 1})
     q = ct.DetectionQuality(noise_sigma=1.5, covariance_coverage=1.0, variance_factor=1.2)
     assert ct.DetectionQuality.from_dict(q.to_dict()) == q
+
+
+# ---------------------------------------------------------------------------
+# one miss convention: `None` for a miss, ValueError for a misuse
+# ---------------------------------------------------------------------------
+
+
+def test_every_detector_returns_none_on_a_miss() -> None:
+    blank = np.full((240, 320), 128, dtype=np.uint8)
+    assert ct.detect_chessboard(blank) is None
+    assert ct.detect_charuco(blank, params=_charuco_params_small2()) is None
+    assert ct.detect_charuco_best(blank, [_charuco_params_small2()]) is None
+    assert ct.detect_marker_board(blank, params=_marker_board_params()) is None
+    assert ct.detect_puzzleboard(blank, params=_puzzleboard_params()) is None
+    assert ct.detect_puzzleboard_best(blank, [_puzzleboard_params()]) is None
+    pole = ct.PuzzlePoleParams.for_pole(_puzzlepole_spec())
+    assert ct.detect_puzzlepole(blank, params=pole) is None
+    assert ct.detect_puzzlepole_best(blank, [pole]) is None
+
+
+def test_a_misuse_raises_value_error() -> None:
+    blank = np.full((240, 320), 128, dtype=np.uint8)
+    params = _charuco_params_small2()
+    params.board.border_bits = 0  # a marker needs a black ring; the spec is rejected
+    with pytest.raises(ValueError):
+        ct.detect_charuco(blank, params=params)

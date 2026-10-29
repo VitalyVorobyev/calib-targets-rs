@@ -633,7 +633,10 @@ pub(crate) fn map_charuco_detect_error(
         // `CharucoDetectError` is `#[non_exhaustive]`; any variant
         // not enumerated above (mesh-warp failures, etc.) falls
         // through to the generic `ChArUco detection failed` status.
-        _ => FfiError::not_found(format!("ChArUco detection failed: {err}")),
+        other if other.is_not_found() => {
+            FfiError::not_found(format!("ChArUco detection failed: {other}"))
+        }
+        other => FfiError::config_error(format!("ChArUco detection failed: {other}")),
     }
 }
 
@@ -649,8 +652,11 @@ pub(crate) fn map_marker_board_detect_error(err: MarkerBoardDetectError) -> FfiE
             "circle-marker alignment failed during marker-board detection (matched={matched}, candidates={candidates})"
         )),
         // `MarkerBoardDetectError` is `#[non_exhaustive]`; any variant not
-        // enumerated above falls through to the generic status.
-        other => FfiError::not_found(format!("marker board detection failed: {other}")),
+        // enumerated above is classified by `is_not_found`.
+        other if other.is_not_found() => {
+            FfiError::not_found(format!("marker board detection failed: {other}"))
+        }
+        other => FfiError::config_error(format!("marker board detection failed: {other}")),
     }
 }
 
@@ -672,7 +678,10 @@ pub(crate) fn map_puzzleboard_detect_error(
         PuzzleBoardDetectError::InconsistentPosition => {
             FfiError::not_found("PuzzleBoard decoded position is inconsistent")
         }
-        other => FfiError::not_found(format!("PuzzleBoard detection failed: {other}")),
+        other if other.is_not_found() => {
+            FfiError::not_found(format!("PuzzleBoard detection failed: {other}"))
+        }
+        other => FfiError::config_error(format!("PuzzleBoard detection failed: {other}")),
     }
 }
 

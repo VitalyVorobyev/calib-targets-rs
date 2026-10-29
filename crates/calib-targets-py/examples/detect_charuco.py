@@ -42,10 +42,9 @@ def main() -> None:
         min_marker_inliers=8,
     )
 
-    try:
-        result = ct.detect_charuco(image, chess_cfg=chess_cfg, params=params)
-    except RuntimeError as exc:
-        print(f"detect_charuco failed: {exc}")
+    result = ct.detect_charuco(image, chess_cfg=chess_cfg, params=params)
+    if result is None:
+        print("no ChArUco board found")
         return
 
     print(f"corners: {len(result.corners)}")

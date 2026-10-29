@@ -150,11 +150,10 @@ params = ct.CharucoParams(board=board)
 
 image = load_gray("frame.png")
 
-try:
-    result = ct.detect_charuco(image, params=params)
-except RuntimeError as exc:
-    print(f"Detection failed: {exc}")
-    raise SystemExit(1)
+# `None` is a miss (no identifiable board); a bad spec or image raises.
+result = ct.detect_charuco(image, params=params)
+if result is None:
+    raise SystemExit("no ChArUco board found")
 
 corners = result.corners
 print(f"Detected {len(corners)} corners, {len(result.markers)} markers")

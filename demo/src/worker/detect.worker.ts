@@ -57,7 +57,7 @@ function withUncertainty<T extends { chess: ChessConfig }>(configs: T[], chess: 
   }));
 }
 
-/** A thrown detector message as a miss: the ChArUco and PuzzleBoard detectors throw on one. */
+/** A detector call whose thrown message (bad parameters) is shown as a note; a miss is `null`. */
 function attempt<T>(run: () => T): { value: T | null; note?: string } {
   try {
     return { value: run() };

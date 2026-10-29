@@ -140,6 +140,31 @@ pub enum DetectError {
     },
 }
 
+impl DetectError {
+    /// Whether this is a miss — the image holds no board of the requested
+    /// kind that the detector can identify — rather than a misuse (a malformed
+    /// image buffer, an invalid board spec or invalid parameters).
+    ///
+    /// A miss is expected and recoverable; the Python and WASM bindings return
+    /// `None` / `null` for it and raise or throw only on a misuse. The C ABI
+    /// reports it as `CT_STATUS_NOT_FOUND`.
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            Self::NoDetection { .. } => true,
+            Self::CharucoDetect(err) => err.is_not_found(),
+            Self::PuzzleBoardDetect(err) => err.is_not_found(),
+            Self::PuzzlePoleDetect(err) => err.is_not_found(),
+            Self::MarkerBoardDetect(err) => err.is_not_found(),
+            Self::InvalidGrayBuffer { .. }
+            | Self::InvalidGrayDimensions { .. }
+            | Self::CharucoBoard(_)
+            | Self::PuzzleBoardSpec(_)
+            | Self::PuzzlePoleSpec(_)
+            | Self::ChessboardParams(_) => false,
+        }
+    }
+}
+
 /// Human-readable label for a target kind, used by
 /// [`DetectError::NoDetection`]'s message.
 fn target_label(target: &core::TargetKind) -> &'static str {

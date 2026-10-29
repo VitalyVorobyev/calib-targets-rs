@@ -5,6 +5,7 @@
 
 mod gray;
 
+use calib_targets::detect::DetectError;
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams};
 use calib_targets_chessboard::ChessCorner;
@@ -47,6 +48,20 @@ fn to_js<T: serde::Serialize>(val: &T) -> Result<JsValue, JsError> {
         .serialize_missing_as_null(true);
     val.serialize(&SERIALIZER)
         .map_err(|e| JsError::new(&e.to_string()))
+}
+
+/// A facade detection result as JS sees it: the detection, or `null` for a
+/// miss ([`DetectError::is_not_found`]). Any other error is a misuse — a
+/// malformed image, an invalid board spec or parameters — and throws. Every
+/// `detect_*` function follows this one convention.
+fn detection_to_js<T: serde::Serialize>(
+    result: Result<T, DetectError>,
+) -> Result<JsValue, JsError> {
+    match result {
+        Ok(detection) => to_js(&detection),
+        Err(err) if err.is_not_found() => Ok(JsValue::NULL),
+        Err(err) => Err(JsError::new(&err.to_string())),
+    }
 }
 
 fn validate_gray(pixels: &[u8], width: u32, height: u32) -> Result<(), JsError> {
@@ -745,7 +760,8 @@ pub fn detect_chessboard_all(
 
 /// Detect a ChArUco board in a grayscale image.
 ///
-/// Returns a `CharucoDetection` JS object. Throws on error.
+/// Returns a `CharucoDetection` JS object, or `null` if no board is found.
+/// Throws on an invalid image, board spec or parameters.
 /// If `chess_cfg` is provided, it overrides `params.chess`.
 ///
 /// Delegates to [`calib_targets::detect::detect_charuco`], which runs the
@@ -766,15 +782,14 @@ pub fn detect_charuco(
 
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    let result = calib_targets::detect::detect_charuco(&img, &charuco_params)
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    to_js(&result)
+    detection_to_js(calib_targets::detect::detect_charuco(&img, &charuco_params))
 }
 
 /// Detect a ChArUco board from a pre-detected corner cloud (see
 /// [`detect_corners`]).
 ///
-/// Returns a `CharucoDetection` JS object. Throws on error. `params.chess`
+/// Returns a `CharucoDetection` JS object, or `null` if no board is found.
+/// Throws on an invalid image, board spec or parameters. `params.chess`
 /// is not read: `corners` is taken as given.
 #[wasm_bindgen]
 pub fn detect_charuco_with_corners(
@@ -790,10 +805,11 @@ pub fn detect_charuco_with_corners(
 
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    let result =
-        calib_targets::detect::detect_charuco_with_corners(&img, &corners, &charuco_params)
-            .map_err(|e| JsError::new(&e.to_string()))?;
-    to_js(&result)
+    detection_to_js(calib_targets::detect::detect_charuco_with_corners(
+        &img,
+        &corners,
+        &charuco_params,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -860,7 +876,8 @@ pub fn detect_marker_board_with_corners(
 
 /// Detect a PuzzleBoard in a grayscale image.
 ///
-/// Returns a `PuzzleBoardDetection` JS object. Throws on error.
+/// Returns a `PuzzleBoardDetection` JS object, or `null` if no board is found.
+/// Throws on an invalid image, board spec or parameters.
 /// If `chess_cfg` is provided, it overrides `params.chess`.
 ///
 /// The returned `decode` block carries the compact decode summary.
@@ -885,15 +902,17 @@ pub fn detect_puzzleboard(
 
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    let result = calib_targets::detect::detect_puzzleboard(&img, &puzzle_params)
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    to_js(&result)
+    detection_to_js(calib_targets::detect::detect_puzzleboard(
+        &img,
+        &puzzle_params,
+    ))
 }
 
 /// Detect a PuzzleBoard from a pre-detected corner cloud (see
 /// [`detect_corners`]).
 ///
-/// Returns a `PuzzleBoardDetection` JS object. Throws on error.
+/// Returns a `PuzzleBoardDetection` JS object, or `null` if no board is found.
+/// Throws on an invalid image, board spec or parameters.
 /// `params.chess` is not read: `corners` is taken as given.
 #[wasm_bindgen]
 pub fn detect_puzzleboard_with_corners(
@@ -909,10 +928,11 @@ pub fn detect_puzzleboard_with_corners(
 
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    let result =
-        calib_targets::detect::detect_puzzleboard_with_corners(&img, &corners, &puzzle_params)
-            .map_err(|e| JsError::new(&e.to_string()))?;
-    to_js(&result)
+    detection_to_js(calib_targets::detect::detect_puzzleboard_with_corners(
+        &img,
+        &corners,
+        &puzzle_params,
+    ))
 }
 
 // ---------------------------------------------------------------------------
@@ -1122,14 +1142,13 @@ pub fn detect_chessboard_best(
     let chess = resolve_chess_cfg(chess_cfg)?;
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    // The facade now returns `Result`; a miss (`DetectError::NoDetection`)
-    // maps back to `null`, exactly as this entry point returned before.
-    let best = calib_targets::detect::detect_chessboard_best(&img, &chess, &configs).ok();
-    to_js(&best)
+    detection_to_js(calib_targets::detect::detect_chessboard_best(
+        &img, &chess, &configs,
+    ))
 }
 
 /// Try multiple ChArUco parameter configs, return the best result
-/// (most markers, then most corners). Throws if all configs fail.
+/// (most markers, then most corners), or `null` if no config finds the board.
 ///
 /// Each config carries its own `chess` front-end (`params.chess`); the corner
 /// pass is deduplicated across configs that share one, so a sweep may freely
@@ -1146,9 +1165,7 @@ pub fn detect_charuco_best(
     let configs: Vec<CharucoParams> = from_js(configs)?;
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    let result = calib_targets::detect::detect_charuco_best(&img, &configs)
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    to_js(&result)
+    detection_to_js(calib_targets::detect::detect_charuco_best(&img, &configs))
 }
 
 /// Try multiple marker board parameter configs, return the best result (most corners).
@@ -1169,14 +1186,14 @@ pub fn detect_marker_board_best(
     let configs: Vec<MarkerBoardParams> = from_js(configs)?;
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    // The facade now returns `Result`; a miss (`DetectError::NoDetection`)
-    // maps back to `null`, exactly as this entry point returned before.
-    let best = calib_targets::detect::detect_marker_board_best(&img, &configs).ok();
-    to_js(&best)
+    detection_to_js(calib_targets::detect::detect_marker_board_best(
+        &img, &configs,
+    ))
 }
 
 /// Try multiple PuzzleBoard parameter configs, return the best result
-/// (most labelled corners, then mean bit confidence). Throws if all configs fail.
+/// (most labelled corners, then mean bit confidence), or `null` if no config
+/// finds the board.
 ///
 /// Each config carries its own `chess` front-end (`params.chess`, deduplicated
 /// across shared front-ends) and may choose its own `decode.search_mode` /
@@ -1192,7 +1209,7 @@ pub fn detect_puzzleboard_best(
     let configs: Vec<PuzzleBoardParams> = from_js(configs)?;
     let img = calib_targets::detect::gray_image_from_slice(width, height, pixels)
         .map_err(|e| JsError::new(&e.to_string()))?;
-    let result = calib_targets::detect::detect_puzzleboard_best(&img, &configs)
-        .map_err(|e| JsError::new(&e.to_string()))?;
-    to_js(&result)
+    detection_to_js(calib_targets::detect::detect_puzzleboard_best(
+        &img, &configs,
+    ))
 }

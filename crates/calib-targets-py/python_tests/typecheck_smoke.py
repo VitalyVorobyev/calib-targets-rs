@@ -30,11 +30,9 @@ board = ct.CharucoBoardSpec(
 )
 charuco_params = ct.CharucoDetectorParams(board=board)
 
-try:
-    charuco = ct.detect_charuco(img, params=charuco_params)
+charuco = ct.detect_charuco(img, params=charuco_params)
+if charuco is not None:
     _markers: list[ct.MarkerDetection] = charuco.markers
-except RuntimeError:
-    pass
 
 marker = ct.detect_marker_board(img)
 if marker is not None:

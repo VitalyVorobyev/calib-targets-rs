@@ -36,3 +36,15 @@ pub enum MarkerBoardDetectError {
         runner_up: usize,
     },
 }
+
+impl MarkerBoardDetectError {
+    /// Whether this is a miss — no marker board in the image can be placed in
+    /// its frame — rather than a misuse. Every variant today is a miss.
+    pub fn is_not_found(&self) -> bool {
+        match self {
+            Self::ChessboardNotDetected
+            | Self::AlignmentFailed { .. }
+            | Self::AlignmentAmbiguous { .. } => true,
+        }
+    }
+}
