@@ -57,7 +57,7 @@ This two-stage approach helps reject spurious markers while keeping the final co
 
 ## Tuning notes
 
-- `scan.inset_frac` trades off robustness vs. sensitivity. The defaults in `for_board` use a slightly smaller inset (`0.06`) to improve real-image decoding.
+- `inset_frac` trades off robustness vs. sensitivity; the default `0.06` suits real images. The marker's size and border ring come from the board spec.
 - `min_marker_inliers` controls how many aligned markers are required to accept a detection.
 
 ## Status

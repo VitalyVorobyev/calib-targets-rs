@@ -37,7 +37,11 @@ name = "calib-targets-ffi"
 # `CT_REFINER_KIND_FORSTNER = 2` tag) — struct-layout-breaking — and
 # `ct_uncertainty_t` renumbers to `CT_UNCERTAINTY_OFF = 0`,
 # `CT_UNCERTAINTY_PROPAGATED = 1`, so a zero-initialised config reports no
-# covariance, the new default.
+# covariance, the new default. Also within 6.0.0: `ct_charuco_detector_params_t`
+# replaces its `scan` block (`ct_scan_decode_config_t`, removed) with a flat
+# `inset_frac`, and `ct_charuco_board_spec_t` gains `border_bits` — the board
+# describes its marker ring — and `ct_puzzleboard_params_t` drops the unread
+# `px_per_square`. All struct-layout-breaking.
 version = "6.0.0"
 description = "C ABI scaffold for calib-targets"
 edition.workspace = true

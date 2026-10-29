@@ -45,4 +45,3 @@ def test_new_config_types_exported() -> None:
     assert hasattr(calib_targets, "Uncertainty")
     assert hasattr(calib_targets, "CenterOfMassConfig")
     assert hasattr(calib_targets, "SaddlePointConfig")
-    assert hasattr(calib_targets, "GridGraphParams")

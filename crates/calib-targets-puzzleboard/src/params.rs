@@ -31,11 +31,6 @@ pub struct PuzzleBoardParams {
     /// `&[ChessCorner]` and never read this field.
     #[serde(default = "default_chess_config")]
     pub chess: DetectorConfig,
-    /// Pixels per board square in the rectified sampling space.
-    #[serde(default = "default_px_per_square")]
-    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
-    #[cfg_attr(feature = "schemars", schemars(extend("x-unit" = "px")))]
-    pub px_per_square: f32,
     /// Chessboard detection parameters.
     #[serde(default)]
     pub chessboard: ChessboardParams,
@@ -44,10 +39,6 @@ pub struct PuzzleBoardParams {
     /// Decoding knobs.
     #[serde(default)]
     pub decode: PuzzleBoardDecodeConfig,
-}
-
-fn default_px_per_square() -> f32 {
-    60.0
 }
 
 impl PuzzleBoardParams {
@@ -73,7 +64,6 @@ impl PuzzleBoardParams {
         chessboard.min_corner_strength = 33.0;
         Self {
             chess: default_chess_config(),
-            px_per_square: 60.0,
             chessboard,
             board,
             decode: PuzzleBoardDecodeConfig::default(),

@@ -1082,14 +1082,6 @@
         }
       },
       "description": "Decoding knobs."
-    },
-    "px_per_square": {
-      "default": 60.0,
-      "description": "Pixels per board square in the rectified sampling space.",
-      "exclusiveMinimum": 0.0,
-      "format": "float",
-      "type": "number",
-      "x-unit": "px"
     }
   },
   "required": [

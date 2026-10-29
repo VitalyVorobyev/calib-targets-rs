@@ -9,7 +9,6 @@ from .results import (
     CharucoCorner,
     CharucoDetection,
     ChessboardCorner,
-    ChessboardDebug,
     ChessboardDetectionResult,
     CellCoords,
     DetectionQuality,
@@ -17,16 +16,12 @@ from .results import (
     CircleMatch,
     Coord,
     GridAlignment,
-    GridGraphDebug,
-    GridGraphNeighbor,
-    GridGraphNode,
     GridTransform,
     LabeledCorner,
     MarkerBoardCorner,
     MarkerBoardDetection,
     MarkerCircleExpectation,
     MarkerDetection,
-    OrientationHistogram,
     PuzzleBoardObservedEdge,
     Point2,
     PuzzleBoardCorner,
@@ -429,116 +424,6 @@ def target_detection_from_dict(data: Mapping[str, Any]) -> TargetDetection:
     return TargetDetection(
         kind=_to_target_kind(obj["kind"], "TargetDetection.kind"),
         corners=[labeled_corner_from_dict(item) for item in corners],
-    )
-
-
-def orientation_histogram_to_dict(value: OrientationHistogram) -> dict[str, Any]:
-    return {
-        "bin_centers": [float(item) for item in value.bin_centers],
-        "values": [float(item) for item in value.values],
-    }
-
-
-def orientation_histogram_from_dict(data: Mapping[str, Any]) -> OrientationHistogram:
-    obj = _ensure_mapping(data, "OrientationHistogram")
-    _validate_keys(
-        obj,
-        allowed={"bin_centers", "values"},
-        required={"bin_centers", "values"},
-        ctx="OrientationHistogram",
-    )
-    return OrientationHistogram(
-        bin_centers=_to_float_list(obj["bin_centers"], "OrientationHistogram.bin_centers"),
-        values=_to_float_list(obj["values"], "OrientationHistogram.values"),
-    )
-
-
-# -------------------- chessboard debug/result --------------------
-
-
-def grid_graph_neighbor_to_dict(value: GridGraphNeighbor) -> dict[str, Any]:
-    return {
-        "index": int(value.index),
-        "direction": value.direction,
-        "distance": float(value.distance),
-    }
-
-
-def grid_graph_neighbor_from_dict(data: Mapping[str, Any]) -> GridGraphNeighbor:
-    obj = _ensure_mapping(data, "GridGraphNeighbor")
-    _validate_keys(
-        obj,
-        allowed={"index", "direction", "distance"},
-        required={"index", "direction", "distance"},
-        ctx="GridGraphNeighbor",
-    )
-    direction = obj["direction"]
-    if not isinstance(direction, str):
-        raise TypeError("GridGraphNeighbor.direction must be str")
-    return GridGraphNeighbor(
-        index=_to_int(obj["index"], "GridGraphNeighbor.index"),
-        direction=direction,
-        distance=_to_float(obj["distance"], "GridGraphNeighbor.distance"),
-    )
-
-
-def grid_graph_node_to_dict(value: GridGraphNode) -> dict[str, Any]:
-    return {
-        "position": _point2_to_list(value.position),
-        "neighbors": [grid_graph_neighbor_to_dict(item) for item in value.neighbors],
-    }
-
-
-def grid_graph_node_from_dict(data: Mapping[str, Any]) -> GridGraphNode:
-    obj = _ensure_mapping(data, "GridGraphNode")
-    _validate_keys(
-        obj,
-        allowed={"position", "neighbors"},
-        required={"position", "neighbors"},
-        ctx="GridGraphNode",
-    )
-    neighbors = _to_sequence(obj["neighbors"], "GridGraphNode.neighbors")
-    return GridGraphNode(
-        position=_to_point2(obj["position"], "GridGraphNode.position"),
-        neighbors=[grid_graph_neighbor_from_dict(item) for item in neighbors],
-    )
-
-
-def grid_graph_debug_to_dict(value: GridGraphDebug) -> dict[str, Any]:
-    return {"nodes": [grid_graph_node_to_dict(item) for item in value.nodes]}
-
-
-def grid_graph_debug_from_dict(data: Mapping[str, Any]) -> GridGraphDebug:
-    obj = _ensure_mapping(data, "GridGraphDebug")
-    _validate_keys(obj, allowed={"nodes"}, required={"nodes"}, ctx="GridGraphDebug")
-    nodes = _to_sequence(obj["nodes"], "GridGraphDebug.nodes")
-    return GridGraphDebug(nodes=[grid_graph_node_from_dict(item) for item in nodes])
-
-
-def chessboard_debug_to_dict(value: ChessboardDebug) -> dict[str, Any]:
-    return {
-        "orientation_histogram": orientation_histogram_to_dict(value.orientation_histogram)
-        if value.orientation_histogram is not None
-        else None,
-        "graph": grid_graph_debug_to_dict(value.graph) if value.graph is not None else None,
-    }
-
-
-def chessboard_debug_from_dict(data: Mapping[str, Any]) -> ChessboardDebug:
-    obj = _ensure_mapping(data, "ChessboardDebug")
-    _validate_keys(
-        obj,
-        allowed={"orientation_histogram", "graph"},
-        required={"orientation_histogram", "graph"},
-        ctx="ChessboardDebug",
-    )
-    histogram = obj["orientation_histogram"]
-    graph = obj["graph"]
-    return ChessboardDebug(
-        orientation_histogram=orientation_histogram_from_dict(histogram)
-        if histogram is not None
-        else None,
-        graph=grid_graph_debug_from_dict(graph) if graph is not None else None,
     )
 
 
@@ -1114,16 +999,6 @@ __all__ = [
     "labeled_corner_from_dict",
     "target_detection_to_dict",
     "target_detection_from_dict",
-    "orientation_histogram_to_dict",
-    "orientation_histogram_from_dict",
-    "grid_graph_neighbor_to_dict",
-    "grid_graph_neighbor_from_dict",
-    "grid_graph_node_to_dict",
-    "grid_graph_node_from_dict",
-    "grid_graph_debug_to_dict",
-    "grid_graph_debug_from_dict",
-    "chessboard_debug_to_dict",
-    "chessboard_debug_from_dict",
     "chessboard_detection_result_to_dict",
     "chessboard_detection_result_from_dict",
     "marker_detection_to_dict",

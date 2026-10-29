@@ -514,31 +514,25 @@ typedef struct ct_charuco_board_spec_t {
   float marker_size_rel;
   ct_dictionary_id_t dictionary;
   ct_marker_layout_t marker_layout;
+  /**
+   * Width of the black ring printed around each marker, in bit cells
+   * (`>= 1`; OpenCV boards use 1).
+   */
+  size_t border_bits;
 } ct_charuco_board_spec_t;
 
 /**
- * Marker scan/decode configuration.
- */
-typedef struct ct_scan_decode_config_t {
-  size_t border_bits;
-  float inset_frac;
-  float marker_size_rel;
-  float min_border_score;
-  uint32_t dedup_by_id;
-  /**
-   * If `CT_TRUE`, try multiple thresholds per cell before giving up.
-   */
-  uint32_t multi_threshold;
-} ct_scan_decode_config_t;
-
-/**
  * ChArUco detector parameters.
+ *
+ * The marker sampling geometry comes from `charuco`: the marker's size
+ * (`marker_size_rel`) and its ring width (`border_bits`). `inset_frac` is the
+ * fraction of each bit cell ignored next to its edges, in `[0, 0.5)`.
  */
 typedef struct ct_charuco_detector_params_t {
   float px_per_square;
   struct ct_chessboard_params_t chessboard;
   struct ct_charuco_board_spec_t charuco;
-  struct ct_scan_decode_config_t scan;
+  float inset_frac;
   size_t min_marker_inliers;
   float grid_smoothness_threshold_rel;
   float corner_validation_threshold_rel;
@@ -871,7 +865,6 @@ typedef struct ct_puzzleboard_decode_config_t {
  * PuzzleBoard detector parameters.
  */
 typedef struct ct_puzzleboard_params_t {
-  float px_per_square;
   struct ct_chessboard_params_t chessboard;
   struct ct_puzzleboard_spec_t board;
   struct ct_puzzleboard_decode_config_t decode;

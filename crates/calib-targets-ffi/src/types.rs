@@ -612,19 +612,6 @@ pub struct ct_chessboard_detector_config_t {
     pub chessboard: ct_chessboard_params_t,
 }
 
-/// Marker scan/decode configuration.
-#[repr(C)]
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct ct_scan_decode_config_t {
-    pub border_bits: usize,
-    pub inset_frac: f32,
-    pub marker_size_rel: f32,
-    pub min_border_score: f32,
-    pub dedup_by_id: u32,
-    /// If `CT_TRUE`, try multiple thresholds per cell before giving up.
-    pub multi_threshold: u32,
-}
-
 /// ChArUco board specification.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -635,16 +622,23 @@ pub struct ct_charuco_board_spec_t {
     pub marker_size_rel: f32,
     pub dictionary: ct_dictionary_id_t,
     pub marker_layout: ct_marker_layout_t,
+    /// Width of the black ring printed around each marker, in bit cells
+    /// (`>= 1`; OpenCV boards use 1).
+    pub border_bits: usize,
 }
 
 /// ChArUco detector parameters.
+///
+/// The marker sampling geometry comes from `charuco`: the marker's size
+/// (`marker_size_rel`) and its ring width (`border_bits`). `inset_frac` is the
+/// fraction of each bit cell ignored next to its edges, in `[0, 0.5)`.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_charuco_detector_params_t {
     pub px_per_square: f32,
     pub chessboard: ct_chessboard_params_t,
     pub charuco: ct_charuco_board_spec_t,
-    pub scan: ct_scan_decode_config_t,
+    pub inset_frac: f32,
     pub min_marker_inliers: usize,
     pub grid_smoothness_threshold_rel: f32,
     pub corner_validation_threshold_rel: f32,
@@ -735,7 +729,6 @@ pub struct ct_puzzleboard_decode_config_t {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct ct_puzzleboard_params_t {
-    pub px_per_square: f32,
     pub chessboard: ct_chessboard_params_t,
     pub board: ct_puzzleboard_spec_t,
     pub decode: ct_puzzleboard_decode_config_t,

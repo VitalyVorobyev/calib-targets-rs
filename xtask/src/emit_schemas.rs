@@ -27,33 +27,6 @@ fn schema_of<T: JsonSchema>() -> Value {
     schema
 }
 
-/// `CharucoParams`, with the one field the detector overwrites marked
-/// `readOnly`.
-///
-/// `CharucoDetector::new` assigns `scan.border_bits = board.border_bits`
-/// unconditionally (the two describe the same printed ring, and the board is
-/// the source of truth), so whatever a caller puts in `scan.border_bits` is
-/// discarded. The test `charuco_scan_border_bits_is_derived_from_the_board`
-/// pins that behaviour. The annotation lives here rather than on
-/// `ScanDecodeConfig::border_bits` because that type is also used standalone
-/// by the ArUco scanner, where the field is an ordinary knob.
-fn charuco_params_schema() -> Value {
-    let mut schema = schema_of::<calib_targets_charuco::CharucoParams>();
-    let field = schema
-        .pointer_mut("/$defs/ScanDecodeConfig/properties/border_bits")
-        .and_then(Value::as_object_mut)
-        .expect("ScanDecodeConfig.border_bits is in the charuco schema");
-    field.insert("readOnly".into(), Value::Bool(true));
-    let note = "Derived, not configured: the ChArUco detector overwrites it with \
-                `board.border_bits`, so set the border width on the board.";
-    let description = match field.get("description").and_then(Value::as_str) {
-        Some(text) => format!("{text}\n\n{note}"),
-        None => note.to_owned(),
-    };
-    field.insert("description".into(), Value::String(description));
-    schema
-}
-
 /// Every schema shipped in the npm package.
 ///
 /// The `*_sweep_*` presets and the `detect_*_best` entry points take a plain
@@ -72,7 +45,7 @@ pub fn schemas() -> Vec<SchemaFile> {
         },
         SchemaFile {
             name: "charuco_params.json",
-            schema: charuco_params_schema(),
+            schema: schema_of::<calib_targets_charuco::CharucoParams>(),
         },
         SchemaFile {
             name: "marker_board_params.json",

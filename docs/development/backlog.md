@@ -16,10 +16,10 @@ here.
 
 | Item | What | Sev | Effort | API |
 |---|---|---|---|---|
-| [B-2](#b-2) | `scan.marker_size_rel` repairs on a sentinel that is never set | P2 | S | semver |
+| [B-2](#b-2) | `scan.marker_size_rel` repairs on a sentinel that is never set — **resolved** | — | — | — |
 | [B-3](#b-3) | The soft ChArUco path reports a `hamming` it did not compute | P3 | S | none |
 | [B-4](#b-4) | Covariance cost: upstream `chess-corners` API asks — **resolved** | — | — | — |
-| [B-5](#b-5) | Config knobs that nothing reads | P2 | S | semver |
+| [B-5](#b-5) | Config knobs that nothing reads — **resolved** | — | — | — |
 | [B-6](#b-6) | Two corner-strength floors on one response | P2 | S | semver |
 | [B-7](#b-7) | "Board not found" is reported differently on every surface | P2 | M | semver |
 | [B-8](#b-8) | Bindings mirror Rust params and defaults by hand | P2 | L | semver |
@@ -36,7 +36,12 @@ here.
 
 ---
 
-## <a id="b-2"></a>B-2 · `scan.marker_size_rel` repairs on an unset-sentinel that is never unset
+## <a id="b-2"></a>B-2 · `scan.marker_size_rel` repairs on an unset-sentinel that is never unset — **resolved**
+
+Resolved in 0.16 with B-5: `CharucoParams` no longer carries a scan block;
+the marker size and ring come from the board, and `inset_frac` is the one
+sampling knob.
+
 **Sev P2 · Effort S · API semver (behaviour)**
 
 - **Problem.** `CharucoDetector::new` fills `scan.marker_size_rel` from the
@@ -87,7 +92,10 @@ instead of estimating the noise itself; upstream skips the Jacobians when its
 own estimate declines (Ask 2). Ask 3 (covariance for selected corners after the
 fact) is moot while the covariance is opt-in.
 
-## <a id="b-5"></a>B-5 · Config knobs that nothing reads
+## <a id="b-5"></a>B-5 · Config knobs that nothing reads — **resolved**
+
+Resolved in 0.16 (see `docs/migrations/0.16.0.md`).
+
 **Sev P2 · Effort S · API semver**
 
 - **Problem.** Fields users can set — and docs used to tell them to tune — with

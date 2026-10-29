@@ -11,8 +11,7 @@ use crate::emit_schemas::{render, schemas, strip_intra_doc_links, tidy, SCHEMA_D
 use calib_targets_aruco::builtins::{builtin_dictionary, BUILTIN_DICTIONARY_NAMES};
 use calib_targets_aruco::Dictionary;
 use calib_targets_charuco::{
-    CharucoAdvancedTuning, CharucoBoard, CharucoBoardSpec, CharucoDetector, CharucoParams,
-    MarkerLayout,
+    CharucoAdvancedTuning, CharucoBoard, CharucoBoardSpec, CharucoParams, MarkerLayout,
 };
 use calib_targets_chessboard::{ChessboardAdvancedTuning, ChessboardParams};
 use calib_targets_core::{default_chess_config, DetectorConfig};
@@ -361,26 +360,25 @@ fn charuco_defaults_and_sweeps_validate() {
 }
 
 #[test]
-fn charuco_scan_border_bits_is_derived_from_the_board() {
-    // The schema marks `scan.border_bits` readOnly because the detector
-    // discards it; prove that, so the annotation cannot go stale.
-    let field =
-        &schema("charuco_params.json")["$defs"]["ScanDecodeConfig"]["properties"]["border_bits"];
-    assert_eq!(field["readOnly"], json!(true));
-    let board = charuco_board(5, 7, 0.75, "DICT_4X4_50").with_border_bits(2);
-    let mut params = CharucoParams::for_board(board);
-    params.scan.border_bits = 5;
-    let detector = CharucoDetector::new(params).expect("valid board");
-    assert_eq!(detector.params().scan.border_bits, 2);
-    // No other scan field is read-only.
-    let scan = &schema("charuco_params.json")["$defs"]["ScanDecodeConfig"]["properties"];
-    for (name, prop) in scan.as_object().unwrap() {
-        assert_eq!(
-            prop.get("readOnly").is_some(),
-            name == "border_bits",
-            "{name}"
-        );
-    }
+fn charuco_schema_has_no_scan_block() {
+    // The marker sampling geometry comes from the board; only the inset is a
+    // ChArUco knob, and a stale `scan` block is rejected rather than ignored.
+    let props = &schema("charuco_params.json")["properties"];
+    assert!(props.get("scan").is_none());
+    assert!(props.get("inset_frac").is_some());
+    let mut stale = serde_json::to_value(CharucoParams::for_board(charuco_board(
+        5,
+        7,
+        0.75,
+        "DICT_4X4_50",
+    )))
+    .unwrap();
+    stale
+        .as_object_mut()
+        .unwrap()
+        .insert("scan".into(), json!({"inset_frac": 0.06}));
+    assert!(serde_json::from_value::<CharucoParams>(stale.clone()).is_err());
+    assert!(!validator("charuco_params.json").is_valid(&stale));
 }
 
 #[test]

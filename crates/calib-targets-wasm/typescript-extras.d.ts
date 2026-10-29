@@ -703,20 +703,10 @@ export interface CharucoBoardSpec {
   marker_layout?: MarkerLayout;
   /**
    * Width, in marker cells, of the black ring printed around each marker
-   * payload (OpenCV's `borderBits`). A property of the printed board, not a
-   * decode knob — the detector derives `ScanDecodeConfig.border_bits` from it.
-   * Defaults to 1.
+   * payload (OpenCV's `borderBits`). A property of the printed board; the
+   * detector samples the ring it describes. Defaults to 1.
    */
   border_bits?: number;
-}
-
-export interface ScanDecodeConfig {
-  border_bits: number;
-  inset_frac: number;
-  marker_size_rel: number;
-  min_border_score: number;
-  dedup_by_id: boolean;
-  multi_threshold: boolean;
 }
 
 /**
@@ -762,7 +752,12 @@ export interface CharucoParams {
   px_per_square: number;
   chessboard: ChessboardParams;
   board: CharucoBoardSpec;
-  scan: ScanDecodeConfig;
+  /**
+   * Fraction of a marker bit cell ignored next to each cell edge, in
+   * `[0, 0.5)`. Default `0.06`. The marker's size and border ring come from
+   * `board`.
+   */
+  inset_frac?: number;
   min_marker_inliers: number;
   // --- opt-in, unstable tuning (omitted when unset) ---
   advanced?: CharucoAdvancedTuning;
@@ -903,7 +898,6 @@ export interface PuzzleBoardParams {
    * to a `detect_*` call overrides this field.
    */
   chess: ChessConfig;
-  px_per_square: number;
   chessboard: ChessboardParams;
   board: PuzzleBoardSpec;
   decode: PuzzleBoardDecodeConfig;

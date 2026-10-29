@@ -231,11 +231,6 @@ fn wider_marker_border_still_decodes() {
 
     let spec = board_spec(cols, rows, "DICT_4X4_50", border_bits);
     let detector = CharucoDetector::new(CharucoParams::for_board(spec)).expect("detector");
-    assert_eq!(
-        detector.params().scan.border_bits,
-        border_bits,
-        "the board spec must drive the scan config"
-    );
 
     let detection = detector.detect(&view).expect("detect");
     let board = detector.board();
@@ -255,21 +250,9 @@ fn wider_marker_border_still_decodes() {
     }
 }
 
-/// A board assigned *after* construction still drives the scan config.
-///
-/// `for_board` seeds `scan` from the board spec, so it is the one path that
-/// hides whether the detector honours `board.border_bits` at all. The reachable
-/// ways to hold params whose scan config was seeded from a *different* board
-/// are this one — reassign `board` — and deserialization (below); `CharucoParams`
-/// is `#[non_exhaustive]` with no `Default`, so there is no third.
-///
-/// The assertion that bites is the derived `scan.border_bits`, not the decode.
-/// Measured: with `scan.border_bits = 1` against a `border_bits = 3` board the
-/// board-level matcher still aligns this synthetic, noise-free render and
-/// reports every marker. That tolerance is accidental — it comes from where the
-/// inset sampling grid happens to fall — and it does not extend to the border
-/// score, which is then computed over cells that are not the printed ring. So
-/// the invariant to hold is that the two never disagree in the first place.
+/// A board assigned *after* construction drives the marker sampling: the
+/// params carry no copy of the board's ring width or marker size that could
+/// still describe the board they were built for.
 #[test]
 fn a_reassigned_board_still_drives_the_scan_config() {
     let (cols, rows) = (7u32, 5u32);
@@ -281,20 +264,11 @@ fn a_reassigned_board_still_drives_the_scan_config() {
         data: &img.pixels,
     };
 
-    // Seeded from a one-cell board, then pointed at the two-cell one.
+    // Built for a one-cell board, then pointed at the two-cell one.
     let mut params = CharucoParams::for_board(board_spec(cols, rows, "DICT_4X4_50", 1));
-    assert_eq!(
-        params.scan.border_bits, 1,
-        "precondition: the scan config still describes the board it was seeded from"
-    );
     params.board = board_spec(cols, rows, "DICT_4X4_50", border_bits);
 
     let detector = CharucoDetector::new(params).expect("detector");
-    assert_eq!(
-        detector.params().scan.border_bits,
-        border_bits,
-        "the board spec must drive the scan config on every construction path"
-    );
 
     let detection = detector.detect(&view).expect("detect");
     let mut found: Vec<u32> = detection.markers.iter().map(|m| m.id).collect();
@@ -319,30 +293,21 @@ fn a_deserialised_config_derives_the_scan_border() {
         data: &img.pixels,
     };
 
-    // A config that names the board and says nothing about scanning — `scan`
-    // has a serde default, so this is the ordinary shape of a stored config.
+    // A config that names the board and says nothing about scanning —
+    // `inset_frac` has a serde default, so this is the ordinary shape of a
+    // stored config.
     let spec = board_spec(cols, rows, "DICT_4X4_50", border_bits);
     let mut value = serde_json::to_value(CharucoParams::for_board(spec)).expect("serialise params");
     value
         .as_object_mut()
         .expect("params serialise to an object")
-        .remove("scan")
-        .expect("params carry a scan block");
+        .remove("inset_frac")
+        .expect("params carry an inset");
 
     let params: CharucoParams = serde_json::from_value(value).expect("params deserialise");
     assert_eq!(params.board.border_bits, border_bits);
-    assert_eq!(
-        params.scan.border_bits, 1,
-        "precondition: the defaulted scan block claims a one-cell ring, which is \
-         exactly the value an unset-sentinel repair cannot tell from a deliberate 1"
-    );
 
     let detector = CharucoDetector::new(params).expect("detector");
-    assert_eq!(
-        detector.params().scan.border_bits,
-        border_bits,
-        "a deserialised config must sample the ring its board describes"
-    );
 
     let detection = detector.detect(&view).expect("detect");
     let mut found: Vec<u32> = detection.markers.iter().map(|m| m.id).collect();

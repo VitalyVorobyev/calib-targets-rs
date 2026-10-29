@@ -18,14 +18,14 @@ use crate::types::{
     ct_marker_circle_spec_t, ct_marker_detection_t, ct_marker_layout_t, ct_optional_f32_t,
     ct_optional_u32_t, ct_point2f_t, ct_position_covariance_t, ct_puzzleboard_decode_config_t,
     ct_puzzleboard_params_t, ct_puzzleboard_scoring_mode_t, ct_puzzleboard_search_mode_t,
-    ct_puzzleboard_spec_t, ct_puzzleboard_symmetry_mode_t, ct_scan_decode_config_t,
-    ct_uncertainty_t, ct_upscale_config_t, CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE,
-    CT_DICTIONARY_DICT_4X4_100, CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250,
-    CT_DICTIONARY_DICT_4X4_50, CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000,
-    CT_DICTIONARY_DICT_5X5_250, CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100,
-    CT_DICTIONARY_DICT_6X6_1000, CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50,
-    CT_DICTIONARY_DICT_7X7_100, CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250,
-    CT_DICTIONARY_DICT_7X7_50, CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
+    ct_puzzleboard_spec_t, ct_puzzleboard_symmetry_mode_t, ct_uncertainty_t, ct_upscale_config_t,
+    CT_CIRCLE_POLARITY_BLACK, CT_CIRCLE_POLARITY_WHITE, CT_DICTIONARY_DICT_4X4_100,
+    CT_DICTIONARY_DICT_4X4_1000, CT_DICTIONARY_DICT_4X4_250, CT_DICTIONARY_DICT_4X4_50,
+    CT_DICTIONARY_DICT_5X5_100, CT_DICTIONARY_DICT_5X5_1000, CT_DICTIONARY_DICT_5X5_250,
+    CT_DICTIONARY_DICT_5X5_50, CT_DICTIONARY_DICT_6X6_100, CT_DICTIONARY_DICT_6X6_1000,
+    CT_DICTIONARY_DICT_6X6_250, CT_DICTIONARY_DICT_6X6_50, CT_DICTIONARY_DICT_7X7_100,
+    CT_DICTIONARY_DICT_7X7_1000, CT_DICTIONARY_DICT_7X7_250, CT_DICTIONARY_DICT_7X7_50,
+    CT_DICTIONARY_DICT_APRILTAG_16H5, CT_DICTIONARY_DICT_APRILTAG_25H9,
     CT_DICTIONARY_DICT_APRILTAG_36H10, CT_DICTIONARY_DICT_APRILTAG_36H11,
     CT_DICTIONARY_DICT_ARUCO_MIP_36H12, CT_DICTIONARY_DICT_ARUCO_ORIGINAL, CT_FALSE,
     CT_MARKER_LAYOUT_OPENCV_CHARUCO, CT_PUZZLEBOARD_SCORING_MODE_HARD_WEIGHTED,
@@ -38,7 +38,6 @@ use crate::types::{
 use crate::validate::{
     flag_to_bool, require_finite, require_fraction, require_nonnegative, require_positive,
 };
-use calib_targets::aruco::ScanDecodeConfig;
 use calib_targets::aruco::{builtins, Dictionary, MarkerDetection};
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
 use calib_targets::chessboard::{
@@ -379,30 +378,6 @@ fn chessboard_advanced_default_values() -> ct_chessboard_advanced_t {
 
 // ─── ChArUco params ─────────────────────────────────────────────────────────
 
-pub(crate) fn convert_scan_decode_config(
-    params: &ct_scan_decode_config_t,
-) -> FfiResult<ScanDecodeConfig> {
-    if params.border_bits == 0 {
-        return Err(FfiError::config_error("scan.border_bits must be > 0"));
-    }
-    Ok(ScanDecodeConfig::default()
-        .with_border_bits(params.border_bits)
-        .with_inset_frac(require_nonnegative(params.inset_frac, "scan.inset_frac")?)
-        .with_marker_size_rel(require_positive(
-            params.marker_size_rel,
-            "scan.marker_size_rel",
-        )?)
-        .with_min_border_score(require_fraction(
-            params.min_border_score,
-            "scan.min_border_score",
-        )?)
-        .with_dedup_by_id(flag_to_bool(params.dedup_by_id, "scan.dedup_by_id")?)
-        .with_multi_threshold(flag_to_bool(
-            params.multi_threshold,
-            "scan.multi_threshold",
-        )?))
-}
-
 pub(crate) fn convert_dictionary_id(
     value: ct_dictionary_id_t,
     field: &str,
@@ -461,7 +436,8 @@ pub(crate) fn convert_charuco_board_spec(
     .with_marker_layout(convert_marker_layout(
         params.marker_layout,
         "charuco.marker_layout",
-    )?))
+    )?)
+    .with_border_bits(params.border_bits))
 }
 
 pub(crate) fn convert_charuco_detector_params(
@@ -492,18 +468,17 @@ pub(crate) fn convert_charuco_detector_params(
     // Start from the defaults (so that future additions to CharucoParams —
     // such as the board-level matcher knobs — don't break the C ABI) and
     // overwrite only the fields that the C side exposes today.
-    // `border_bits` describes the printed board, and the C ABI already carries
-    // it once, on `scan`. Seed the board spec from that single field rather
-    // than adding a second C field for the same physical fact — two sources
-    // would only give callers a way to contradict themselves.
-    let scan = convert_scan_decode_config(&params.scan)?;
-    let board_spec =
-        convert_charuco_board_spec(&params.charuco)?.with_border_bits(scan.border_bits);
+    let board_spec = convert_charuco_board_spec(&params.charuco)?;
     let mut out = CharucoParams::for_board(board_spec);
     out.px_per_square = require_positive(params.px_per_square, "charuco.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
-    out.board = board_spec;
-    out.scan = scan;
+    if !(0.0..0.5).contains(&params.inset_frac) {
+        return Err(FfiError::config_error(format!(
+            "charuco.inset_frac must be in [0, 0.5), got {}",
+            params.inset_frac
+        )));
+    }
+    out.inset_frac = params.inset_frac;
     out.min_marker_inliers = params.min_marker_inliers;
     // `grid_smoothness_threshold_rel` / `corner_validation_threshold_rel` are
     // kept as flat C fields but now live in `CharucoAdvancedTuning` on the Rust
@@ -779,7 +754,6 @@ pub(crate) fn convert_puzzleboard_params(
 ) -> FfiResult<PuzzleBoardParams> {
     let board = convert_puzzleboard_spec(&params.board)?;
     let mut out = PuzzleBoardParams::for_board(board);
-    out.px_per_square = require_positive(params.px_per_square, "puzzleboard.px_per_square")?;
     out.chessboard = convert_chessboard_params(&params.chessboard)?;
     out.decode = convert_puzzleboard_decode_config(&params.decode)?;
     Ok(out)
