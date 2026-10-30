@@ -7,6 +7,41 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## 0.16.1
+
+A ChArUco fix: a frame could be labelled with the whole board shifted by one or
+more squares, every corner with a wrong id. Upgrade from 0.16.0; no API change.
+The C ABI moves to 6.0.1 (no type or layout change), and the workspace requires
+`projective-grid` 0.14.4.
+
+### Fixed
+
+- **ChArUco no longer labels a board shifted by whole squares.** The board
+  matcher scored each candidate placement of the board by summing the soft-bit
+  log-likelihoods of the cells that placement expects a marker in. A ChArUco
+  board carries a marker in only half of its squares, so placements shifted by
+  an odd number of squares were scored on disjoint cells and their sums were
+  not comparable: the placement whose expected marker cells read least
+  informatively paid the smallest penalty. In dark, low-contrast frames, where
+  plain squares read as uniform and carry almost no weight, a placement laying
+  plain squares over the observed markers could win and pass the margin gate.
+  On a real frame it shifted every id by (+1, +2) squares, while OpenCV's
+  detector agreed with none of them. Placements are now scored by the
+  log-likelihood ratio of their expected markers against random bits, so every
+  placement is judged on the same cells; the acceptance margin is the gap to
+  the runner-up as a share of the evidence the best placement's cells could
+  carry, and a placement with no positive evidence is never accepted. Frames
+  that were rejected because their placements tied are now detected.
+- **Reported markers are what the image shows.** A ChArUco marker is reported
+  only where its own cell supports it, and its `code` and `hamming` are the
+  bits read from that cell. They were the expected code and `0`, so a wrong
+  placement looked like a clean decode.
+
+### Changed
+
+- Requires `projective-grid` 0.14.4, which re-exports the `nalgebra` its API is
+  written in (`projective_grid::nalgebra`).
+
 ## 0.16.0
 
 Moves to `chess-corners` 2 (2.1), can report each corner's position covariance on

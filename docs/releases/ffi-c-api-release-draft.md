@@ -11,10 +11,19 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
-## Current ABI: 6.0.0 (workspace 0.16.0)
+## Current ABI: 6.0.1 (workspace 0.16.1)
 
-Workspace 0.16.0 ships a new ABI, 6.0.0. The notes below say what changed since
-5.0.0; older notes follow for consumers upgrading across several releases.
+Workspace 0.16.1 ships ABI 6.0.1, a fix with no type or layout change: a caller
+built against 6.0.0 links and runs unchanged. The notes below say what changed
+since 5.0.0; older notes follow for consumers upgrading across several
+releases.
+
+## ABI 6.0.1 — fix
+
+- ChArUco no longer labels a frame with the whole board shifted by whole
+  squares (every corner id wrong); see the workspace CHANGELOG for 0.16.1.
+- A ChArUco marker's `code` and `hamming` (`ct_marker_detection_t`) are the
+  bits read from its cell. They were the expected code and `0`.
 
 ## ABI 6.0.0 — breaking
 
