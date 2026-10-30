@@ -58,6 +58,14 @@ mod result;
 mod shared;
 mod topological;
 
+/// The `nalgebra` this crate's API is written in.
+///
+/// The crate accepts any `nalgebra` from 0.34 to 0.35, and Cargo may resolve a
+/// different one than a caller's own `nalgebra` dependency. Build the points
+/// and read the matrices that cross this API through this path, and they
+/// always match.
+pub use nalgebra;
+
 pub use crate::check::{check_consistency, ConsistencyParams, ConsistencyRequest};
 pub use crate::detect::{
     detect_grid, detect_grid_all, DetectionParams, DetectionRequest, Evidence,

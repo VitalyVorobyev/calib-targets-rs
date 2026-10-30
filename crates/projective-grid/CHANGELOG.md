@@ -7,6 +7,16 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.4] - 2026-10-30
+
+### Added
+
+- **`projective_grid::nalgebra`** re-exports the `nalgebra` the API is written
+  in. The crate accepts `nalgebra` 0.34 or 0.35, so Cargo can resolve a caller's
+  own `nalgebra` to the other one, and then that caller's points and matrices
+  do not type-check against this API. A caller that builds them through
+  `projective_grid::nalgebra` always matches.
+
 ## [0.14.3] - 2026-10-29
 
 ### Fixed
@@ -204,7 +214,8 @@ See [Road to 1.0](https://github.com/VitalyVorobyev/calib-targets-rs/blob/projec
 for the compact 0.11 → 0.12 request example, release process, readiness status,
 and remaining stabilization work.
 
-[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.3...HEAD
+[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.4...HEAD
+[0.14.4]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.3...projective-grid-v0.14.4
 [0.14.3]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.2...projective-grid-v0.14.3
 [0.14.2]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.1...projective-grid-v0.14.2
 [0.14.1]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.0...projective-grid-v0.14.1
