@@ -109,8 +109,12 @@ pub struct CharucoAdvancedTuning {
     /// a cell score.
     #[serde(default = "default_per_bit_floor")]
     pub per_bit_floor: f32,
-    /// Minimum `(best − runner-up) / |best|` margin required for the
-    /// board-level matcher to accept a hypothesis. Below this, detection
+    /// Minimum margin by which the board-level matcher's chosen board
+    /// placement must beat the runner-up, as a share of the evidence the
+    /// chosen placement's cells could carry: `(best − runner-up) / Σ w ·
+    /// bits² · ln 2`. A placement scores the weighted log-likelihood ratio of
+    /// the markers it expects against random bits, so a placement whose cells
+    /// do not favour it over chance is never accepted. Below this, detection
     /// is rejected rather than mislabelled.
     #[serde(default = "default_alignment_min_margin")]
     #[cfg_attr(feature = "schemars", schemars(range(min = 0.0)))]

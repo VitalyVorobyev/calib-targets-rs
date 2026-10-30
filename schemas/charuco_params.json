@@ -21,7 +21,7 @@
       "properties": {
         "alignment_min_margin": {
           "default": 0.05,
-          "description": "Minimum `(best − runner-up) / |best|` margin required for the\nboard-level matcher to accept a hypothesis. Below this, detection\nis rejected rather than mislabelled.",
+          "description": "Minimum margin by which the board-level matcher's chosen board\nplacement must beat the runner-up, as a share of the evidence the\nchosen placement's cells could carry: `(best − runner-up) / Σ w ·\nbits² · ln 2`. A placement scores the weighted log-likelihood ratio of\nthe markers it expects against random bits, so a placement whose cells\ndo not favour it over chance is never accepted. Below this, detection\nis rejected rather than mislabelled.",
           "format": "float",
           "minimum": 0.0,
           "type": "number"

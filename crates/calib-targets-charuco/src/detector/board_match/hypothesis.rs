@@ -30,7 +30,10 @@ pub struct DiagHypothesis {
     /// Board `[Δcol, Δrow]` translation carrying detected marker cells onto
     /// board cells (a cell translation, not the corner alignment's).
     pub translation: [i32; 2],
-    /// Aggregate score of this hypothesis across contributing cells.
+    /// Aggregate evidence for this hypothesis: the weighted sum, over the
+    /// cells it expects a marker in, of the log-likelihood ratio of the
+    /// expected marker against a cell of random bits. Positive when the cells
+    /// support the placement.
     pub score: f32,
     /// Number of cells that contributed evidence to this hypothesis.
     ///
@@ -40,16 +43,36 @@ pub struct DiagHypothesis {
     pub contributing_cells: usize,
 }
 
-pub(super) fn margin_from_scores(best: f32, runner_up: Option<f32>) -> f32 {
-    let Some(second) = runner_up else {
+/// The chosen placement, its runner-up, and the acceptance margin between them.
+pub(super) struct Selection {
+    pub(super) best: DiagHypothesis,
+    pub(super) runner_up: Option<DiagHypothesis>,
+    /// Number of hypotheses scored.
+    pub(super) total: usize,
+    /// See [`margin`].
+    pub(super) margin: f32,
+}
+
+/// How decisively `best` beats the runner-up: the evidence gap between them
+/// as a share of `best_capacity`, the evidence `best` would collect if every
+/// cell it expects a marker in read that marker perfectly
+/// (`Σ w · bits² · ln 2`).
+///
+/// Normalizing by the attainable evidence rather than by the best score keeps
+/// the margin meaningful when the evidence itself is weak: placements that
+/// differ only in nearly uninformative cells score close to `0`, and their
+/// gap relative to the best score could be arbitrarily large, but it is a
+/// small share of what their cells could have shown. A placement whose cells
+/// do not favour it over chance (`best ≤ 0`) has no margin at all; with no
+/// competing placement a supported one has margin `1`.
+fn margin(best: f32, best_capacity: f32, runner_up: Option<f32>) -> f32 {
+    if best <= 0.0 {
+        return 0.0;
+    }
+    let Some(second) = runner_up.filter(|s| s.is_finite()) else {
         return 1.0;
     };
-    if !second.is_finite() {
-        return 1.0;
-    }
-    let delta = (best - second).max(0.0);
-    let denom = best.abs().max(second.abs()).max(1e-3);
-    delta / denom
+    (best - second).max(0.0) / best_capacity.max(f32::EPSILON)
 }
 
 /// The hypothesis as a *cell* alignment: it maps a marker cell's grid
@@ -65,15 +88,14 @@ pub(super) fn enumerate_hypotheses(
     board: &CharucoBoard,
     cells: &[MarkerCell],
     matrix: &ScoreMatrix,
-) -> Option<(DiagHypothesis, Option<DiagHypothesis>, usize)> {
+) -> Option<Selection> {
     let spec = board.spec();
     let cols = spec.cols as i32;
     let rows = spec.rows as i32;
 
-    let mut best: Option<DiagHypothesis> = None;
+    let mut best: Option<(DiagHypothesis, f32)> = None;
     let mut runner_up: Option<DiagHypothesis> = None;
     let mut total = 0usize;
-    let mut any_window = false;
 
     for rot_idx in 0..4u8 {
         let transform = GRID_TRANSFORMS_D4[rot_idx as usize];
@@ -81,30 +103,24 @@ pub(super) fn enumerate_hypotheses(
         let Some((tx_lo, tx_hi, ty_lo, ty_hi)) = translation_window(&mapped, cols, rows) else {
             continue;
         };
-        any_window = true;
 
         for tx in tx_lo..=tx_hi {
             for ty in ty_lo..=ty_hi {
-                // `_contributing` feeds the diagnostics-only field; the
-                // production matcher selects on `score` alone. Underscore-
-                // prefixed so it is not flagged unused when the field is gated
-                // out (feature off).
-                let (score, _contributing) =
-                    score_hypothesis(board, matrix, &mapped, [tx, ty], rot_idx);
+                let scored = score_hypothesis(board, matrix, &mapped, [tx, ty], rot_idx);
                 total += 1;
                 let h = DiagHypothesis {
                     rotation: rot_idx,
                     translation: [tx, ty],
-                    score,
+                    score: scored.evidence,
                     #[cfg(feature = "diagnostics")]
-                    contributing_cells: _contributing,
+                    contributing_cells: scored.contributing,
                 };
                 match best {
-                    None => best = Some(h),
-                    Some(b) => {
+                    None => best = Some((h, scored.capacity)),
+                    Some((b, _)) => {
                         if h.score > b.score {
                             runner_up = Some(b);
-                            best = Some(h);
+                            best = Some((h, scored.capacity));
                         } else if runner_up.map(|r| h.score > r.score).unwrap_or(true) {
                             runner_up = Some(h);
                         }
@@ -114,10 +130,13 @@ pub(super) fn enumerate_hypotheses(
         }
     }
 
-    if !any_window || best.is_none() {
-        return None;
-    }
-    Some((best.unwrap(), runner_up, total))
+    let (best, best_capacity) = best?;
+    Some(Selection {
+        best,
+        runner_up,
+        total,
+        margin: margin(best.score, best_capacity, runner_up.map(|h| h.score)),
+    })
 }
 
 fn translation_window(mapped: &[Coord], cols: i32, rows: i32) -> Option<(i32, i32, i32, i32)> {
@@ -144,14 +163,26 @@ fn translation_window(mapped: &[Coord], cols: i32, rows: i32) -> Option<(i32, i3
     Some((tx_lo, tx_hi, ty_lo, ty_hi))
 }
 
+/// A hypothesis's evidence and how much evidence its cells could carry.
+struct HypothesisScore {
+    /// `Σ w · evidence` over the cells the hypothesis expects a marker in.
+    evidence: f32,
+    /// `Σ w · bits² · ln 2` over the same cells: the evidence they would
+    /// carry if each read its expected marker perfectly.
+    capacity: f32,
+    /// Number of those cells (with non-zero weight).
+    contributing: usize,
+}
+
 fn score_hypothesis(
     board: &CharucoBoard,
     matrix: &ScoreMatrix,
     mapped: &[Coord],
     translation: [i32; 2],
     rot: u8,
-) -> (f32, usize) {
-    let mut total = 0.0f32;
+) -> HypothesisScore {
+    let mut evidence = 0.0f32;
+    let mut capacity = 0.0f32;
     let mut contributing = 0usize;
     for (ci, g) in mapped.iter().enumerate() {
         let bc = Coord::new(g.u + translation[0], g.v + translation[1]);
@@ -162,18 +193,25 @@ fn score_hypothesis(
         if w <= 0.0 {
             continue;
         }
-        let s = matrix.score(ci, expected_id, rot);
-        total += w * s;
+        // Log-likelihood ratio against the null model, so hypotheses that
+        // expect markers in different cells are compared on equal terms
+        // (see `ScoreMatrix::evidence`).
+        evidence += w * matrix.evidence(ci, expected_id, rot);
+        capacity += w * matrix.max_evidence();
         contributing += 1;
     }
-    // Per-cell scores are log-likelihoods (≤ 0). A hypothesis with no
-    // contributing cells would score 0, beating every real hypothesis with
-    // negative evidence. Treat zero-evidence as invalid so the comparison
-    // loop discards it; diagnostics still observe `contributing == 0`.
+    // A hypothesis that expects no marker in any informative cell is not
+    // supported by the image at all; treat it as invalid so the comparison
+    // loop discards it rather than letting its neutral `0` beat a placement
+    // the cells contradict. Diagnostics still observe `contributing == 0`.
     if contributing == 0 {
-        return (f32::NEG_INFINITY, 0);
+        evidence = f32::NEG_INFINITY;
     }
-    (total, contributing)
+    HypothesisScore {
+        evidence,
+        capacity,
+        contributing,
+    }
 }
 
 /// Index in [`GRID_TRANSFORMS_D4`] of the given transform (its 90°-rotation
@@ -190,7 +228,109 @@ pub(super) fn rotation_index_for(transform: &GridTransform) -> u8 {
 
 #[cfg(test)]
 mod tests {
+    use super::super::score_matrix::build_score_matrix;
+    use super::super::BoardMatchConfig;
     use super::*;
+    use crate::board::{CharucoBoardSpec, MarkerLayout};
+    use calib_targets_aruco::{builtins, CellSamples};
+    use nalgebra::Point2;
+
+    const OTSU: u8 = 100;
+
+    /// Samples of a cell showing `code` (row-major, black = 1) with a black
+    /// border: each bit reads `contrast` gray levels to its side of the
+    /// threshold.
+    fn marker_samples(code: u64, contrast: u8) -> CellSamples {
+        let (bits, border, side) = (4, 1, 6);
+        let mut mean_grid = vec![OTSU - contrast; side * side];
+        for by in 0..bits {
+            for bx in 0..bits {
+                let black = (code >> (by * bits + bx)) & 1 == 1;
+                mean_grid[(border + by) * side + border + bx] = if black {
+                    OTSU - contrast
+                } else {
+                    OTSU + contrast
+                };
+            }
+        }
+        CellSamples::new(side, bits, border, mean_grid, OTSU, 1.0)
+    }
+
+    /// Samples of a plain, saturated square: every bit sits on the threshold
+    /// (it carries no pattern), and one border sample out of twenty read
+    /// darker, which gives the cell a small but non-zero weight.
+    fn plain_samples() -> CellSamples {
+        CellSamples::new(6, 4, 1, vec![OTSU; 36], OTSU, 0.05)
+    }
+
+    /// A 4 × 4-cell view of a 6 × 6-square board, placed at board cell
+    /// `(1, 1)` without rotation: marker squares show their marker with a
+    /// modest contrast (each cell's bits favour it, but not with certainty),
+    /// plain squares show nothing.
+    fn partial_view(board: &CharucoBoard) -> (Vec<MarkerCell>, Vec<Option<CellSamples>>) {
+        let dict = board.spec().dictionary;
+        let mut cells = Vec::new();
+        let mut samples = Vec::new();
+        for v in 0..4 {
+            for u in 0..4 {
+                let gc = Coord::new(u, v);
+                cells.push(MarkerCell::new(gc, [Point2::new(0.0, 0.0); 4]));
+                samples.push(Some(match board.marker_id_at(Coord::new(u + 1, v + 1)) {
+                    Some(id) => marker_samples(dict.codes()[id as usize], 6),
+                    None => plain_samples(),
+                }));
+            }
+        }
+        (cells, samples)
+    }
+
+    /// The placement the markers support wins, even though every placement
+    /// that lays the board's plain squares over the observed markers expects
+    /// markers only in the nearly uninformative plain cells. Summing raw
+    /// log-likelihoods (all `≤ 0`) would prefer such a placement: it pays a
+    /// small weighted penalty in a few plain cells instead of the imperfect
+    /// fit of every marker cell, and a ChArUco board labelled through it is
+    /// shifted by an odd number of squares.
+    #[test]
+    fn markers_outweigh_a_placement_that_expects_them_in_plain_squares() {
+        let board = CharucoBoard::new(
+            CharucoBoardSpec::new(6, 6, 1.0, 0.75, builtins::DICT_4X4_50)
+                .with_marker_layout(MarkerLayout::OpenCvCharuco),
+        )
+        .expect("valid board");
+        let (cells, samples) = partial_view(&board);
+        let matrix =
+            build_score_matrix(&board, &samples, &BoardMatchConfig::default()).expect("matrix");
+
+        let selection = enumerate_hypotheses(&board, &cells, &matrix).expect("hypotheses");
+        assert_eq!(
+            (selection.best.rotation, selection.best.translation),
+            (0, [1, 1]),
+            "chose {:?} over the true placement",
+            selection.best
+        );
+        assert!(selection.best.score > 0.0);
+        assert!(
+            selection.margin >= BoardMatchConfig::default().alignment_min_margin,
+            "the true placement must clear the margin gate, got {}",
+            selection.margin
+        );
+    }
+
+    /// Placements that differ only in nearly uninformative cells are not told
+    /// apart: their gap is a tiny share of what their cells could show, and a
+    /// placement the cells do not favour over chance has no margin at all.
+    #[test]
+    fn weak_or_unsupported_evidence_has_no_margin() {
+        // Two placements scoring 0.05 and 0.01 nats over cells that could
+        // have shown 11 nats.
+        assert!(margin(0.05, 11.0, Some(0.01)) < 0.01);
+        assert_eq!(margin(-3.0, 11.0, Some(-5.0)), 0.0);
+        assert_eq!(margin(0.0, 11.0, None), 0.0);
+        assert_eq!(margin(5.0, 11.0, None), 1.0);
+        // A decisive gap between well-evidenced placements.
+        assert!(margin(100.0, 110.0, Some(-20.0)) > 1.0);
+    }
 
     #[test]
     fn translation_window_clamps_to_board() {
