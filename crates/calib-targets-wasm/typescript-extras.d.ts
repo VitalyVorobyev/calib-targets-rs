@@ -735,7 +735,7 @@ export interface CharucoAdvancedTuning {
   bit_likelihood_slope?: number;
   /** Clip floor applied to each per-bit log-likelihood term before summing across bits. */
   per_bit_floor?: number;
-  /** Minimum `(best − runner-up) / |best|` margin required to accept a board hypothesis. */
+  /** Minimum margin `(best − runner-up) / (evidence the best placement's cells could carry)` required to accept a board hypothesis. */
   alignment_min_margin?: number;
   /** Border-black fraction below which a cell's weight is attenuated in the board score. */
   cell_weight_border_threshold?: number;

@@ -44,7 +44,7 @@ use calib_targets_core::{cell_to_corner_alignment, GrayImageView, GridAlignment}
 use tracing::instrument;
 
 use emit::emit_markers;
-use hypothesis::{enumerate_hypotheses, hypothesis_to_alignment, margin_from_scores};
+use hypothesis::{enumerate_hypotheses, hypothesis_to_alignment, Selection};
 use score_matrix::{build_score_matrix, ScoreMatrix};
 
 // `DiagHypothesis` is always compiled (the production matcher selects on it).
@@ -203,14 +203,16 @@ fn match_board_core<S: MatchSink>(
         }
     };
 
-    let (best, runner_up, total) = match enumerate_hypotheses(board, cells, &matrix) {
-        Some(x) => x,
-        None => {
-            sink.reject_translation_window(cells, &samples, &matrix, bits);
-            return None;
-        }
+    let Some(Selection {
+        best,
+        runner_up,
+        total,
+        margin,
+    }) = enumerate_hypotheses(board, cells, &matrix)
+    else {
+        sink.reject_translation_window(cells, &samples, &matrix, bits);
+        return None;
     };
-    let margin = margin_from_scores(best.score, runner_up.map(|h| h.score));
     sink.record_hypotheses(&best, runner_up.as_ref(), total, margin);
 
     // A cell alignment: it carries each marker cell (named by its top-left

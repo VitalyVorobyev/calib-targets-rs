@@ -40,23 +40,40 @@ consistent with *all* the sampled cells at once.
 2. **Hypothesis enumeration.** For each of the four D4 rotations the matcher
    maps the observed cells onto the board and enumerates exactly the integer
    translations that keep every cell inside the board. Each
-   `(rotation, translation)` hypothesis scores `Σᵢ wᵢ · sᵢ(m_{p_i(H)})` —
-   the weighted score of the marker each cell *would* contain under that
-   placement. A hypothesis with no contributing cells is rejected (it would
-   otherwise score zero and beat genuine negative-log-likelihood evidence).
+   `(rotation, translation)` hypothesis `H` scores
+   `Σᵢ wᵢ · (sᵢ(m_{p_i(H)}) + bits² · ln 2)` over the cells it expects a
+   marker in: the weighted log-likelihood *ratio* of the marker each cell
+   would contain under that placement against a cell of random bits. The
+   ratio is what makes hypotheses comparable. A ChArUco board has a marker in
+   only half of its squares, so placements shifted by one square expect
+   markers in different cells; a cell a hypothesis expects no marker in is
+   explained by the random-bits model and adds `0`. A cell that carries no
+   pattern (a plain square) scores about `0` against any marker, a cell that
+   shows the expected marker scores up to `bits² · ln 2`, and one that
+   contradicts it scores below `0`. Summing raw log-likelihoods instead
+   (all `≤ 0`) would favour the placement that expects markers in the
+   *fewest* informative cells — one that lays the board's plain squares over
+   the observed markers. A hypothesis with no contributing cells is
+   rejected.
 
-3. **Maximum-likelihood placement + margin gate.** The matcher keeps the
-   best and runner-up hypotheses and computes the relative margin
-   `(best − runner-up)/max(|best|, |runner-up|)`. The placement is accepted
-   only when that margin clears `alignment_min_margin`; below it, detection
-   is **rejected rather than mislabelled** — heavy bit noise or a
-   near-symmetric layout produces a near-tie, and a coin-flip alignment
-   would risk a wrong ID.
+3. **Maximum-evidence placement + margin gate.** The matcher keeps the best
+   and runner-up hypotheses and computes the margin
+   `(best − runner-up) / Σᵢ wᵢ · bits² · ln 2`, the evidence gap as a share
+   of the evidence the best placement's cells could carry. The placement is
+   accepted only when its cells favour it over chance (`best > 0`) and the
+   margin clears `alignment_min_margin`; below it, detection is **rejected
+   rather than mislabelled** — heavy bit noise or a near-symmetric layout
+   produces a near-tie, and a coin-flip alignment would risk a wrong ID.
+   Normalising by the attainable evidence keeps the gate meaningful when the
+   evidence itself is weak: two placements supported only by nearly
+   uninformative cells differ by a tiny share of what those cells could show.
 
 4. **Constrained re-emit.** Under the chosen placement every cell has a
-   single expected marker. The matcher re-emits each cell's marker under
-   that identity, so a returned marker can never disagree with the alignment
-   it was matched against — the wrong-id count is zero by construction.
+   single expected marker. The matcher emits a marker for a cell only when
+   the cell's own bits favour that marker over chance, so a returned marker
+   can never disagree with the alignment it was matched against, and is
+   always backed by its pixels. The marker's `code` and `hamming` are the
+   bits read from the cell and their distance to the expected marker.
 
 The brute-force hypothesis space is tiny (four rotations × a bounded
 translation window), so the joint search is cheap. Because the decision is

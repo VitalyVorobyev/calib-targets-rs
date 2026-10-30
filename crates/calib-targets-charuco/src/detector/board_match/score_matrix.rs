@@ -35,6 +35,12 @@ pub(super) struct ScoreMatrix {
     /// `score`-by-id read on the hypothesis loop a single bounds-checked array
     /// access rather than a hash lookup.
     id_to_slot: Vec<u32>,
+    /// Log-likelihood of any sampled cell under the *null* model, in which
+    /// every bit is a fair coin: `bits² · ln ½`. Under the soft-bit model a
+    /// bit is set with probability `σ(x)` and clear with `σ(−x)`, so a bit
+    /// whose expected value is unknown has likelihood `½σ(x) + ½σ(−x) = ½`
+    /// whatever was sampled.
+    null_score: f32,
 }
 
 impl ScoreMatrix {
@@ -51,6 +57,32 @@ impl ScoreMatrix {
             Some(slot) if slot != NO_SLOT => self.scores[self.idx(cell, slot as usize, rot)],
             _ => f32::NEG_INFINITY,
         }
+    }
+
+    /// Evidence that `cell` shows the marker with dictionary id `marker` at
+    /// rotation `rot`: the log-likelihood ratio of that marker against the
+    /// null model ([`Self::null_score`]). Positive when the cell's bits favour
+    /// the marker over chance, about zero for a cell that carries no pattern
+    /// (a plain square), and negative when they contradict it.
+    ///
+    /// Board hypotheses are compared on this, not on [`Self::score`]: each
+    /// hypothesis expects a marker in a different subset of the cells, and
+    /// summing raw log-likelihoods (all `≤ 0`) over different subsets favours
+    /// the hypothesis that expects markers in the *fewest* informative cells —
+    /// one that lays the board's plain squares over the observed markers. A
+    /// cell a hypothesis does not expect a marker in is explained by the null
+    /// model, so its ratio is `0` and every hypothesis is scored on the same
+    /// cells.
+    #[inline]
+    pub(super) fn evidence(&self, cell: usize, marker: u32, rot: u8) -> f32 {
+        self.score(cell, marker, rot) - self.null_score
+    }
+
+    /// The largest [`Self::evidence`] any cell can carry: every bit read
+    /// with certainty as the marker expects it, `bits² · ln 2`.
+    #[inline]
+    pub(super) fn max_evidence(&self) -> f32 {
+        -self.null_score
     }
 
     /// Score of `cell` against the marker in `slot`, at rotation `rot`.
@@ -155,6 +187,7 @@ pub(super) fn build_score_matrix(
         #[cfg(feature = "diagnostics")]
         marker_ids,
         id_to_slot,
+        null_score: n_interior as f32 * -std::f32::consts::LN_2,
     })
 }
 
