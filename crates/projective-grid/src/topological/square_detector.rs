@@ -429,6 +429,7 @@ fn assemble_square_oriented2_components_observed(
     };
     let components = walk::label_components(
         &kept_quads,
+        &positions,
         topo.min_quads_per_component,
         topo.min_corners_for_component,
     );
