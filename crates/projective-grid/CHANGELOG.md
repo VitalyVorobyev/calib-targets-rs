@@ -7,6 +7,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **The lattice fit is exact on exact data.** `estimate_projective` (and so
+  every `LatticeFit` and `check_consistency`) solved an `f32` DLT with
+  `h33 = 1` and no conditioning; on a 1,239-point board with image
+  coordinates in the thousands of pixels it left up to ~3 px of residual on
+  exact centres, so the default 2 px residual gate rejected correct labels. It
+  is now a Hartley-normalised homogeneous DLT solved in `f64` (the same core
+  as `estimate_homography`), with residuals at rounding level. The signature
+  is unchanged; the result is still scaled to `h33 = 1`.
+
 ## [0.14.4] - 2026-10-30
 
 ### Added
