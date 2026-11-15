@@ -9,6 +9,24 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A missing point no longer costs the whole hex board.** Under perspective,
+  a Delaunay triangle that spans a missing lattice point can pass the angular
+  cell test. Walking into it labels its apex one lattice step off; the walk saw
+  the resulting label conflict and discarded the entire connected component,
+  so one or two holes could leave a 1,200-point board with nothing labelled.
+  The walk now crosses a shared edge only when the neighbour's apex lies
+  within half a lattice step of the image parallelogram completion (measured
+  in both triangles' affine frames; half a step is where another lattice node
+  becomes as close), so a hole-spanning triangle costs its own edges. The
+  triangles it leaves behind, which label each other in a wrong, coarser
+  frame, are rejected because a larger component's cell refuses them across a
+  shared edge; a component that adds no feature to a larger one is dropped as
+  well. A conflict that survives the gate still drops its component. On a
+  synthetic 1,241-point perspective hex board, every placement of two
+  neighbouring holes away from the border now costs exactly those two points
+  (before, about one in ten placements labelled nothing), and 5 % random
+  holes label over 98 % of the reachable points (before, under 1 %), every
+  label checked against ground truth.
 - **The lattice fit is exact on exact data.** `estimate_projective` (and so
   every `LatticeFit` and `check_consistency`) solved an `f32` DLT with
   `h33 = 1` and no conditioning; on a 1,239-point board with image

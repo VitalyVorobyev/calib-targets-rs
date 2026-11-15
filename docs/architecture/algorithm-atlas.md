@@ -85,7 +85,7 @@ and [`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/P
 | Integer component labelling (walk) | `pg topological/walk.rs::label_components` | quads + seed → `(i,j)→index` per component | Flood-fill integer labels, rebase min→(0,0). | ✅ |
 | Square orchestrator | `pg topological/square_detector.rs::detect_square_oriented2_all` | oriented features + params → labelled components | Drives delaunay→classify→quads→filter→walk. | ✅ |
 | Hex cell classification | `pg topological/hex.rs::classify_hex_cells` | mesh + hex axis caches → valid cells | Three-direction alignment + equilateral test. | 📚 |
-| Hex axial labelling | `pg topological/hex.rs::label_components` | hex cells + seed → axial labels | Axial flood-fill with parallelogram completion (no quad merge). | 📚 |
+| Hex axial labelling | `pg topological/hex.rs::label_components` | hex cells + positions → axial labels | Axial flood-fill with parallelogram completion, gated on the image completion within half a step; components a larger one refuses across an edge are dropped (no quad merge). | 📚 |
 | Hex orchestrator | `pg topological/hex_detect.rs::detect_hex_oriented3_topological_all` | features → labelled hex components | Hex analogue of the square orchestrator + D6 merge. | 📚 |
 | Trace-mode walk | `pg topological/trace.rs::build_grid_topological_trace` | quads → labels + trace | Alternate labeller for diagnostics. | 🧪 |
 

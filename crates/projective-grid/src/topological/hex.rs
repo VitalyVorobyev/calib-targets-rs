@@ -17,9 +17,13 @@
 //! (`d = a_label + b_label − c_label`, where `(a, b)` is the shared edge and
 //! `c` / `d` are the two triangles' apex vertices). That rule is exact for any
 //! lattice whose cells tile by reflection across shared edges, so it needs no
-//! hex-specific table. Duplicate-coordinate collisions drop the coordinate
-//! (the ambiguity-drop rule), and each component is rebased so its
-//! axial bounding-box minimum is `(0, 0)`.
+//! hex-specific table. The walk crosses an edge only when the image agrees:
+//! the neighbour's apex must lie within half a lattice step of the image
+//! parallelogram completion (see `completes_parallelogram`), so a Delaunay
+//! triangle that spans a missing node costs its own edges, not the component.
+//! Duplicate-coordinate collisions drop the coordinate (the ambiguity-drop
+//! rule), and each component is rebased so its axial bounding-box minimum is
+//! `(0, 0)`.
 //!
 //! This module is the hex **lattice math** (axis caches, triangle-cell
 //! classification, the axial flood-fill walk, component labelling). The hex
@@ -121,14 +125,6 @@ pub(super) struct Triangle {
     pub(super) vertices: [usize; 3],
 }
 
-impl Triangle {
-    /// The three undirected edges as ordered `(min, max)` index pairs.
-    fn edges(&self) -> [(usize, usize); 3] {
-        let [a, b, c] = self.vertices;
-        [ordered(a, b), ordered(b, c), ordered(c, a)]
-    }
-}
-
 #[inline]
 fn ordered(a: usize, b: usize) -> (usize, usize) {
     if a < b {
@@ -208,50 +204,148 @@ pub(super) struct HexComponent {
     pub(super) labelled: HashMap<Coord, usize>,
 }
 
-/// Build undirected-edge → list of `(triangle_idx, apex_vertex)` adjacency,
-/// where the apex is the triangle vertex *not* on the edge.
-fn build_edge_index(triangles: &[Triangle]) -> HashMap<(usize, usize), Vec<(usize, usize)>> {
-    let mut idx: HashMap<(usize, usize), Vec<(usize, usize)>> = HashMap::new();
-    for (ti, t) in triangles.iter().enumerate() {
-        let [a, b, c] = t.vertices;
-        idx.entry(ordered(a, b)).or_default().push((ti, c));
-        idx.entry(ordered(b, c)).or_default().push((ti, a));
-        idx.entry(ordered(c, a)).or_default().push((ti, b));
+/// Largest parallelogram-completion residual two adjacent cells may show and
+/// still be walked across, in lattice steps.
+///
+/// Half a step is where the nearest *other* lattice node becomes as close as
+/// the predicted one (the inradius of a hex lattice's Voronoi cell), so the
+/// test asks only "is the apex the predicted node rather than a neighbour of
+/// it". A true pair of unit cells misses by a second-order perspective term
+/// plus position noise — a few hundredths of a step — while a triangle that
+/// spans a missing node misses by at least one whole step.
+const MAX_COMPLETION_RESIDUAL_STEPS: f32 = 0.5;
+
+/// Length of image vector `r` in lattice steps, measured in the affine frame
+/// of the unit cell with apex `apex` and opposite edge `(a, b)`: the cell's
+/// edges `a − apex` and `b − apex` are two unit lattice steps 60° apart, so
+/// `r = α (a − apex) + β (b − apex)` has model length `√(α² + αβ + β²)`.
+/// `None` when the cell is degenerate.
+fn length_in_cell_steps(
+    positions: &[Point2<f32>],
+    apex: usize,
+    a: usize,
+    b: usize,
+    r: nalgebra::Vector2<f32>,
+) -> Option<f32> {
+    let u = positions[a] - positions[apex];
+    let v = positions[b] - positions[apex];
+    let det = u.x * v.y - u.y * v.x;
+    if !det.is_finite() || det.abs() <= f32::EPSILON * u.norm_squared().max(v.norm_squared()) {
+        return None;
     }
-    idx
+    let alpha = (r.x * v.y - r.y * v.x) / det;
+    let beta = (u.x * r.y - u.y * r.x) / det;
+    Some((alpha * alpha + alpha * beta + beta * beta).max(0.0).sqrt())
 }
 
-/// Connected components by triangle-mesh adjacency (two triangles are
-/// neighbours iff they share an edge).
-fn connected_components(
-    triangles: &[Triangle],
-    edge_index: &HashMap<(usize, usize), Vec<(usize, usize)>>,
-) -> (Vec<u32>, u32) {
-    let mut comp_of = vec![u32::MAX; triangles.len()];
-    let mut next_comp: u32 = 0;
-    for start in 0..triangles.len() {
-        if comp_of[start] != u32::MAX {
-            continue;
-        }
-        let cid = next_comp;
-        next_comp += 1;
-        comp_of[start] = cid;
-        let mut q = VecDeque::new();
-        q.push_back(start);
-        while let Some(ti) = q.pop_front() {
-            for edge in triangles[ti].edges() {
-                if let Some(buddies) = edge_index.get(&edge) {
-                    for &(tj, _) in buddies {
-                        if tj != ti && comp_of[tj] == u32::MAX {
-                            comp_of[tj] = cid;
-                            q.push_back(tj);
-                        }
-                    }
+/// Whether the cells `(a, b, c)` and `(a, b, d)` sharing edge `(a, b)` are a
+/// genuine pair of adjacent unit cells: the walk labels `d` as `a + b − c`,
+/// so `d` must sit at the image parallelogram completion `a + b − c` to
+/// within [`MAX_COMPLETION_RESIDUAL_STEPS`], measured in *both* cells' frames
+/// (a cell that spans a hole has a distorted frame of its own, so only the
+/// two measurements together are symmetric).
+fn completes_parallelogram(
+    positions: &[Point2<f32>],
+    a: usize,
+    b: usize,
+    c: usize,
+    d: usize,
+) -> bool {
+    let r = positions[d] - (positions[a] + (positions[b] - positions[c]));
+    let within = |apex: usize, r: nalgebra::Vector2<f32>| {
+        length_in_cell_steps(positions, apex, a, b, r)
+            .is_some_and(|steps| steps < MAX_COMPLETION_RESIDUAL_STEPS)
+    };
+    within(c, r) && within(d, -r)
+}
+
+/// A walkable adjacency: neighbour triangle `tri` shares edge `(a, b)` with
+/// the current triangle, whose apex (the vertex off that edge) is `apex`;
+/// `nbr_apex` is the neighbour's apex.
+#[derive(Clone, Copy, Debug)]
+struct Link {
+    tri: usize,
+    a: usize,
+    b: usize,
+    apex: usize,
+    nbr_apex: usize,
+}
+
+/// The cell graph the walk runs on.
+///
+/// Two cells sharing an edge are *linked* when [`completes_parallelogram`]
+/// accepts the pair, and *refused* otherwise. Under perspective a Delaunay
+/// triangle that spans a missing node can still pass the angular cell test.
+/// It shares a unit edge with a true cell, but its apex is a whole lattice
+/// step away from the node parallelogram completion predicts, so walking
+/// across that edge would assign a wrong label — which the walk then detected
+/// as a conflict and, before this gate, answered by discarding the whole
+/// component. Refusing the link costs only that edge.
+struct CellGraph {
+    /// Per-triangle walkable links.
+    links: Vec<Vec<Link>>,
+    /// Edge-adjacent triangle pairs `(ti, tj)`, `ti < tj`, whose link was
+    /// refused.
+    refused: Vec<(usize, usize)>,
+}
+
+fn build_cell_graph(triangles: &[Triangle], positions: &[Point2<f32>]) -> CellGraph {
+    let mut by_edge: HashMap<(usize, usize), Vec<(usize, usize)>> = HashMap::new();
+    for (ti, t) in triangles.iter().enumerate() {
+        let [a, b, c] = t.vertices;
+        by_edge.entry(ordered(a, b)).or_default().push((ti, c));
+        by_edge.entry(ordered(b, c)).or_default().push((ti, a));
+        by_edge.entry(ordered(c, a)).or_default().push((ti, b));
+    }
+    let mut links: Vec<Vec<Link>> = vec![Vec::new(); triangles.len()];
+    let mut refused = Vec::new();
+    for (ti, t) in triangles.iter().enumerate() {
+        let [a, b, c] = t.vertices;
+        for (ea, eb, apex) in [(a, b, c), (b, c, a), (c, a, b)] {
+            for &(tj, nbr_apex) in &by_edge[&ordered(ea, eb)] {
+                if tj == ti {
+                    continue;
+                }
+                if completes_parallelogram(positions, ea, eb, apex, nbr_apex) {
+                    links[ti].push(Link {
+                        tri: tj,
+                        a: ea,
+                        b: eb,
+                        apex,
+                        nbr_apex,
+                    });
+                } else if ti < tj {
+                    refused.push((ti, tj));
                 }
             }
         }
     }
-    (comp_of, next_comp)
+    CellGraph { links, refused }
+}
+
+/// Connected components of the link graph.
+fn connected_components(links: &[Vec<Link>]) -> Vec<Vec<usize>> {
+    let mut seen = vec![false; links.len()];
+    let mut out = Vec::new();
+    for start in 0..links.len() {
+        if seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        let mut members = vec![start];
+        let mut q = VecDeque::from([start]);
+        while let Some(ti) = q.pop_front() {
+            for link in &links[ti] {
+                if !seen[link.tri] {
+                    seen[link.tri] = true;
+                    members.push(link.tri);
+                    q.push_back(link.tri);
+                }
+            }
+        }
+        out.push(members);
+    }
+    out
 }
 
 /// Seed axial labels for one triangle: three mutually-adjacent nodes
@@ -282,9 +376,72 @@ fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
     *labelled = rebased;
 }
 
+/// Flood-fill axial labels over one link-graph component by parallelogram
+/// completion. `None` when two paths disagree on a vertex's label: every link
+/// has passed the geometric completion test, so a remaining conflict means the
+/// input is genuinely ambiguous and the component is not single-valued.
+fn label_component(
+    triangles: &[Triangle],
+    links: &[Vec<Link>],
+    seed: usize,
+) -> Option<HashMap<usize, Coord>> {
+    let mut vertex_label: HashMap<usize, Coord> = seed_labels(&triangles[seed]);
+    let mut visited: HashSet<usize> = HashSet::from([seed]);
+    let mut queue = VecDeque::from([seed]);
+    while let Some(ti) = queue.pop_front() {
+        for link in &links[ti] {
+            let la = vertex_label[&link.a];
+            let lb = vertex_label[&link.b];
+            let lc = vertex_label[&link.apex];
+            // Neighbour apex = reflection of this apex across edge (a, b).
+            let derived = Coord::new(la.u + lb.u - lc.u, la.v + lb.v - lc.v);
+            match vertex_label.get(&link.nbr_apex) {
+                Some(&existing) if existing != derived => return None,
+                Some(_) => {}
+                None => {
+                    vertex_label.insert(link.nbr_apex, derived);
+                }
+            }
+            if visited.insert(link.tri) {
+                queue.push_back(link.tri);
+            }
+        }
+    }
+    Some(vertex_label)
+}
+
+/// Collapse `vertex → label` into `label → vertex`; duplicate-coordinate
+/// collisions drop the coordinate (ambiguity-drop rule).
+fn invert_labels(vertex_label: &HashMap<usize, Coord>) -> HashMap<Coord, usize> {
+    let mut labelled: HashMap<Coord, usize> = HashMap::new();
+    let mut ambiguous: HashSet<Coord> = HashSet::new();
+    for (&vtx, &lbl) in vertex_label {
+        match labelled.entry(lbl) {
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(vtx);
+            }
+            std::collections::hash_map::Entry::Occupied(e) => {
+                e.remove();
+                ambiguous.insert(lbl);
+            }
+        }
+    }
+    labelled.retain(|lbl, _| !ambiguous.contains(lbl));
+    labelled
+}
+
 /// Walk the triangle mesh and produce one labelled component per connected
-/// piece. Components with fewer than `min_corners_per_component` labelled
-/// corners are dropped.
+/// piece of the link graph ([`CellGraph`]).
+///
+/// Components are taken largest first. One is dropped when it has fewer than
+/// `min_corners_per_component` labelled corners, when a larger kept component
+/// already labels every one of its features (it adds nothing), or when a
+/// larger kept component *refuses* it: some cell of each shares an edge but
+/// fails the parallelogram test. Two true unit cells never fail that test, so
+/// a refused pair holds a cell that spans a hole; linked cells are
+/// parallelogram-consistent with each other, so such a cell's whole component
+/// is labelled in a wrong (super-lattice) frame. The larger, majority side is
+/// the one kept.
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
@@ -295,96 +452,55 @@ fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
 )]
 pub(super) fn label_components(
     triangles: &[Triangle],
+    positions: &[Point2<f32>],
     min_corners_per_component: usize,
 ) -> Vec<HexComponent> {
-    if triangles.is_empty() {
-        return Vec::new();
+    let graph = build_cell_graph(triangles, positions);
+    let components = connected_components(&graph.links);
+    let mut component_of = vec![0usize; triangles.len()];
+    for (id, members) in components.iter().enumerate() {
+        for &ti in members {
+            component_of[ti] = id;
+        }
     }
-    let edge_index = build_edge_index(triangles);
-    let (comp_of, n_comp) = connected_components(triangles, &edge_index);
-
-    let mut tris_by_comp: Vec<Vec<usize>> = vec![Vec::new(); n_comp as usize];
-    for (ti, &cid) in comp_of.iter().enumerate() {
-        tris_by_comp[cid as usize].push(ti);
+    let mut refused_by: Vec<HashSet<usize>> = vec![HashSet::new(); components.len()];
+    for &(ti, tj) in &graph.refused {
+        let (ci, cj) = (component_of[ti], component_of[tj]);
+        if ci != cj {
+            refused_by[ci].insert(cj);
+            refused_by[cj].insert(ci);
+        }
     }
 
+    let mut candidates: Vec<(usize, HashMap<Coord, usize>)> = Vec::new();
+    for (id, members) in components.iter().enumerate() {
+        let Some(vertex_label) = label_component(triangles, &graph.links, members[0]) else {
+            continue;
+        };
+        let labelled = invert_labels(&vertex_label);
+        if labelled.len() >= min_corners_per_component {
+            candidates.push((id, labelled));
+        }
+    }
+
+    // Largest first, ties by smallest feature index, for determinism.
+    let min_feature = |m: &HashMap<Coord, usize>| m.values().copied().min();
+    candidates.sort_by(|(_, a), (_, b)| {
+        b.len()
+            .cmp(&a.len())
+            .then_with(|| min_feature(a).cmp(&min_feature(b)))
+    });
+    let mut kept: HashSet<usize> = HashSet::new();
+    let mut covered: HashSet<usize> = HashSet::new();
     let mut out = Vec::new();
-    for comp_tris in tris_by_comp {
-        // BFS: assign axial labels to vertices, propagating across shared edges
-        // by parallelogram completion.
-        let mut vertex_label: HashMap<usize, Coord> = seed_labels(&triangles[comp_tris[0]]);
-        let mut visited: HashSet<usize> = HashSet::new();
-        let mut conflicts = false;
-
-        let mut queue = VecDeque::new();
-        queue.push_back(comp_tris[0]);
-        visited.insert(comp_tris[0]);
-
-        while let Some(ti) = queue.pop_front() {
-            let t = &triangles[ti];
-            let [a, b, c] = t.vertices;
-            // For each edge of this triangle, find neighbour triangles and
-            // derive their apex label.
-            for &(e_lo, e_hi, apex) in &[(a, b, c), (b, c, a), (c, a, b)] {
-                let key = ordered(e_lo, e_hi);
-                let Some(buddies) = edge_index.get(&key) else {
-                    continue;
-                };
-                let (Some(&la), Some(&lb), Some(&lc)) = (
-                    vertex_label.get(&e_lo),
-                    vertex_label.get(&e_hi),
-                    vertex_label.get(&apex),
-                ) else {
-                    // The current triangle should be fully labelled when popped;
-                    // if not, skip (defensive).
-                    continue;
-                };
-                for &(tj, nbr_apex) in buddies {
-                    if tj == ti {
-                        continue;
-                    }
-                    // Parallelogram completion: neighbour apex label is
-                    // la + lb - lc (reflection of c across edge (a, b)).
-                    let derived = Coord::new(la.u + lb.u - lc.u, la.v + lb.v - lc.v);
-                    match vertex_label.get(&nbr_apex) {
-                        Some(&existing) if existing != derived => {
-                            conflicts = true;
-                        }
-                        Some(_) => {}
-                        None => {
-                            vertex_label.insert(nbr_apex, derived);
-                        }
-                    }
-                    if visited.insert(tj) {
-                        queue.push_back(tj);
-                    }
-                }
-            }
-        }
-
-        if conflicts {
+    for (id, mut labelled) in candidates {
+        if refused_by[id].iter().any(|other| kept.contains(other))
+            || labelled.values().all(|idx| covered.contains(idx))
+        {
             continue;
         }
-
-        // Collapse vertex → label into label → vertex; duplicate-coordinate
-        // collisions drop the coordinate (ambiguity-drop rule).
-        let mut labelled: HashMap<Coord, usize> = HashMap::new();
-        let mut ambiguous: HashSet<Coord> = HashSet::new();
-        for (&vtx, &lbl) in &vertex_label {
-            match labelled.entry(lbl) {
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    e.insert(vtx);
-                }
-                std::collections::hash_map::Entry::Occupied(e) => {
-                    e.remove();
-                    ambiguous.insert(lbl);
-                }
-            }
-        }
-        labelled.retain(|lbl, _| !ambiguous.contains(lbl));
-        if labelled.len() < min_corners_per_component {
-            continue;
-        }
+        kept.insert(id);
+        covered.extend(labelled.values().copied());
         rebase_to_origin(&mut labelled);
         out.push(HexComponent { labelled });
     }
@@ -465,7 +581,7 @@ mod tests {
         let caches = build_hex_axis_caches(&feats, 0.6);
         let tri = super::super::delaunay::triangulate(&positions);
         let cells = classify_hex_cells(&positions, &caches, &tri, 15.0_f32.to_radians());
-        let comps = label_components(&cells, 4);
+        let comps = label_components(&cells, &positions, 4);
         assert_eq!(comps.len(), 1, "expected one connected hex component");
         let comp = &comps[0];
         // The labels must be a consistent affine image of the true axial coords:
