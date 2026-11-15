@@ -734,3 +734,61 @@ fn perspective_board_five_percent_random_holes() {
         );
     }
 }
+
+/// Hex labels are orientation-preserving: the model basis `(1,0) ↦ (1, 0)`,
+/// `(0,1) ↦ (½, √3/2)` has positive signed area in the (x right, y down)
+/// frame the image shares, so every labelled unit triangle
+/// `c, c + (1,0), c + (0,1)` must have positive signed area in the image too —
+/// i.e. `det(model → image) > 0`, the same handedness the square path's
+/// canonical labels have. Only the rotation within D6 (and the translation)
+/// stays free.
+#[test]
+fn hex_labels_preserve_orientation() {
+    fn signed_areas(sol: &projective_grid::GridDetection) -> Vec<f32> {
+        let by_coord: HashMap<Coord, Point2<f32>> = sol
+            .grid()
+            .entries()
+            .iter()
+            .map(|e| (e.coord, e.image_position))
+            .collect();
+        by_coord
+            .iter()
+            .filter_map(|(c, &p0)| {
+                let p1 = by_coord.get(&Coord::new(c.u + 1, c.v))?;
+                let p2 = by_coord.get(&Coord::new(c.u, c.v + 1))?;
+                let (a, b) = (p1 - p0, p2 - p0);
+                Some(a.x * b.y - a.y * b.x)
+            })
+            .collect()
+    }
+    let mut cases: Vec<(String, Vec<PointFeature>)> = Vec::new();
+    cases.push(("board".into(), board_features(&Default::default()).0));
+    for deg in [0.0_f32, 17.0, 95.0, 142.0, 233.0, 300.0] {
+        let (s, c) = deg.to_radians().sin_cos();
+        let rot = Matrix3::new(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
+        cases.push((
+            format!("rotation {deg}°"),
+            hex_patch(3, 30.0, 250.0, &rot).0,
+        ));
+    }
+    let persp = Matrix3::new(
+        1.0, 0.10, 0.0, //
+        0.03, 1.0, 0.0, //
+        0.0006, 0.0004, 1.0,
+    );
+    cases.push((
+        "perspective patch".into(),
+        hex_patch(4, 28.0, 200.0, &persp).0,
+    ));
+    for (name, feats) in &cases {
+        let sol = detect_grid(request(feats)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let areas = signed_areas(&sol);
+        assert!(!areas.is_empty(), "{name}: no labelled unit triangle");
+        assert!(
+            areas.iter().all(|&a| a > 0.0),
+            "{name}: {} of {} labelled unit triangles are mirrored",
+            areas.iter().filter(|&&a| a <= 0.0).count(),
+            areas.len()
+        );
+    }
+}

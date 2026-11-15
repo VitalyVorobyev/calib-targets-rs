@@ -7,6 +7,19 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Hex labels are orientation-preserving.** Hex `(q, r)` labels were
+  documented only up to a D6 automorphism, which includes reflections, and in
+  practice every hex labelling came out mirrored: the walk seeded its first
+  triangle in Delaunay winding order, which is the opposite of the
+  `LatticeKind::Hex` model basis in the (x right, y down) image frame. The
+  seed is now assigned by the sign of its image area, so `det(model → image)`
+  of every hex `LatticeFit` is positive — the handedness square labels
+  already have — and only a rotation within D6 plus a translation remain
+  free. A consumer that un-mirrored hex labels itself must stop doing so;
+  positions, the labelled set and the fit residuals are unchanged.
+
 ### Fixed
 
 - **A missing point no longer costs the whole hex board.** Under perspective,

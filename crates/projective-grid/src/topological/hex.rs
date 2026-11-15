@@ -349,14 +349,27 @@ fn connected_components(links: &[Vec<Link>]) -> Vec<Vec<usize>> {
 }
 
 /// Seed axial labels for one triangle: three mutually-adjacent nodes
-/// `(0,0), (1,0), (0,1)`. The exact choice is arbitrary up to a D6 +
-/// translation automorphism, which the shared back-half / merge fold out.
-fn seed_labels(t: &Triangle) -> HashMap<usize, Coord> {
-    let mut m = HashMap::new();
-    m.insert(t.vertices[0], Coord::new(0, 0));
-    m.insert(t.vertices[1], Coord::new(1, 0));
-    m.insert(t.vertices[2], Coord::new(0, 1));
-    m
+/// `(0,0), (1,0), (0,1)`, assigned so the labelling preserves orientation.
+///
+/// The model basis `(1,0) ↦ (1, 0)`, `(0,1) ↦ (½, √3/2)` has positive signed
+/// area in the (x right, y down) frame the image shares, so the vertex that
+/// takes `(1,0)` is the one that makes the image triangle's signed area
+/// positive too. Parallelogram completion and the D6 merge between such
+/// components preserve orientation, so `det(model → image) > 0` for every
+/// output; only a rotation within D6 and a translation remain free. (The
+/// Delaunay winding alone gives the opposite sign, so before this rule every
+/// hex labelling came out mirrored.)
+fn seed_labels(t: &Triangle, positions: &[Point2<f32>]) -> HashMap<usize, Coord> {
+    let [a, mut b, mut c] = t.vertices;
+    let (ab, ac) = (positions[b] - positions[a], positions[c] - positions[a]);
+    if ab.x * ac.y - ab.y * ac.x < 0.0 {
+        std::mem::swap(&mut b, &mut c);
+    }
+    HashMap::from([
+        (a, Coord::new(0, 0)),
+        (b, Coord::new(1, 0)),
+        (c, Coord::new(0, 1)),
+    ])
 }
 
 /// Rebase a labelled set so the axial bbox starts at `(0, 0)`.
@@ -382,10 +395,11 @@ fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
 /// input is genuinely ambiguous and the component is not single-valued.
 fn label_component(
     triangles: &[Triangle],
+    positions: &[Point2<f32>],
     links: &[Vec<Link>],
     seed: usize,
 ) -> Option<HashMap<usize, Coord>> {
-    let mut vertex_label: HashMap<usize, Coord> = seed_labels(&triangles[seed]);
+    let mut vertex_label: HashMap<usize, Coord> = seed_labels(&triangles[seed], positions);
     let mut visited: HashSet<usize> = HashSet::from([seed]);
     let mut queue = VecDeque::from([seed]);
     while let Some(ti) = queue.pop_front() {
@@ -474,7 +488,8 @@ pub(super) fn label_components(
 
     let mut candidates: Vec<(usize, HashMap<Coord, usize>)> = Vec::new();
     for (id, members) in components.iter().enumerate() {
-        let Some(vertex_label) = label_component(triangles, &graph.links, members[0]) else {
+        let Some(vertex_label) = label_component(triangles, positions, &graph.links, members[0])
+        else {
             continue;
         };
         let labelled = invert_labels(&vertex_label);
