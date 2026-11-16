@@ -533,3 +533,55 @@ fn gen_puzzlepole_rejects_an_unsupported_circumference() {
         .failure()
         .stderr(predicate::str::contains("closes seamlessly"));
 }
+
+#[test]
+fn gen_screen_writes_native_png_and_realized_calibration_metadata() {
+    use calib_targets::printable::{ScreenTargetMetadata, TargetSpec};
+
+    let dir = tempdir().expect("tempdir");
+    let out_stem = dir.path().join("screen/board");
+    bin()
+        .args([
+            "gen-screen",
+            "charuco",
+            "--rows",
+            "3",
+            "--cols",
+            "4",
+            "--square-size-mm",
+            "2.625",
+            "--marker-size-rel",
+            "0.75",
+            "--dictionary",
+            "DICT_4X4_50",
+            "--width-px",
+            "91",
+            "--height-px",
+            "83",
+            "--pixel-pitch-mm",
+            "0.125",
+            "--margin-px",
+            "5",
+            "--out-stem",
+            out_stem.to_str().unwrap(),
+        ])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "2.500000 mm realized (20 px, -0.125000 mm)",
+        ));
+
+    let metadata: ScreenTargetMetadata =
+        serde_json::from_slice(&fs::read(out_stem.with_extension("json")).unwrap()).unwrap();
+    assert_eq!(metadata.board_origin_px, [5, 11]);
+    assert_eq!(metadata.screen.margin_px, 5);
+    let TargetSpec::Charuco(target) = metadata.target else {
+        panic!("expected ChArUco")
+    };
+    assert_eq!(target.square_size_mm, 2.5);
+    assert_eq!(target.marker_size_rel, 0.6);
+    let png = image::open(out_stem.with_extension("png")).unwrap();
+    assert_eq!((png.width(), png.height()), (91, 83));
+    assert!(!out_stem.with_extension("svg").exists());
+    assert!(!out_stem.with_extension("dxf").exists());
+}

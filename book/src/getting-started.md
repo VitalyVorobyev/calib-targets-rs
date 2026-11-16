@@ -9,6 +9,9 @@ This tutorial walks you through the complete workflow:
 
 No prior knowledge of the library is assumed.
 
+For an e-reader or monitor, follow the [screen-target tutorial](tutorial_screen_target.md)
+to generate at native resolution and detect using the realized dimensions.
+
 ---
 
 ## Step 1: Choose your target type

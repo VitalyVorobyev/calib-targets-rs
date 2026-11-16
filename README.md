@@ -216,6 +216,9 @@ ct.write_target_bundle(doc, "my_board/charuco_a4")  # .json + .svg + .png
 Ready-made specs for all four target types: [`testdata/printable/`](testdata/printable).
 Canonical guide: [printable-target chapter][printable-chapter].
 
+For e-readers and grayscale displays, use `calib-targets gen-screen` or **Generate → Screen** in the playground. Both export a native-resolution PNG and JSON with the realized calibration geometry. [Screen-target tutorial][screen-tutorial]
+
+[screen-tutorial]: https://vitalyvorobyev.github.io/calib-targets-rs/book/tutorial_screen_target.html
 [printable-chapter]: https://vitalyvorobyev.github.io/calib-targets-rs/book/printable.html
 
 ## Detection results

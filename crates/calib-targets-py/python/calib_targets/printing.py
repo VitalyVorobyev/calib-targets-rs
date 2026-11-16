@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass, field
 from os import fspath
@@ -447,6 +448,84 @@ class GeneratedTargetBundle:
 
 
 @dataclass(slots=True)
+class ScreenTargetOptions:
+    """Native dimensions and physical pitch of a square-pixel grayscale display."""
+
+    width_px: int
+    height_px: int
+    pixel_pitch_mm: float
+    margin_px: int = 1
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "width_px": self.width_px,
+            "height_px": self.height_px,
+            "pixel_pitch_mm": self.pixel_pitch_mm,
+            "margin_px": self.margin_px,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScreenTargetOptions:
+        return cls(
+            width_px=data["width_px"],
+            height_px=data["height_px"],
+            pixel_pitch_mm=data["pixel_pitch_mm"],
+            margin_px=data.get("margin_px", 1),
+        )
+
+
+@dataclass(slots=True)
+class ScreenTargetMetadata:
+    """Exact board placement in screen pixels and realized target geometry in mm."""
+
+    screen: ScreenTargetOptions
+    board_origin_px: tuple[int, int]
+    requested_square_size_mm: float
+    square_size_px: int
+    target: TargetSpec
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "screen": self.screen.to_dict(),
+            "board_origin_px": list(self.board_origin_px),
+            "requested_square_size_mm": self.requested_square_size_mm,
+            "square_size_px": self.square_size_px,
+            "target": _target_to_dict(self.target),
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> ScreenTargetMetadata:
+        x, y = data["board_origin_px"]
+        return cls(
+            screen=ScreenTargetOptions.from_dict(data["screen"]),
+            board_origin_px=(x, y),
+            requested_square_size_mm=data["requested_square_size_mm"],
+            square_size_px=data["square_size_px"],
+            target=_target_from_dict(data["target"]),
+        )
+
+
+@dataclass(slots=True)
+class GeneratedScreenTarget:
+    """Native-resolution grayscale PNG and calibration metadata."""
+
+    png_bytes: bytes
+    metadata: ScreenTargetMetadata
+
+
+def render_screen_target(
+    target: TargetSpec, screen: ScreenTargetOptions
+) -> GeneratedScreenTarget:
+    """Fit and render a Chessboard, ChArUco, or PuzzleBoard for 1:1 display."""
+    _ensure_type("screen", screen, ScreenTargetOptions)
+    raw = _core.render_screen_target(_target_to_dict(target), screen.to_dict())
+    return GeneratedScreenTarget(
+        png_bytes=raw["png_bytes"],
+        metadata=ScreenTargetMetadata.from_dict(json.loads(raw["json_text"])),
+    )
+
+
+@dataclass(slots=True)
 class WrittenTargetBundle:
     json_path: str
     svg_path: str
@@ -645,6 +724,10 @@ __all__ = [
     "PrintableTargetDocument",
     "GeneratedTargetBundle",
     "WrittenTargetBundle",
+    "GeneratedScreenTarget",
+    "ScreenTargetMetadata",
+    "ScreenTargetOptions",
+    "render_screen_target",
     "render_target_bundle",
     "write_target_bundle",
     "chessboard_document",

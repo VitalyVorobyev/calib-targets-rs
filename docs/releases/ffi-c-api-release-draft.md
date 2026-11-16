@@ -1,4 +1,15 @@
-# calib-targets C API — native archives
+# calib-targets 0.16.2
+
+Generate pixel-aligned Chessboard, ChArUco, and PuzzleBoard targets for
+grayscale displays. Use `calib-targets gen-screen` in Rust or Python, the
+`render_screen_target` API, or **Generate → Screen** in the playground.
+
+Generate a native-resolution PNG for 1:1 display and use the realized square
+size and marker geometry from its JSON sidecar when detecting. See the
+[screen-target tutorial](https://vitalyvorobyev.github.io/calib-targets-rs/book/tutorial_screen_target.html)
+and [workspace changelog](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/CHANGELOG.md#0162).
+
+## Native C API archives
 
 Prebuilt `calib-targets-ffi` archives for Linux, macOS and Windows: the shared
 library, the generated `calib_targets_ffi.h`, the header-only C++ wrapper
@@ -11,12 +22,9 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
-## Current ABI: 6.0.1 (workspace 0.16.1)
+## Current ABI 6.0.1
 
-Workspace 0.16.1 ships ABI 6.0.1, a fix with no type or layout change: a caller
-built against 6.0.0 links and runs unchanged. The notes below say what changed
-since 5.0.0; older notes follow for consumers upgrading across several
-releases.
+Workspace 0.16.2 ships the 6.0.1 native ABI.
 
 ## ABI 6.0.1 — fix
 

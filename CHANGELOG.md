@@ -7,6 +7,21 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## 0.16.2
+
+### Added
+
+- Generate Chessboard, ChArUco, and PuzzleBoard targets for grayscale displays
+  with the Rust and Python `calib-targets gen-screen` command, the
+  `render_screen_target` API, or **Generate → Screen** in the web playground.
+- Export a native-resolution PNG with whole-pixel checker squares and centered
+  ChArUco marker cells. PuzzleBoard keeps the requested dot ratio and samples
+  curved edges in grayscale.
+- Record the closest fitting physical square size, board placement, and
+  realized target geometry in the calibration JSON. Follow the
+  [screen-target tutorial](https://vitalyvorobyev.github.io/calib-targets-rs/book/tutorial_screen_target.html)
+  to display the PNG at 1:1 and detect with the saved geometry.
+
 ## 0.16.1
 
 A ChArUco fix: a frame could be labelled with the whole board shifted by one or

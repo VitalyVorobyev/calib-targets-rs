@@ -28,6 +28,11 @@ export const INITIAL_STATE: AppState = {
   ellipseScale: 50,
   selectedId: null,
   gen: {
+    medium: "print",
+    screenWidth: null,
+    screenHeight: null,
+    screenPitchMm: null,
+    screenMargin: 1,
     kind: "chessboard",
     ...GENERATE_DEFAULTS.chessboard,
     dictionary: "DICT_4X4_50",
@@ -119,6 +124,13 @@ export function reducer(state: AppState, action: Action): AppState {
       return { ...state, selectedId: action.id };
     case "setGenerate":
       return { ...state, gen: { ...state.gen, ...action.patch } };
+    case "setGenerateMedium": {
+      const { medium } = action;
+      const { kind } = state.gen;
+      const fallback = medium === "screen" && (kind === "marker_board" || kind === "puzzlepole");
+      const geometry = fallback ? { kind: "chessboard" as const, ...GENERATE_DEFAULTS.chessboard } : {};
+      return { ...state, gen: { ...state.gen, ...geometry, medium } };
+    }
     case "setKind": {
       const sizes = action.kind === "puzzlepole" ? {} : GENERATE_DEFAULTS[action.kind];
       return { ...state, gen: { ...state.gen, kind: action.kind, ...sizes } };

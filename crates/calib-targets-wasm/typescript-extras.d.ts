@@ -13,6 +13,36 @@
 // Printable-target generation
 // ---------------------------------------------------------------------------
 
+/** Display geometry for a native-resolution grayscale calibration PNG. */
+export interface ScreenTargetOptions {
+  width_px: number;
+  height_px: number;
+  pixel_pitch_mm: number;
+  /** Minimum white margin in pixels, default 1. */
+  margin_px?: number;
+}
+
+export type ScreenTargetSpec = Extract<
+  PrintableTargetSpec,
+  { kind: "chessboard" | "charuco" | "puzzle_board" }
+>;
+
+/** The saved JSON sidecar for a native-resolution screen PNG. */
+export interface ScreenTargetMetadata {
+  screen: ScreenTargetOptions;
+  board_origin_px: [number, number];
+  requested_square_size_mm: number;
+  square_size_px: number;
+  /** Realized target geometry. Use its square size for calibration. */
+  target: ScreenTargetSpec;
+}
+
+/** Output of `render_screen_target`. */
+export interface ScreenTargetBundle {
+  png_bytes: Uint8Array<ArrayBuffer>;
+  json_text: string;
+}
+
 /**
  * A printable-target document — the input to `render_target_bundle_json`,
  * mirroring Rust `calib_targets_print::PrintableTargetDocument`.

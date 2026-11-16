@@ -31,6 +31,30 @@ pub enum PrintableTargetError {
     /// The requested PNG render resolution is not strictly positive.
     #[error("png_dpi must be > 0")]
     InvalidPngDpi,
+    /// A screen dimension is zero or its raster would exceed the supported size.
+    #[error("screen dimensions must be positive and contain at most 33554432 pixels")]
+    InvalidScreenResolution,
+    /// The screen's pixel pitch or the resulting physical extent is invalid.
+    #[error("pixel_pitch_mm must be positive and produce a finite screen extent")]
+    InvalidScreenPixelPitch,
+    /// The requested margin leaves no drawable area.
+    #[error("screen area is empty after pixel margins")]
+    EmptyScreenArea,
+    /// The target family does not support this rendering mode.
+    #[error("screen mode supports Chessboard, ChArUco, and PuzzleBoard")]
+    UnsupportedScreenTarget,
+    /// Even a one-pixel square pitch would exceed the drawable screen area.
+    #[error("board square counts exceed the available screen pixels after margins")]
+    ScreenBoardDoesNotFit,
+    /// The available screen area cannot fit a centered checker inset.
+    #[error("checker inset needs at least three pixels per square for a one-pixel border")]
+    ScreenInsetDoesNotFit,
+    /// Equal marker cells and the required surrounding white pixels do not fit.
+    #[error("screen cannot fit centered whole-pixel marker cells with a one-pixel white border")]
+    ScreenMarkerDoesNotFit,
+    /// Neither dot size nor its clearance can be achieved at any fitting pitch.
+    #[error("PuzzleBoard dots need at least two pixels of diameter, one pixel of corner clearance, and no overlap")]
+    ScreenDotDoesNotFit,
     /// A chessboard spec requests fewer than 2 inner rows or columns.
     #[error("inner_rows and inner_cols must be >= 2")]
     InvalidChessboardSize,

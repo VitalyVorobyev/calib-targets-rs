@@ -8,6 +8,7 @@ mod args;
 mod dictionaries;
 mod error;
 mod gen;
+mod gen_screen;
 mod generate;
 mod init;
 mod validate;
@@ -55,6 +56,11 @@ pub(crate) enum Command {
         #[command(subcommand)]
         target: gen::GenCommand,
     },
+    /// Generate a native-resolution grayscale PNG and calibration JSON for a screen.
+    GenScreen {
+        #[command(subcommand)]
+        target: gen_screen::GenScreenCommand,
+    },
 }
 
 /// Parse CLI arguments from `std::env::args_os()` and dispatch to the chosen subcommand.
@@ -69,5 +75,6 @@ fn run_from(cli: Cli) -> Result<(), CliError> {
         Command::ListDictionaries => dictionaries::run(),
         Command::Init { target } => init::run(target),
         Command::Gen { target } => gen::run(target),
+        Command::GenScreen { target } => gen_screen::run(target),
     }
 }

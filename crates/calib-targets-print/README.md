@@ -9,7 +9,12 @@ marker board) plus a page size; the renderer emits a matching `.json` +
 
 [calib-targets]: https://docs.rs/calib-targets
 
-Canonical user guide: [printable-targets book chapter][book-chapter].
+The [book chapter][book-chapter] documents the print and screen workflows.
+Use `render_screen_target` with native display dimensions and physical pixel
+pitch to export a pixel-aligned grayscale PNG and calibration metadata.
+[Screen-generation reference][screen-reference]
+
+[screen-reference]: https://vitalyvorobyev.github.io/calib-targets-rs/book/printable.html#targets-for-grayscale-screens
 
 ## Install
 

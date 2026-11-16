@@ -88,7 +88,7 @@ pub(crate) fn validate_puzzleboard_spec(
     if spec.rows < 4 || spec.cols < 4 || spec.rows > MASTER_ROWS || spec.cols > MASTER_COLS {
         return Err(PrintableTargetError::InvalidPuzzleBoardSize);
     }
-    if spec.origin_row + spec.rows > MASTER_ROWS || spec.origin_col + spec.cols > MASTER_COLS {
+    if spec.origin_row > MASTER_ROWS - spec.rows || spec.origin_col > MASTER_COLS - spec.cols {
         return Err(PrintableTargetError::InvalidPuzzleBoardOrigin);
     }
     validate_square_size(spec.square_size_mm)?;

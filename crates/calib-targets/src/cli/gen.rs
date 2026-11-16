@@ -34,6 +34,16 @@ pub struct ChessboardGenArgs {
     /// `stem.png`, and `stem.dxf` (chrome-on-glass photolith handoff).
     #[arg(long)]
     pub out_stem: PathBuf,
+    #[command(flatten)]
+    pub geometry: ChessboardGeometryArgs,
+    #[command(flatten)]
+    pub page: PageArgs,
+    #[command(flatten)]
+    pub render: RenderArgs,
+}
+
+#[derive(Args, Debug)]
+pub struct ChessboardGeometryArgs {
     #[arg(long)]
     pub inner_rows: u32,
     #[arg(long)]
@@ -45,6 +55,14 @@ pub struct ChessboardGenArgs {
     /// inset.
     #[arg(long)]
     pub inner_square_rel: Option<f64>,
+}
+
+#[derive(Args, Debug)]
+pub struct CharucoGenArgs {
+    #[arg(long)]
+    pub out_stem: PathBuf,
+    #[command(flatten)]
+    pub geometry: CharucoGeometryArgs,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -52,9 +70,7 @@ pub struct ChessboardGenArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct CharucoGenArgs {
-    #[arg(long)]
-    pub out_stem: PathBuf,
+pub struct CharucoGeometryArgs {
     #[arg(long)]
     pub rows: u32,
     #[arg(long)]
@@ -74,6 +90,14 @@ pub struct CharucoGenArgs {
     /// the square side, in `[0, 1)`. Omitted or `0` means no inset.
     #[arg(long)]
     pub inner_square_rel: Option<f64>,
+}
+
+#[derive(Args, Debug)]
+pub struct PuzzleboardGenArgs {
+    #[arg(long)]
+    pub out_stem: PathBuf,
+    #[command(flatten)]
+    pub geometry: PuzzleboardGeometryArgs,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -81,9 +105,7 @@ pub struct CharucoGenArgs {
 }
 
 #[derive(Args, Debug)]
-pub struct PuzzleboardGenArgs {
-    #[arg(long)]
-    pub out_stem: PathBuf,
+pub struct PuzzleboardGeometryArgs {
     #[arg(long)]
     pub rows: u32,
     #[arg(long)]
@@ -96,10 +118,6 @@ pub struct PuzzleboardGenArgs {
     pub origin_col: u32,
     #[arg(long)]
     pub dot_diameter_rel: Option<f64>,
-    #[command(flatten)]
-    pub page: PageArgs,
-    #[command(flatten)]
-    pub render: RenderArgs,
 }
 
 #[derive(Args, Debug)]
@@ -160,18 +178,32 @@ pub fn run(cmd: GenCommand) -> Result<(), CliError> {
 }
 
 fn run_chessboard(args: ChessboardGenArgs) -> Result<(), CliError> {
+    let mut doc = chessboard_from_args(args.geometry);
+    doc.page = build_page_spec(&args.page)?;
+    doc.render = build_render_options(&args.render);
+    emit_bundle(&doc, args.out_stem)
+}
+
+pub(super) fn chessboard_from_args(args: ChessboardGeometryArgs) -> PrintableTargetDocument {
     let mut doc = chessboard_document(args.inner_rows, args.inner_cols, args.square_size_mm);
     if let Some(rel) = args.inner_square_rel {
         if let calib_targets_print::TargetSpec::Chessboard(spec) = &mut doc.target {
             spec.inner_square_rel = Some(rel);
         }
     }
+    doc
+}
+
+fn run_charuco(args: CharucoGenArgs) -> Result<(), CliError> {
+    let mut doc = charuco_from_args(args.geometry)?;
     doc.page = build_page_spec(&args.page)?;
     doc.render = build_render_options(&args.render);
     emit_bundle(&doc, args.out_stem)
 }
 
-fn run_charuco(args: CharucoGenArgs) -> Result<(), CliError> {
+pub(super) fn charuco_from_args(
+    args: CharucoGeometryArgs,
+) -> Result<PrintableTargetDocument, CliError> {
     let dictionary = builtin_dictionary(&args.dictionary)
         .ok_or_else(|| CliError::UnknownDictionary(args.dictionary.clone()))?;
     let mut doc = charuco_document(
@@ -190,12 +222,17 @@ fn run_charuco(args: CharucoGenArgs) -> Result<(), CliError> {
             spec.inner_square_rel = Some(rel);
         }
     }
+    Ok(doc)
+}
+
+fn run_puzzleboard(args: PuzzleboardGenArgs) -> Result<(), CliError> {
+    let mut doc = puzzleboard_from_args(args.geometry);
     doc.page = build_page_spec(&args.page)?;
     doc.render = build_render_options(&args.render);
     emit_bundle(&doc, args.out_stem)
 }
 
-fn run_puzzleboard(args: PuzzleboardGenArgs) -> Result<(), CliError> {
+pub(super) fn puzzleboard_from_args(args: PuzzleboardGeometryArgs) -> PrintableTargetDocument {
     let mut doc = puzzleboard_document(args.rows, args.cols, args.square_size_mm);
     if let calib_targets_print::TargetSpec::PuzzleBoard(spec) = &mut doc.target {
         spec.origin_row = args.origin_row;
@@ -204,9 +241,7 @@ fn run_puzzleboard(args: PuzzleboardGenArgs) -> Result<(), CliError> {
             spec.dot_diameter_rel = dot;
         }
     }
-    doc.page = build_page_spec(&args.page)?;
-    doc.render = build_render_options(&args.render);
-    emit_bundle(&doc, args.out_stem)
+    doc
 }
 
 fn run_puzzlepole(args: PuzzlepoleGenArgs) -> Result<(), CliError> {

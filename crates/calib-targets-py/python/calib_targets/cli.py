@@ -4,6 +4,7 @@ Mirrors the subcommand taxonomy of the Rust CLI:
 
     calib-targets init {chessboard,charuco,puzzleboard,puzzlepole,marker-board} ...
     calib-targets gen  {chessboard,charuco,puzzleboard,puzzlepole,marker-board} ...
+    calib-targets gen-screen {chessboard,charuco,puzzleboard} ...
     calib-targets generate --spec ... --out-stem ...
     calib-targets validate --spec ...
     calib-targets list-dictionaries
@@ -28,11 +29,13 @@ from .printing import (
     PageSpec,
     PrintableTargetDocument,
     RenderOptions,
+    ScreenTargetOptions,
     charuco_document,
     chessboard_document,
     marker_board_document,
     puzzleboard_document,
     puzzlepole_document,
+    render_screen_target,
     write_target_bundle,
 )
 from .config import MarkerCircleSpec
@@ -150,50 +153,25 @@ def _cmd_list_dictionaries(_: argparse.Namespace) -> int:
 
 
 def _cmd_init_chessboard(args: argparse.Namespace) -> int:
-    doc = chessboard_document(
-        args.inner_rows,
-        args.inner_cols,
-        args.square_size_mm,
-        inner_square_rel=args.inner_square_rel,
-        page=_build_page(args),
-        render=_build_render(args),
-    )
+    doc = _chessboard_from_args(args)
+    doc.page = _build_page(args)
+    doc.render = _build_render(args)
     _write_doc(doc, Path(args.out))
     return 0
 
 
 def _cmd_init_charuco(args: argparse.Namespace) -> int:
-    if args.dictionary not in DICTIONARY_NAMES:
-        raise SystemExit(
-            f"unknown dictionary {args.dictionary!r}; run `calib-targets list-dictionaries`"
-        )
-    doc = charuco_document(
-        args.rows,
-        args.cols,
-        args.square_size_mm,
-        args.marker_size_rel,
-        args.dictionary,
-        marker_layout=MarkerLayout(args.marker_layout),
-        border_bits=args.border_bits,
-        inner_square_rel=args.inner_square_rel,
-        page=_build_page(args),
-        render=_build_render(args),
-    )
+    doc = _charuco_from_args(args)
+    doc.page = _build_page(args)
+    doc.render = _build_render(args)
     _write_doc(doc, Path(args.out))
     return 0
 
 
 def _cmd_init_puzzleboard(args: argparse.Namespace) -> int:
-    doc = puzzleboard_document(
-        args.rows,
-        args.cols,
-        args.square_size_mm,
-        origin_row=args.origin_row,
-        origin_col=args.origin_col,
-        dot_diameter_rel=args.dot_diameter_rel,
-        page=_build_page(args),
-        render=_build_render(args),
-    )
+    doc = _puzzleboard_from_args(args)
+    doc.page = _build_page(args)
+    doc.render = _build_render(args)
     _write_doc(doc, Path(args.out))
     return 0
 
@@ -220,25 +198,29 @@ def _cmd_init_marker_board(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_gen_chessboard(args: argparse.Namespace) -> int:
-    doc = chessboard_document(
+def _chessboard_from_args(args: argparse.Namespace) -> PrintableTargetDocument:
+    return chessboard_document(
         args.inner_rows,
         args.inner_cols,
         args.square_size_mm,
         inner_square_rel=args.inner_square_rel,
-        page=_build_page(args),
-        render=_build_render(args),
     )
+
+
+def _cmd_gen_chessboard(args: argparse.Namespace) -> int:
+    doc = _chessboard_from_args(args)
+    doc.page = _build_page(args)
+    doc.render = _build_render(args)
     _emit_bundle(doc, Path(args.out_stem))
     return 0
 
 
-def _cmd_gen_charuco(args: argparse.Namespace) -> int:
+def _charuco_from_args(args: argparse.Namespace) -> PrintableTargetDocument:
     if args.dictionary not in DICTIONARY_NAMES:
         raise SystemExit(
             f"unknown dictionary {args.dictionary!r}; run `calib-targets list-dictionaries`"
         )
-    doc = charuco_document(
+    return charuco_document(
         args.rows,
         args.cols,
         args.square_size_mm,
@@ -247,25 +229,63 @@ def _cmd_gen_charuco(args: argparse.Namespace) -> int:
         marker_layout=MarkerLayout(args.marker_layout),
         border_bits=args.border_bits,
         inner_square_rel=args.inner_square_rel,
-        page=_build_page(args),
-        render=_build_render(args),
     )
+
+
+def _cmd_gen_charuco(args: argparse.Namespace) -> int:
+    doc = _charuco_from_args(args)
+    doc.page = _build_page(args)
+    doc.render = _build_render(args)
     _emit_bundle(doc, Path(args.out_stem))
     return 0
 
 
-def _cmd_gen_puzzleboard(args: argparse.Namespace) -> int:
-    doc = puzzleboard_document(
+def _puzzleboard_from_args(args: argparse.Namespace) -> PrintableTargetDocument:
+    return puzzleboard_document(
         args.rows,
         args.cols,
         args.square_size_mm,
         origin_row=args.origin_row,
         origin_col=args.origin_col,
         dot_diameter_rel=args.dot_diameter_rel,
-        page=_build_page(args),
-        render=_build_render(args),
     )
+
+
+def _cmd_gen_puzzleboard(args: argparse.Namespace) -> int:
+    doc = _puzzleboard_from_args(args)
+    doc.page = _build_page(args)
+    doc.render = _build_render(args)
     _emit_bundle(doc, Path(args.out_stem))
+    return 0
+
+
+def _cmd_gen_screen(args: argparse.Namespace) -> int:
+    target = args.build_target(args).target
+    screen = ScreenTargetOptions(
+        width_px=args.width_px,
+        height_px=args.height_px,
+        pixel_pitch_mm=args.pixel_pitch_mm,
+        margin_px=args.margin_px,
+    )
+    try:
+        rendered = render_screen_target(target, screen)
+    except ValueError as err:
+        raise SystemExit(str(err)) from err
+    stem = Path(args.out_stem)
+    png_path = stem.with_suffix(".png")
+    json_path = stem.with_suffix(".json")
+    png_path.parent.mkdir(parents=True, exist_ok=True)
+    png_path.write_bytes(rendered.png_bytes)
+    metadata = rendered.metadata
+    json_path.write_text(json.dumps(metadata.to_dict(), indent=2), encoding="utf-8")
+    requested = metadata.requested_square_size_mm
+    actual = metadata.target.square_size_mm
+    print(png_path)
+    print(json_path)
+    print(
+        f"Square size {requested:.6f} mm requested, {actual:.6f} mm realized "
+        f"({metadata.square_size_px} px, {actual - requested:+.6f} mm)"
+    )
     return 0
 
 
@@ -319,16 +339,20 @@ def _target_kind_label(doc: PrintableTargetDocument) -> str:
     return "puzzleboard" if kind == "puzzle_board" else kind
 
 
-def _add_chessboard_shared(parser: argparse.ArgumentParser) -> None:
+def _add_chessboard_geometry(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--inner-rows", type=int, required=True)
     parser.add_argument("--inner-cols", type=int, required=True)
     parser.add_argument("--square-size-mm", type=float, required=True)
     parser.add_argument("--inner-square-rel", type=float)
+
+
+def _add_chessboard_shared(parser: argparse.ArgumentParser) -> None:
+    _add_chessboard_geometry(parser)
     _add_page_args(parser)
     _add_render_args(parser)
 
 
-def _add_charuco_shared(parser: argparse.ArgumentParser) -> None:
+def _add_charuco_geometry(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rows", type=int, required=True)
     parser.add_argument("--cols", type=int, required=True)
     parser.add_argument("--square-size-mm", type=float, required=True)
@@ -341,17 +365,25 @@ def _add_charuco_shared(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument("--border-bits", type=int, default=1)
     parser.add_argument("--inner-square-rel", type=float)
+
+
+def _add_charuco_shared(parser: argparse.ArgumentParser) -> None:
+    _add_charuco_geometry(parser)
     _add_page_args(parser)
     _add_render_args(parser)
 
 
-def _add_puzzleboard_shared(parser: argparse.ArgumentParser) -> None:
+def _add_puzzleboard_geometry(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--rows", type=int, required=True)
     parser.add_argument("--cols", type=int, required=True)
     parser.add_argument("--square-size-mm", type=float, required=True)
     parser.add_argument("--origin-row", type=int, default=0)
     parser.add_argument("--origin-col", type=int, default=0)
     parser.add_argument("--dot-diameter-rel", type=float)
+
+
+def _add_puzzleboard_shared(parser: argparse.ArgumentParser) -> None:
+    _add_puzzleboard_geometry(parser)
     _add_page_args(parser)
     _add_render_args(parser)
 
@@ -468,6 +500,25 @@ def _build_parser() -> argparse.ArgumentParser:
     gen_mb.add_argument("--out-stem", required=True)
     _add_marker_board_shared(gen_mb)
     gen_mb.set_defaults(func=_cmd_gen_marker_board)
+
+    screen = sub.add_parser(
+        "gen-screen",
+        help="Generate a native-resolution grayscale PNG and calibration JSON for a screen",
+    )
+    screen_sub = screen.add_subparsers(dest="target", required=True)
+    for kind, add_geometry, build_target in (
+        ("chessboard", _add_chessboard_geometry, _chessboard_from_args),
+        ("charuco", _add_charuco_geometry, _charuco_from_args),
+        ("puzzleboard", _add_puzzleboard_geometry, _puzzleboard_from_args),
+    ):
+        family = screen_sub.add_parser(kind)
+        add_geometry(family)
+        family.add_argument("--out-stem", required=True)
+        family.add_argument("--width-px", type=int, required=True)
+        family.add_argument("--height-px", type=int, required=True)
+        family.add_argument("--pixel-pitch-mm", type=float, required=True)
+        family.add_argument("--margin-px", type=int, default=1)
+        family.set_defaults(func=_cmd_gen_screen, build_target=build_target)
 
     return parser
 

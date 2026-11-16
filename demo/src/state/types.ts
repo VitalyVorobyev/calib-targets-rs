@@ -22,6 +22,11 @@ export type PrintableKind = "chessboard" | "charuco" | "marker_board" | "puzzleb
  * conventions); the form labels them by kind. A pole uses `circumference` and `axial` instead.
  */
 export interface GenerateForm {
+  medium: "print" | "screen";
+  screenWidth: number | null;
+  screenHeight: number | null;
+  screenPitchMm: number | null;
+  screenMargin: number;
   kind: PrintableKind;
   rows: number;
   cols: number;
@@ -89,6 +94,7 @@ export type Action =
   | { type: "setEllipseScale"; scale: number }
   | { type: "select"; id: string | null }
   | { type: "setGenerate"; patch: Partial<GenerateForm> }
+  | { type: "setGenerateMedium"; medium: GenerateForm["medium"] }
   | { type: "setKind"; kind: PrintableKind }
   | { type: "generated"; generated: NonNullable<AppState["generated"]> }
   | { type: "genStatus"; status: AppState["genStatus"] };

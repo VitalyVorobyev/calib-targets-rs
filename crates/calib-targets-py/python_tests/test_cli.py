@@ -259,3 +259,64 @@ def test_cli_puzzlepole_rejects_an_unsupported_circumference(tmp_path: Path) -> 
             "--axial-squares", "6",
             "--square-size-mm", "10",
         ])
+
+
+@pytest.mark.parametrize(
+    ("kind", "flags", "target_kind", "pitch_px"),
+    [
+        ("chessboard", ["--inner-rows", "2", "--inner-cols", "3"], "chessboard", 21),
+        (
+            "charuco",
+            ["--rows", "3", "--cols", "4", "--marker-size-rel", "0.75",
+             "--dictionary", "DICT_4X4_50"],
+            "charuco",
+            20,
+        ),
+        (
+            "puzzleboard",
+            ["--rows", "4", "--cols", "4", "--origin-row", "9"],
+            "puzzle_board",
+            20,
+        ),
+    ],
+)
+def test_gen_screen_native_png_and_metadata(
+    tmp_path: Path, kind: str, flags: list[str], target_kind: str, pitch_px: int
+) -> None:
+    stem = tmp_path / "output" / "screen"
+    assert cli_main(
+        [
+            "gen-screen", kind, *flags,
+            "--square-size-mm", "2.625",
+            "--width-px", "91",
+            "--height-px", "83",
+            "--pixel-pitch-mm", "0.125",
+            "--out-stem", str(stem),
+        ]
+    ) == 0
+    raw = json.loads(stem.with_suffix(".json").read_text())
+    metadata = ct.ScreenTargetMetadata.from_dict(raw)
+    assert metadata.to_dict() == raw
+    assert metadata.screen.margin_px == 1
+    assert metadata.square_size_px == pitch_px
+    assert metadata.target.square_size_mm == pitch_px * 0.125
+    assert raw["target"]["kind"] == target_kind
+    if kind == "puzzleboard":
+        assert raw["target"]["origin_row"] == 9
+    png = stem.with_suffix(".png").read_bytes()
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    assert int.from_bytes(png[16:20], "big") == 91
+    assert int.from_bytes(png[20:24], "big") == 83
+    assert png[24:26] == b"\x08\x00"  # 8-bit grayscale.
+    assert not stem.with_suffix(".svg").exists()
+    assert not stem.with_suffix(".dxf").exists()
+
+
+def test_screen_python_api_uses_realized_pitch_and_reports_impossible_fit() -> None:
+    target = ct.ChessboardTargetSpec(inner_rows=2, inner_cols=3, square_size_mm=0.56)
+    rendered = ct.render_screen_target(target, ct.ScreenTargetOptions(23, 20, 0.125))
+    assert rendered.metadata.target.square_size_mm == 0.5
+    assert rendered.metadata.board_origin_px == (3, 4)
+    assert target.square_size_mm == 0.56
+    with pytest.raises(ValueError, match="exceed the available screen pixels"):
+        ct.render_screen_target(target, ct.ScreenTargetOptions(4, 20, 0.125))

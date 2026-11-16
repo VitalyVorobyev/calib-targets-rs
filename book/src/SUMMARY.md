@@ -4,6 +4,7 @@
 - [Interactive Playground](playground.md)
 - [Tutorials](tutorials.md)
   - [Getting Started](getting-started.md)
+  - [Generate and detect a screen target](tutorial_screen_target.md)
   - [Build and detect a PuzzlePole](tutorial_puzzlepole.md)
 - [How-to](howto.md)
   - [Choose a target](howto_choose_target.md)

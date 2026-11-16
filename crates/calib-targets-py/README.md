@@ -240,6 +240,11 @@ calib-targets init chessboard --out spec.json \
 calib-targets generate --spec spec.json --out-stem my_board
 ```
 
+For grayscale displays, use `calib-targets gen-screen` or call
+`render_screen_target(target, ScreenTargetOptions(width_px, height_px, pixel_pitch_mm))`.
+Use the returned metadata to set the physical square size and marker ratio
+for detection. [Screen-target tutorial](https://vitalyvorobyev.github.io/calib-targets-rs/book/tutorial_screen_target.html)
+
 See [`testdata/printable/*.json`](../../testdata/printable) for ready-made
 spec files; every file is `PrintableTargetDocument.from_dict(
 json.load(open(path)))`-compatible.

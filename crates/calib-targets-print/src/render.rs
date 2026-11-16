@@ -179,7 +179,9 @@ pub fn render_target_bundle(
         height_mm: layout.page_height_mm,
         fill: Fill::White,
     });
-    build_board_scene(&mut scene, &document.target, layout.board_origin_mm)?;
+    emit_board_primitives(&document.target, layout.board_origin_mm, &mut |p| {
+        scene.primitives.push(p);
+    })?;
     // DXF must never carry debug annotations — render it from the
     // pre-debug scene snapshot so a hardware handoff file is always
     // pattern-only, even when the SVG/PNG render is annotated.
@@ -205,39 +207,38 @@ pub fn render_target_bundle(
 /// [`ResolvedTargetLayout::board_origin_mm`]) and without debug annotations.
 /// Only [`Fill::Black`] and [`Fill::White`] occur. Paint them in order.
 pub fn board_primitives(target: &TargetSpec) -> Result<Vec<Primitive>, PrintableTargetError> {
-    let (width_mm, height_mm) = target.board_size_mm()?;
-    let mut scene = Scene::new(width_mm, height_mm);
-    build_board_scene(&mut scene, target, [0.0, 0.0])?;
-    Ok(scene.primitives)
+    let mut primitives = Vec::new();
+    emit_board_primitives(target, [0.0, 0.0], &mut |p| primitives.push(p))?;
+    Ok(primitives)
 }
 
-fn build_board_scene(
-    scene: &mut Scene,
+pub(crate) fn emit_board_primitives(
     target: &TargetSpec,
     origin: [f64; 2],
+    emit: &mut impl FnMut(Primitive),
 ) -> Result<(), PrintableTargetError> {
     match target {
-        TargetSpec::Chessboard(spec) => build_chessboard(scene, spec, origin),
-        TargetSpec::Charuco(spec) => build_charuco(scene, spec, origin),
-        TargetSpec::MarkerBoard(spec) => build_marker_board(scene, spec, origin),
-        TargetSpec::PuzzleBoard(spec) => build_puzzleboard(scene, spec, origin),
+        TargetSpec::Chessboard(spec) => build_chessboard(emit, spec, origin),
+        TargetSpec::Charuco(spec) => build_charuco(emit, spec, origin),
+        TargetSpec::MarkerBoard(spec) => build_marker_board(emit, spec, origin),
+        TargetSpec::PuzzleBoard(spec) => build_puzzleboard(emit, spec, origin),
         // A wrap strip is a sub-rectangle of the master -- the periodicity is
         // what makes its ends meet, not any change to the pattern -- so it
         // renders through the PuzzleBoard path rather than a parallel one.
         TargetSpec::PuzzlePole(spec) => {
             validate_puzzlepole_spec(spec)?;
-            build_puzzleboard(scene, &spec.as_board(), origin)
+            build_puzzleboard(emit, &spec.as_board(), origin)
         }
     }
 }
 
 fn build_chessboard(
-    scene: &mut Scene,
+    emit: &mut impl FnMut(Primitive),
     spec: &crate::model::ChessboardTargetSpec,
     origin: [f64; 2],
 ) -> Result<(), PrintableTargetError> {
     validate_chessboard_spec(spec)?;
-    push_checker_squares(scene, spec, origin, &[]);
+    push_checker_squares(emit, spec, origin, &[]);
     Ok(())
 }
 
@@ -250,7 +251,7 @@ fn build_chessboard(
 /// merges the two — and at `inner_square_rel >= circle_diameter_rel` swallows
 /// the disk whole.
 fn push_checker_squares(
-    scene: &mut Scene,
+    emit: &mut impl FnMut(Primitive),
     spec: &crate::model::ChessboardTargetSpec,
     origin: [f64; 2],
     inset_exempt: &[[u32; 2]],
@@ -270,7 +271,7 @@ fn push_checker_squares(
                 spec.inner_square_rel
             };
             push_square(
-                scene,
+                emit,
                 origin[0] + sx as f64 * spec.square_size_mm,
                 origin[1] + sy as f64 * spec.square_size_mm,
                 spec.square_size_mm,
@@ -287,7 +288,7 @@ fn push_checker_squares(
 /// plain checker squares of [`build_charuco`] — never applied to ChArUco
 /// marker bit cells, nor to a marker board's circle cells.
 fn push_square(
-    scene: &mut Scene,
+    emit: &mut impl FnMut(Primitive),
     x_mm: f64,
     y_mm: f64,
     square_size_mm: f64,
@@ -298,7 +299,7 @@ fn push_square(
         Some(rel) if rel > 0.0 && matches!(fill, Fill::Black) => {
             let inner_sq_mm = square_size_mm * rel;
             let offset_mm = 0.5 * (square_size_mm - inner_sq_mm);
-            scene.primitives.push(Primitive::RectWithHole {
+            emit(Primitive::RectWithHole {
                 x_mm,
                 y_mm,
                 width_mm: square_size_mm,
@@ -311,7 +312,7 @@ fn push_square(
             });
         }
         _ => {
-            scene.primitives.push(Primitive::Rect {
+            emit(Primitive::Rect {
                 x_mm,
                 y_mm,
                 width_mm: square_size_mm,
@@ -323,7 +324,7 @@ fn push_square(
 }
 
 fn build_charuco(
-    scene: &mut Scene,
+    emit: &mut impl FnMut(Primitive),
     spec: &CharucoTargetSpec,
     origin: [f64; 2],
 ) -> Result<(), PrintableTargetError> {
@@ -338,7 +339,7 @@ fn build_charuco(
             // Plain checker squares only — the inset never applies to an
             // ArUco marker's bit cells, which are pushed separately below.
             push_square(
-                scene,
+                emit,
                 origin[0] + sx as f64 * spec.square_size_mm,
                 origin[1] + sy as f64 * spec.square_size_mm,
                 spec.square_size_mm,
@@ -376,7 +377,7 @@ fn build_charuco(
                     let idx = by * bits + bx;
                     ((code >> idx) & 1) == 1
                 };
-                scene.primitives.push(Primitive::Rect {
+                emit(Primitive::Rect {
                     x_mm: origin_x + cx as f64 * bit_cell_mm,
                     y_mm: origin_y + cy as f64 * bit_cell_mm,
                     width_mm: bit_cell_mm,
@@ -391,7 +392,7 @@ fn build_charuco(
 }
 
 fn build_puzzleboard(
-    scene: &mut Scene,
+    emit: &mut impl FnMut(Primitive),
     spec: &PuzzleBoardTargetSpec,
     origin: [f64; 2],
 ) -> Result<(), PrintableTargetError> {
@@ -410,7 +411,7 @@ fn build_puzzleboard(
             } else {
                 Fill::White
             };
-            scene.primitives.push(Primitive::Rect {
+            emit(Primitive::Rect {
                 x_mm: origin_x + sx as f64 * spec.square_size_mm,
                 y_mm: origin_y + sy as f64 * spec.square_size_mm,
                 width_mm: spec.square_size_mm,
@@ -434,7 +435,7 @@ fn build_puzzleboard(
             let fill = if bit == 1 { Fill::White } else { Fill::Black };
             let cx = origin_x + (c as f64 + 0.5) * spec.square_size_mm;
             let cy = origin_y + (r as f64 + 1.0) * spec.square_size_mm;
-            scene.primitives.push(Primitive::Circle {
+            emit(Primitive::Circle {
                 cx_mm: cx,
                 cy_mm: cy,
                 radius_mm: dot_radius_mm,
@@ -453,7 +454,7 @@ fn build_puzzleboard(
             let fill = if bit == 1 { Fill::White } else { Fill::Black };
             let cx = origin_x + (c as f64 + 1.0) * spec.square_size_mm;
             let cy = origin_y + (r as f64 + 0.5) * spec.square_size_mm;
-            scene.primitives.push(Primitive::Circle {
+            emit(Primitive::Circle {
                 cx_mm: cx,
                 cy_mm: cy,
                 radius_mm: dot_radius_mm,
@@ -466,13 +467,13 @@ fn build_puzzleboard(
 }
 
 fn build_marker_board(
-    scene: &mut Scene,
+    emit: &mut impl FnMut(Primitive),
     spec: &MarkerBoardTargetSpec,
     origin: [f64; 2],
 ) -> Result<(), PrintableTargetError> {
     validate_marker_board_spec(spec)?;
     push_checker_squares(
-        scene,
+        emit,
         &crate::model::ChessboardTargetSpec {
             inner_rows: spec.inner_rows,
             inner_cols: spec.inner_cols,
@@ -484,7 +485,7 @@ fn build_marker_board(
     );
     let radius_mm = 0.5 * spec.circle_diameter_rel * spec.square_size_mm;
     for circle in spec.circles {
-        scene.primitives.push(Primitive::Circle {
+        emit(Primitive::Circle {
             cx_mm: origin[0] + (circle.i as f64 + 0.5) * spec.square_size_mm,
             cy_mm: origin[1] + (circle.j as f64 + 0.5) * spec.square_size_mm,
             radius_mm,
@@ -1057,7 +1058,10 @@ mod tests {
             let doc = PrintableTargetDocument::new(target.clone());
             let layout = doc.resolve_layout().expect("layout");
             let mut page = Scene::new(layout.page_width_mm, layout.page_height_mm);
-            build_board_scene(&mut page, &target, layout.board_origin_mm).expect("page");
+            emit_board_primitives(&target, layout.board_origin_mm, &mut |p| {
+                page.primitives.push(p);
+            })
+            .expect("page");
             let [ox, oy] = layout.board_origin_mm;
             let board = board_primitives(&target).expect("board");
             assert_eq!(board.len(), page.primitives.len(), "{}", target.kind_name());
