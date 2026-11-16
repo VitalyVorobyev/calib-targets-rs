@@ -31,6 +31,8 @@ import type {
   PageSpec,
   PrintableMarkerCircleSpec,
   PrintableTargetDocument,
+  ScreenTargetBundle,
+  ScreenTargetMetadata,
   RenderOptions,
   SaddlePointConfig,
 } from "./typescript-extras";
@@ -313,4 +315,18 @@ export const chessboardDetection: ChessboardDetection = {
   corners: [chessboardCorner],
   cell_size: 20.0,
   quality,
+};
+
+
+export const screenTargetMetadata: ScreenTargetMetadata = {
+  screen: { width_px: 1200, height_px: 1600, pixel_pitch_mm: 0.085, margin_px: 20 },
+  board_origin_px: [100, 400],
+  requested_square_size_mm: 12,
+  square_size_px: 125,
+  target: { kind: "chessboard", inner_rows: 5, inner_cols: 7, square_size_mm: 10.625 },
+};
+
+export const screenTargetBundle: ScreenTargetBundle = {
+  png_bytes: new Uint8Array(),
+  json_text: JSON.stringify(screenTargetMetadata),
 };

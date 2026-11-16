@@ -1047,6 +1047,27 @@ fn render_target_bundle(py: Python<'_>, document: &Bound<'_, PyAny>) -> PyResult
 }
 
 #[pyfunction]
+#[pyo3(signature = (target, screen))]
+fn render_screen_target(
+    py: Python<'_>,
+    target: &Bound<'_, PyAny>,
+    screen: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let target = from_py_json(target, "target")?;
+    let screen = from_py_json(screen, "screen")?;
+    let rendered = printable::render_screen_target(&target, &screen)
+        .map_err(|err| value_error(err.to_string()))?;
+    let json = rendered
+        .metadata
+        .to_json_pretty()
+        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
+    let out = PyDict::new(py);
+    out.set_item("json_text", json)?;
+    out.set_item("png_bytes", PyBytes::new(py, &rendered.png_bytes))?;
+    Ok(out.into_any().unbind())
+}
+
+#[pyfunction]
 #[pyo3(signature = (document, output_stem))]
 fn write_target_bundle(
     py: Python<'_>,
@@ -1106,6 +1127,7 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(puzzlepole_periods, m)?)?;
     m.add_function(wrap_pyfunction!(puzzlepole_canonical_start_row, m)?)?;
     m.add_function(wrap_pyfunction!(render_target_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(render_screen_target, m)?)?;
     m.add_function(wrap_pyfunction!(write_target_bundle, m)?)?;
     Ok(())
 }

@@ -1,13 +1,19 @@
 // The worker that owns the WASM module. Detection and rendering block for as long as the image
 // takes, so they run here and the page stays responsive; cancelling a run terminates the worker.
 
-import type { ChessConfig, GeneratedTargetBundle, PrintableTargetSpec } from "@vitavision/calib-targets";
+import type {
+  ChessConfig,
+  GeneratedTargetBundle,
+  PrintableTargetSpec,
+  ScreenTargetMetadata,
+} from "@vitavision/calib-targets";
 
 import type {
   DetectOutcome,
   DetectPayload,
   DetectRequest,
   Defaults,
+  PrintRenderRequest,
   RenderedTarget,
   RenderRequest,
   WorkerMethods,
@@ -124,7 +130,7 @@ function detect(request: DetectRequest): DetectOutcome {
   return { payload, timeMs: performance.now() - start };
 }
 
-function renderBundle(request: RenderRequest): GeneratedTargetBundle {
+function renderBundle(request: PrintRenderRequest): GeneratedTargetBundle {
   switch (request.kind) {
     case "chessboard":
       return wasm.renderChessboard(request.innerRows, request.innerCols, request.squareMm, request.dpi);
@@ -147,9 +153,14 @@ function renderBundle(request: RenderRequest): GeneratedTargetBundle {
 }
 
 function render(request: RenderRequest): RenderedTarget {
+  if (request.kind === "screen") {
+    const bundle = wasm.renderScreenTarget(request.target, request.screen);
+    const metadata = JSON.parse(bundle.json_text) as ScreenTargetMetadata;
+    return { medium: "screen", bundle, metadata, target: metadata.target };
+  }
   const bundle = renderBundle(request);
   const document = JSON.parse(bundle.json_text) as { target: PrintableTargetSpec };
-  return { bundle, target: document.target };
+  return { medium: "print", bundle, target: document.target };
 }
 
 function handle(request: WorkerRequest): unknown {

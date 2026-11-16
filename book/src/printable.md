@@ -278,3 +278,43 @@ For a physically accurate calibration target:
 - Use `calib-targets-print` when you want the dedicated published printable-target crate.
 - Use the `calib-targets` CLI (`cargo install calib-targets` or `pip install calib-targets`) when you want a command-line init/render tool.
 - Use the Python bindings when your downstream workflow is already in Python.
+
+## Targets for grayscale screens
+
+The [screen-target tutorial](tutorial_screen_target.md) walks through generation,
+1:1 display, and detection with the calibration sidecar.
+
+Use screen generation for a Chessboard, ChArUco, or PuzzleBoard on an e-reader or other
+grayscale display with square pixels. Supply the native width and height in the intended
+orientation, the physical pixel pitch in millimeters, and the requested square size. If you
+know the display density in pixels per inch, divide 25.4 by that density to get the pixel pitch.
+Use the panel's physical pixel pitch for metric calibration.
+
+The Rust CLI and the Python console script accept the same command:
+
+```bash
+calib-targets gen-screen charuco --rows 5 --cols 7 \
+  --square-size-mm 12 --marker-size-rel 0.75 --dictionary DICT_4X4_50 \
+  --width-px 1200 --height-px 1600 --pixel-pitch-mm 0.085 \
+  --margin-px 20 --out-stem reader-board
+```
+
+In the demo, open **Generate**, select **Screen**, and enter the display geometry. Rust
+applications can call `calib_targets::printable::render_screen_target` with a `TargetSpec`
+and `ScreenTargetOptions`. Python applications can call `calib_targets.render_screen_target`
+with the corresponding target spec and `ScreenTargetOptions`.
+
+The PNG has the exact requested resolution. Display it 1:1, with each image pixel mapped
+to one physical screen pixel. Viewer zoom or fitting can resample the image. The default
+minimum margin is one pixel on each side, and the raster limit is 33,554,432 pixels.
+
+The generator chooses the closest uniform whole-pixel square pitch that fits. ChArUco
+markers have equal white padding on all sides and equal whole-pixel bit cells. The generator may adjust their
+relative size or a checker inset. PuzzleBoard dots preserve their diameter ratio, use
+grayscale coverage along curved edges, and leave the checker corners clear. Very small
+or crowded dots can constrain the pitch or make the requested geometry infeasible.
+
+Use the JSON sidecar's realized `target.square_size_mm` for calibration. It also records
+the realized marker or inset ratio, the board origin in screen pixels, and the physical pixel
+pitch used. This aligns features to the display grid. Moiré in a camera image still depends
+on the display and capture setup.

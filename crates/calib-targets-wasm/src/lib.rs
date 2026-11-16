@@ -13,9 +13,10 @@ use calib_targets_chessboard::{ChessboardDetector as ChessDetector, ChessboardPa
 use calib_targets_core::DetectorConfig;
 use calib_targets_marker::{MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec};
 use calib_targets_print::{
-    render_target_bundle, CharucoTargetSpec, ChessboardTargetSpec, GeneratedTargetBundle,
-    MarkerBoardTargetSpec, PageSize, PageSpec, PrintableTargetDocument, PuzzleBoardTargetSpec,
-    PuzzlePoleTargetSpec, RenderOptions, TargetSpec,
+    render_screen_target as render_screen, render_target_bundle, CharucoTargetSpec,
+    ChessboardTargetSpec, GeneratedTargetBundle, MarkerBoardTargetSpec, PageSize, PageSpec,
+    PrintableTargetDocument, PuzzleBoardTargetSpec, PuzzlePoleTargetSpec, RenderOptions,
+    TargetSpec,
 };
 use calib_targets_puzzleboard::{
     PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec, SUPPORTED_PERIODS,
@@ -290,23 +291,13 @@ fn render_bundle_to_js(
 }
 
 fn bundle_to_js(bundle: &GeneratedTargetBundle) -> Result<JsValue, JsError> {
-    let obj = js_sys::Object::new();
-    let png = js_sys::Uint8Array::new_with_length(bundle.png_bytes.len() as u32);
-    png.copy_from(&bundle.png_bytes);
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("json_text"),
-        &bundle.json_text.as_str().into(),
-    )
-    .map_err(|_| JsError::new("failed to set json_text on bundle object"))?;
+    let obj = png_json_to_js(&bundle.png_bytes, &bundle.json_text)?;
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("svg_text"),
         &bundle.svg_text.as_str().into(),
     )
     .map_err(|_| JsError::new("failed to set svg_text on bundle object"))?;
-    js_sys::Reflect::set(&obj, &JsValue::from_str("png_bytes"), &png.into())
-        .map_err(|_| JsError::new("failed to set png_bytes on bundle object"))?;
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("dxf_text"),
@@ -314,6 +305,17 @@ fn bundle_to_js(bundle: &GeneratedTargetBundle) -> Result<JsValue, JsError> {
     )
     .map_err(|_| JsError::new("failed to set dxf_text on bundle object"))?;
     Ok(obj.into())
+}
+
+fn png_json_to_js(bytes: &[u8], json: &str) -> Result<js_sys::Object, JsError> {
+    let obj = js_sys::Object::new();
+    let png = js_sys::Uint8Array::new_with_length(bytes.len() as u32);
+    png.copy_from(bytes);
+    js_sys::Reflect::set(&obj, &JsValue::from_str("json_text"), &json.into())
+        .map_err(|_| JsError::new("failed to set json_text on bundle object"))?;
+    js_sys::Reflect::set(&obj, &JsValue::from_str("png_bytes"), &png.into())
+        .map_err(|_| JsError::new("failed to set png_bytes on bundle object"))?;
+    Ok(obj)
 }
 
 fn chessboard_target_and_extent(
@@ -435,6 +437,22 @@ pub fn render_target_bundle_json(doc: JsValue) -> Result<JsValue, JsError> {
     let doc: PrintableTargetDocument = from_js(doc)?;
     let bundle = render_target_bundle(&doc).map_err(|e| JsError::new(&e.to_string()))?;
     bundle_to_js(&bundle)
+}
+
+/// Fit and render a Chessboard, ChArUco, or PuzzleBoard for 1:1 screen display.
+///
+/// Takes a target spec and native screen options and returns the 8-bit
+/// grayscale PNG as a `Uint8Array` plus the calibration sidecar as JSON text.
+#[wasm_bindgen]
+pub fn render_screen_target(target: JsValue, screen: JsValue) -> Result<JsValue, JsError> {
+    let target = from_js(target)?;
+    let screen = from_js(screen)?;
+    let generated = render_screen(&target, &screen).map_err(|e| JsError::new(&e.to_string()))?;
+    let json = generated
+        .metadata
+        .to_json_pretty()
+        .map_err(|e| JsError::new(&e.to_string()))?;
+    Ok(png_json_to_js(&generated.png_bytes, &json)?.into())
 }
 
 /// Synthesise a chessboard target as a full JSON / SVG / PNG / DXF bundle.

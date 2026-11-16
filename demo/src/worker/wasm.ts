@@ -19,6 +19,9 @@ import type {
   PuzzleBoardDetection,
   PuzzleBoardDiagnostics,
   PuzzleBoardParams,
+  ScreenTargetBundle,
+  ScreenTargetOptions,
+  ScreenTargetSpec,
 } from "@vitavision/calib-targets";
 
 type Gray = Uint8Array;
@@ -164,3 +167,6 @@ export const renderPuzzlePole = (
   squareMm: number,
   dpi: number,
 ): GeneratedTargetBundle => raw.render_puzzlepole_bundle(circumference, axial, squareMm, dpi) as GeneratedTargetBundle;
+
+export const renderScreenTarget = (target: ScreenTargetSpec, screen: ScreenTargetOptions): ScreenTargetBundle =>
+  raw.render_screen_target(target, screen) as ScreenTargetBundle;

@@ -19,6 +19,10 @@ import type {
   PuzzleBoardDetection,
   PuzzleBoardDiagnostics,
   PuzzleBoardParams,
+  ScreenTargetBundle,
+  ScreenTargetMetadata,
+  ScreenTargetOptions,
+  ScreenTargetSpec,
 } from "@vitavision/calib-targets";
 
 /** What to detect. The ids are the `@vitavision/overlays` detection kinds. */
@@ -86,15 +90,17 @@ export interface DetectOutcome {
   timeMs: number;
 }
 
-/** A printable target: the renderer's bundle plus the document it was built from. */
-export interface RenderedTarget {
-  bundle: GeneratedTargetBundle;
-  /** The `target` of the printable document the bundle was rendered from. */
-  target: PrintableTargetSpec;
-}
+/** The renderer's output and the realized geometry for the detector. */
+export type RenderedTarget =
+  | { medium: "print"; bundle: GeneratedTargetBundle; target: PrintableTargetSpec }
+  | { medium: "screen"; bundle: ScreenTargetBundle; target: ScreenTargetSpec; metadata: ScreenTargetMetadata };
 
-/** The parameters `render` takes, one variant per printable kind. */
-export type RenderRequest =
+export type ScreenRenderRequest = { kind: "screen"; target: ScreenTargetSpec; screen: ScreenTargetOptions };
+
+/** The parameters `render` takes for screen or print. */
+export type RenderRequest = ScreenRenderRequest | PrintRenderRequest;
+
+export type PrintRenderRequest =
   | { kind: "chessboard"; innerRows: number; innerCols: number; squareMm: number; dpi: number }
   | {
       kind: "charuco";

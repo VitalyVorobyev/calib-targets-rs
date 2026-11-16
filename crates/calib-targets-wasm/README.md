@@ -160,6 +160,14 @@ byte-identical SVG, so this is a superset of those helpers rather than a
 second rendering path. See `PrintableTargetDocument` in the TypeScript
 declarations for the full shape.
 
+### Generate for a grayscale display
+
+Call `render_screen_target(target, screen)` with a Chessboard, ChArUco or
+PuzzleBoard spec and native `width_px`, `height_px`, and `pixel_pitch_mm`.
+The result contains `png_bytes` for 1:1 display and `json_text` with the
+realized geometry to use for detection.
+[Screen-target tutorial](https://vitalyvorobyev.github.io/calib-targets-rs/book/tutorial_screen_target.html)
+
 ### Marker board
 
 ```typescript

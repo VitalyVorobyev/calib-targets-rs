@@ -29,7 +29,10 @@ machine: detection happens in the WASM module loaded into this page.
 | **Result** | Corner count, timing, ChArUco marker count, the PuzzleBoard decode summary (bit error rate, edges matched, master origin), marker-board circle matches, and a sortable corner table. Click a corner, in the image or the table, for its `(i, j)`, id, score and uncertainty. Download the raw result as JSON. |
 | **Overlays** | Corners, the lattice edges with `(i, j)` labels, ArUco marker quads, marker-board circles, PuzzleBoard edge bits and, when the result carries a position covariance, uncertainty ellipses drawn at a stated multiple of 1σ. Toggle each from the layers menu. |
 | **Zoom / pan** | Scroll to zoom, drag to pan, double-click to fit; `+`, `-`, `0` (fit), `1` (100 %) and the arrow keys work with the image focused. |
-| **Generate** | Chessboard, ChArUco, marker board, PuzzleBoard or PuzzlePole, at a chosen square size and DPI. Rows and columns are labelled by what they count (inner corners or squares). The target loads as the image with the detector set to the same board; download it as PNG, SVG, JSON or DXF. |
+| **Generate** | **Print** exports PNG, SVG, JSON and DXF. **Screen** fits Chessboard, ChArUco or PuzzleBoard to a grayscale panel and exports a native-size PNG and calibration JSON. Both modes load the target with matching detector parameters. |
+
+Follow the [screen-target tutorial](tutorial_screen_target.md) to configure a
+panel and display the PNG at 1:1.
 
 ## Running locally
 

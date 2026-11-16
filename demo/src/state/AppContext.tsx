@@ -158,6 +158,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const sync = boardOfTarget(rendered.target);
         dispatch({ type: "generated", generated: { label: `${KIND_LABEL[form.kind]}, ${stem}`, stem, rendered } });
         dispatch({ type: "imageLoaded", image: loaded, sync, mode: MODE_OF_SYNC(sync) });
+        if (rendered.medium === "screen") dispatch({ type: "setTab", tab: "generate" });
       })
       .catch((error: unknown) =>
         dispatch({ type: "genStatus", status: { status: "error", message: errorMessage(error) } }),

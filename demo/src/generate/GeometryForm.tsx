@@ -11,7 +11,7 @@ const COUNT = { min: 2, max: 64 } as const;
 /** `7 × 10` inner corners is an `8 × 11` board: say so, since that is what gets printed. */
 function squaresNote(form: GenerateForm): string | null {
   if (form.kind === "chessboard" || form.kind === "marker_board") {
-    return `Prints ${form.rows + 1} × ${form.cols + 1} squares (rows × columns).`;
+    return `Board has ${form.rows + 1} × ${form.cols + 1} squares (rows × columns).`;
   }
   return null;
 }
@@ -22,6 +22,8 @@ export function GeometryForm() {
   const set = (patch: Partial<GenerateForm>) => dispatch({ type: "setGenerate", patch });
   const innerCorners = gen.kind === "chessboard" || gen.kind === "marker_board";
   const note = squaresNote(gen);
+  const screen = gen.medium === "screen";
+  const count = gen.kind === "puzzleboard" ? { ...COUNT, min: 4 } : COUNT;
 
   return (
     <fieldset className="flex flex-col gap-2.5">
@@ -46,10 +48,10 @@ export function GeometryForm() {
       ) : (
         <div className="grid grid-cols-2 gap-2.5">
           <Field label={innerCorners ? "Rows (inner corners)" : "Rows (squares)"}>
-            <NumberInput value={gen.rows} onValueChange={(rows) => set({ rows: Math.round(rows) })} {...COUNT} />
+            <NumberInput value={gen.rows} onValueChange={(rows) => set({ rows: Math.round(rows) })} {...count} />
           </Field>
           <Field label={innerCorners ? "Columns (inner corners)" : "Columns (squares)"}>
-            <NumberInput value={gen.cols} onValueChange={(cols) => set({ cols: Math.round(cols) })} {...COUNT} />
+            <NumberInput value={gen.cols} onValueChange={(cols) => set({ cols: Math.round(cols) })} {...count} />
           </Field>
         </div>
       )}
@@ -78,27 +80,73 @@ export function GeometryForm() {
         </div>
       )}
       <div className="grid grid-cols-2 gap-2.5">
-        <Field label="Square size">
+        <Field label={screen ? "Requested square size" : "Square size"}>
           <NumberInput
             value={gen.squareMm}
             onValueChange={(squareMm) => set({ squareMm })}
-            min={1}
-            max={100}
+            min={screen ? 0.001 : 1}
+            max={screen ? undefined : 100}
             step={1}
-            precision={1}
+            precision={screen ? undefined : 1}
             unit="mm"
           />
         </Field>
-        <Field label="Resolution">
-          <NumberInput
-            value={gen.dpi}
-            onValueChange={(dpi) => set({ dpi: Math.round(dpi) })}
-            min={72}
-            max={1200}
-            step={50}
-            unit="dpi"
-          />
-        </Field>
+        {screen ? (
+          <Field label="Minimum margin">
+            <NumberInput
+              value={gen.screenMargin}
+              onValueChange={(value) => set({ screenMargin: Math.round(value) })}
+              min={0}
+              step={1}
+              unit="px"
+            />
+          </Field>
+        ) : (
+          <Field label="Resolution">
+            <NumberInput
+              value={gen.dpi}
+              onValueChange={(dpi) => set({ dpi: Math.round(dpi) })}
+              min={72}
+              max={1200}
+              step={50}
+              unit="dpi"
+            />
+          </Field>
+        )}
+        {screen && (
+          <>
+            <Field label="Native screen width">
+              <NumberInput
+                value={gen.screenWidth}
+                onValueChange={(value) => set({ screenWidth: Math.round(value) })}
+                onClear={() => set({ screenWidth: null })}
+                min={1}
+                step={1}
+                unit="px"
+              />
+            </Field>
+            <Field label="Native screen height">
+              <NumberInput
+                value={gen.screenHeight}
+                onValueChange={(value) => set({ screenHeight: Math.round(value) })}
+                onClear={() => set({ screenHeight: null })}
+                min={1}
+                step={1}
+                unit="px"
+              />
+            </Field>
+            <Field label="Physical pixel pitch" description="Width of one display pixel in millimeters.">
+              <NumberInput
+                value={gen.screenPitchMm}
+                onValueChange={(value) => set({ screenPitchMm: value })}
+                onClear={() => set({ screenPitchMm: null })}
+                min={0.000001}
+                step={0.001}
+                unit="mm"
+              />
+            </Field>
+          </>
+        )}
       </div>
     </fieldset>
   );

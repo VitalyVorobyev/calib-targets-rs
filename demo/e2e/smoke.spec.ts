@@ -97,3 +97,48 @@ test("a result goes stale when the settings change", async ({ page }) => {
   await choose(page, "Target", "Corners");
   await expect(page.getByText("stale")).toBeVisible();
 });
+
+test("generate, download, and detect a screen ChArUco target", async ({ page }) => {
+  await open(page);
+  await page.getByRole("tab", { name: "Generate" }).click();
+  await choose(page, "Output medium", "Screen");
+  await choose(page, "Target to generate", "ChArUco");
+  const generate = page.getByRole("button", { name: "Generate & load" });
+  await expect(generate).toBeDisabled();
+  for (const [field, value] of [
+    ["Native screen width", "811"],
+    ["Native screen height", "605"],
+    ["Physical pixel pitch", "0.125"],
+    ["Requested square size", "12.42"],
+  ] as const) {
+    await page.getByRole("spinbutton", { name: field, exact: true }).fill(value);
+  }
+  await generate.click();
+  const results = page.getByRole("group", { name: "Download the last target" });
+  await expect(results.getByText("811 × 605 px")).toBeVisible({ timeout: 60_000 });
+  await expect(results.getByText(/Square size 12.5 mm \(100 px\)/)).toBeVisible();
+  await expect(results.getByRole("button", { name: "SVG" })).toHaveCount(0);
+  for (const extension of ["png", "json"] as const) {
+    const pending = page.waitForEvent("download");
+    await results.getByRole("button", { name: extension.toUpperCase(), exact: true }).click();
+    const download = await pending;
+    expect(download.suggestedFilename()).toBe(`charuco-5x7-screen.${extension}`);
+    const stream = await download.createReadStream();
+    const chunks: Buffer[] = [];
+    for await (const chunk of stream) chunks.push(Buffer.from(chunk as Uint8Array));
+    const data = Buffer.concat(chunks);
+    if (extension === "png") {
+      expect([data.readUInt32BE(16), data.readUInt32BE(20)]).toEqual([811, 605]);
+      expect([data[24], data[25]]).toEqual([8, 0]);
+    } else {
+      expect(JSON.parse(data.toString("utf8"))).toMatchObject({
+        square_size_px: 100,
+        requested_square_size_mm: 12.42,
+        target: { kind: "charuco", square_size_mm: 12.5, marker_size_rel: 0.72 },
+      });
+    }
+  }
+  await page.getByRole("tab", { name: "Detect" }).click();
+  await expect(page.getByRole("combobox", { name: "Target", exact: true })).toHaveText("ChArUco");
+  expect(await detect(page)).toBeGreaterThan(0);
+});

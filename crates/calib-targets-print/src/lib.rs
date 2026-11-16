@@ -4,6 +4,7 @@
 mod model;
 mod render;
 mod render_dxf;
+mod screen;
 
 pub use model::{
     stem_paths, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, MarkerCircleSpec,
@@ -11,6 +12,10 @@ pub use model::{
     PuzzleBoardTargetSpec, PuzzlePoleTargetSpec, RenderOptions, ResolvedTargetLayout,
     ResolvedTargetPoint, StemPaths, TargetSpec,
 };
+pub use screen::{
+    render_screen_target, GeneratedScreenTarget, ScreenTargetMetadata, ScreenTargetOptions,
+};
+
 pub use render::{board_primitives, render_target_bundle, Fill, GeneratedTargetBundle, Primitive};
 
 use std::{
