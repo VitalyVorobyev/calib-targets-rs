@@ -104,9 +104,6 @@ png = "0.18"
 predicates = "3"
 pyo3 = "0.29"
 pyo3-build-config = "0.29"
-# Static 2-D point index for projective-grid's neighbour queries. Pure Rust, with
-# no build script that compiles C or assembly.
-rstar = { version = "0.14", default-features = false }
 schemars = { version = "1", features = ["derive"] }
 serde = "1"
 serde_json = "1"

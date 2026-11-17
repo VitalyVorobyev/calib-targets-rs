@@ -11,10 +11,11 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ### Changed
 
-- The build no longer compiles C or assembly for spatial queries: `kiddo`
-  (through its `generator` dependency) is replaced by the pure-Rust `rstar`
-  in `projective-grid`. Builds without the `tracing` feature also no longer
-  compile `tracing-subscriber`. Detection output is unchanged.
+- The build no longer compiles C or assembly for spatial queries:
+  `projective-grid` drops `kiddo` (and with it `generator`, whose build script
+  ran `cc`) for its own small kd-tree, which keeps detection speed on par.
+  Builds without the `tracing` feature no longer compile `tracing-subscriber`.
+  Detection output is unchanged.
 
 ## 0.16.2
 
