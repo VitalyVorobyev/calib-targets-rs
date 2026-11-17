@@ -64,11 +64,11 @@
 //! `atan2` result; raw `(cos θ, sin θ)` accumulation would break at the 0/π
 //! seam.
 
-use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 
 use crate::cluster::{angular_dist_pi as dist_pi, wrap_pi as fold_pi};
 use crate::feature::{LocalAxis, OrientedFeature, PointFeature};
+use crate::spatial::PointIndex;
 
 /// Nearest neighbours used to estimate one corner's local grid directions.
 /// Four is the principled count: an interior grid corner's four nearest
@@ -115,10 +115,7 @@ pub fn synthesize_oriented2(features: &[PointFeature]) -> Vec<OrientedFeature<2>
             .collect();
     }
 
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    for (i, p) in positions.iter().enumerate() {
-        tree.add(&[p.x, p.y], i as u64);
-    }
+    let tree = PointIndex::from_positions(&positions);
 
     // Per-corner folded chord angles to the k nearest neighbours, each
     // carrying an inverse-distance weight so a corner's closer (true axis)
@@ -182,10 +179,7 @@ pub fn synthesize_oriented2_from_oriented1(
             .collect();
     }
 
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    for (i, p) in positions.iter().enumerate() {
-        tree.add(&[p.x, p.y], i as u64);
-    }
+    let tree = PointIndex::from_positions(&positions);
 
     let per_corner: Vec<Vec<(f32, f32)>> = (0..n)
         .map(|i| nearest_folded_chords(&tree, &positions, i))
@@ -253,10 +247,7 @@ pub fn synthesize_oriented3(features: &[PointFeature]) -> Vec<OrientedFeature<3>
             .collect();
     }
 
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    for (i, p) in positions.iter().enumerate() {
-        tree.add(&[p.x, p.y], i as u64);
-    }
+    let tree = PointIndex::from_positions(&positions);
 
     let per_corner: Vec<Vec<(f32, f32)>> = (0..n)
         .map(|i| nearest_folded_chords_k(&tree, &positions, i, K_HEX_NEIGHBOURS))
@@ -302,10 +293,7 @@ pub(crate) fn synthesize_oriented3_from_oriented1(
             .collect();
     }
 
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    for (index, position) in positions.iter().enumerate() {
-        tree.add(&[position.x, position.y], index as u64);
-    }
+    let tree = PointIndex::from_positions(&positions);
     let per_corner: Vec<Vec<(f32, f32)>> = (0..positions.len())
         .map(|index| nearest_folded_chords_k(&tree, &positions, index, K_HEX_NEIGHBOURS))
         .collect();
@@ -422,7 +410,7 @@ fn refine_second_axis(folded: &[(f32, f32)], known: f32, seed1: f32) -> f32 {
 /// Folded (`[0, π)`) chord angles from corner `i` to its `K_AXIS_NEIGHBOURS`
 /// nearest neighbours, each paired with an inverse-distance weight.
 fn nearest_folded_chords(
-    tree: &KdTree<f32, 2>,
+    tree: &PointIndex,
     positions: &[Point2<f32>],
     i: usize,
 ) -> Vec<(f32, f32)> {
@@ -435,18 +423,18 @@ fn nearest_folded_chords(
 /// [`synthesize_oriented3`] (an interior hex node's six nearest neighbours are
 /// its six axial neighbours).
 fn nearest_folded_chords_k(
-    tree: &KdTree<f32, 2>,
+    tree: &PointIndex,
     positions: &[Point2<f32>],
     i: usize,
     k: usize,
 ) -> Vec<(f32, f32)> {
     let p = positions[i];
     // `+ 1` because the nearest hit is the query point itself.
-    let hits = tree.nearest_n::<SquaredEuclidean>(&[p.x, p.y], k + 1);
+    let hits = tree.nearest_n(p, k + 1);
 
     let mut out = Vec::with_capacity(k);
     for nn in hits {
-        let j = nn.item as usize;
+        let j = nn.item;
         if j == i {
             continue;
         }

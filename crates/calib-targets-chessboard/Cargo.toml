@@ -34,7 +34,6 @@ projective-grid.workspace = true
 chess-corners = { workspace = true, features = ["rayon"] }
 nalgebra.workspace = true
 log.workspace = true
-kiddo.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true, optional = true }
 thiserror.workspace = true

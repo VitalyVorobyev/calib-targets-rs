@@ -7,7 +7,7 @@
 //!
 //! The trait is sealed (callers cannot add their own `impl Float for MyType`)
 //! to keep the trait bound semver-flexible. Extending the bound (for example
-//! by adding a `kiddo::float::kdtree::Axis` super-bound) becomes a non-breaking
+//! by adding a `num_traits::float::FloatCore` super-bound) becomes a non-breaking
 //! change: external types that already satisfy the blanket `impl<T: …> Float for T`
 //! pick up the new bound automatically; types that don't were never callable
 //! in the first place.
@@ -35,7 +35,7 @@ mod sealed {
 ///   arithmetic, ordering, transcendentals, `pi()`, `default_epsilon()`).
 /// * [`Copy`] — every Float value is small enough to pass by value.
 /// * `From<f32>` — literal constants convert directly via `F::from(0.5_f32)`.
-/// * `'static` — required by `kiddo` and serde where the bound surfaces.
+/// * `'static` — `F` is a plain owned value type, never a borrowed one.
 ///
 /// The bound is sealed via a private `Seal` super-trait so that
 /// extending the constraint in a future minor release is non-breaking.

@@ -94,7 +94,6 @@ image = { version = "0.25", default-features = false, features = [
     "tiff",
     "webp",
 ] }
-kiddo = { version = "5", default-features = false, features = ["tracing"] }
 log = "0.4"
 # A range, so a consumer whose other dependencies still need 0.34 resolves one nalgebra.
 # CI job `nalgebra-0-34` builds and tests the low end.
@@ -105,6 +104,9 @@ png = "0.18"
 predicates = "3"
 pyo3 = "0.29"
 pyo3-build-config = "0.29"
+# Static 2-D point index for projective-grid's neighbour queries. Pure Rust, with
+# no build script that compiles C or assembly.
+rstar = { version = "0.14", default-features = false }
 schemars = { version = "1", features = ["derive"] }
 serde = "1"
 serde_json = "1"

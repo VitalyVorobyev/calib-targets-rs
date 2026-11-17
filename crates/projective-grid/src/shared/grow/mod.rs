@@ -52,9 +52,10 @@ pub use params::{
 };
 pub(crate) use predict::{collect_labelled_neighbours, is_extrapolating, predict_from_neighbours};
 
-use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 use std::collections::{HashMap, HashSet, VecDeque};
+
+use crate::spatial::PointIndex;
 
 pub(crate) fn enqueue_cardinal_neighbours(
     pos: (i32, i32),
@@ -70,9 +71,24 @@ pub(crate) fn enqueue_cardinal_neighbours(
     }
 }
 
+/// Spatial index over the corners that `eligible` admits and `grow` has not
+/// labelled yet, each tagged with its corner index (the index's tie-break key).
+pub(crate) fn unlabelled_index(
+    positions: &[Point2<f32>],
+    grow: &GrowResult,
+    eligible: impl Fn(usize) -> bool,
+) -> PointIndex {
+    PointIndex::new(
+        positions
+            .iter()
+            .enumerate()
+            .filter(|&(idx, _)| !grow.by_corner.contains_key(&idx) && eligible(idx))
+            .map(|(idx, &pos)| (pos, idx)),
+    )
+}
+
 pub(crate) fn collect_candidates<V: SquareAttachPolicy>(
-    tree: &KdTree<f32, 2>,
-    slot_to_corner: &[usize],
+    tree: &PointIndex,
     prediction: Point2<f32>,
     search_r: f32,
     policy: &V,
@@ -81,11 +97,8 @@ pub(crate) fn collect_candidates<V: SquareAttachPolicy>(
 ) -> Vec<(usize, f32)> {
     let r2 = search_r * search_r;
     let mut out: Vec<(usize, f32)> = Vec::new();
-    for nn in tree
-        .within_unsorted::<SquaredEuclidean>(&[prediction.x, prediction.y], r2)
-        .into_iter()
-    {
-        let idx = slot_to_corner[nn.item as usize];
+    for nn in tree.within(prediction, r2) {
+        let idx = nn.item;
         if by_corner.contains_key(&idx) {
             continue;
         }
@@ -97,13 +110,14 @@ pub(crate) fn collect_candidates<V: SquareAttachPolicy>(
                 continue;
             }
         }
-        let d = nn.distance.sqrt();
+        let d = nn.distance_sq.sqrt();
         out.push((idx, d));
     }
-    // Break exact distance ties by corner index. `within_unsorted` returns
-    // candidates in nondeterministic order; the ambiguity check and the
-    // first-Accept pick in `choose_unambiguous` are order-sensitive, so without
-    // the index tiebreak the attach decision can vary run-to-run.
+    // Break exact distance ties by corner index. The ambiguity check and the
+    // first-Accept pick in `choose_unambiguous` are order-sensitive, so the
+    // order must be a function of the input alone. `PointIndex::within` already
+    // sorts by `(d², corner)`; re-sorting on the rounded `d` keeps two distinct
+    // `d²` that share one `sqrt` in corner order too.
     out.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
     out
 }

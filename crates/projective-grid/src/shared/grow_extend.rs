@@ -11,10 +11,9 @@
 
 use crate::shared::grow::{
     any_cardinal_edge_ok, choose_unambiguous, collect_candidates, collect_labelled_neighbours,
-    enqueue_cardinal_neighbours, is_extrapolating, predict_from_neighbours, CandidateChoice,
-    GrowParams, GrowResult, SquareAttachPolicy,
+    enqueue_cardinal_neighbours, is_extrapolating, predict_from_neighbours, unlabelled_index,
+    CandidateChoice, GrowParams, GrowResult, SquareAttachPolicy,
 };
-use kiddo::KdTree;
 use nalgebra::Point2;
 use std::collections::{HashSet, VecDeque};
 
@@ -76,14 +75,7 @@ pub fn extend_from_labelled<V: SquareAttachPolicy>(
     policy: &V,
 ) -> BfsExtensionStats {
     // Build KD-tree over eligible, not-yet-labelled corners.
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    let mut tree_slot_to_corner: Vec<usize> = Vec::new();
-    for (idx, pos) in positions.iter().enumerate() {
-        if policy.is_eligible(idx) && !grow.by_corner.contains_key(&idx) {
-            tree.add(&[pos.x, pos.y], tree_slot_to_corner.len() as u64);
-            tree_slot_to_corner.push(idx);
-        }
-    }
+    let tree = unlabelled_index(positions, grow, |idx| policy.is_eligible(idx));
 
     // Seed the BFS from the boundary of the current labelled set, in sorted
     // cell order. The walk claims corners first-come-first-served, so on a
@@ -133,7 +125,6 @@ pub fn extend_from_labelled<V: SquareAttachPolicy>(
         let required_label = policy.required_label_at(pos.0, pos.1);
         let candidates = collect_candidates(
             &tree,
-            &tree_slot_to_corner,
             prediction,
             local_search_r,
             policy,

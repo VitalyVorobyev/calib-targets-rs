@@ -7,6 +7,15 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Changed
+
+- The build no longer compiles C or assembly for spatial queries: `kiddo`
+  (through its `generator` dependency) is replaced by the pure-Rust `rstar`
+  in `projective-grid`. Builds without the `tracing` feature also no longer
+  compile `tracing-subscriber`. Detection output is unchanged.
+
 ## 0.16.2
 
 ### Added

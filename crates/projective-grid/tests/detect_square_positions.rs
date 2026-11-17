@@ -146,7 +146,7 @@ fn perfect_grid_topological_fully_recovered_zero_wrong() {
 /// topological path must produce byte-identical output across repeated runs on
 /// the same input. The topological walk, the local component merge, and the
 /// recovery schedule's extension / fill / drop filters all break
-/// HashMap-iteration / kiddo `within_unsorted` ties by stable corner index /
+/// HashMap-iteration and spatial-query ties by stable corner index /
 /// sorted coords, so the run-to-run swing (formerly ~4 vs ~22 of 64 from
 /// identical input) is gone.
 #[test]

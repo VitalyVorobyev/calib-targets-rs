@@ -9,6 +9,13 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Neighbour queries use `rstar` instead of `kiddo`.** `kiddo` depends on
+  `generator` on x86_64 and aarch64, whose build script compiles C and
+  assembly with `cc`, and it compiled `tracing-subscriber` into every build.
+  The crate now answers its radius and k-nearest queries from a bulk-loaded
+  `rstar` R-tree: pure Rust, nothing compiled at build time. Hits are ordered
+  by distance, then index, including a tie at the k-th place, so labels no
+  longer depend on the spatial index's internal layout. No API change.
 - **Hex labels are orientation-preserving.** Hex `(q, r)` labels were
   documented only up to a D6 automorphism, which includes reflections, and in
   practice every hex labelling came out mirrored: the walk seeded its first
