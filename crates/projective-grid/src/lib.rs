@@ -56,6 +56,7 @@ mod lattice;
 mod orient;
 mod result;
 mod shared;
+mod spatial;
 mod topological;
 
 /// The `nalgebra` this crate's API is written in.

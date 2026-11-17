@@ -69,6 +69,7 @@ use crate::shared::fill::{fill_grid_holes, FillParams};
 use crate::shared::grow::{GrowParams, GrowResult, SquareAttachPolicy};
 use crate::shared::grow_extend::extend_from_labelled;
 use crate::shared::validate::{self as pg_validate, ValidationParams};
+use crate::spatial::PointIndex;
 
 /// Provenance relevant to the default square recovery policy.
 ///
@@ -426,24 +427,20 @@ const LOCAL_PITCH_NEIGHBOURS: usize = 5;
 /// synthesized-axis recovery entry uses this to gate per-edge growth against
 /// the local cell scale.
 pub(crate) fn local_pitch_of(positions: &[Point2<f32>]) -> Vec<f32> {
-    use kiddo::{KdTree, SquaredEuclidean};
     let n = positions.len();
     if n < 2 {
         return vec![0.0; n];
     }
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    for (i, p) in positions.iter().enumerate() {
-        tree.add(&[p.x, p.y], i as u64);
-    }
+    let tree = PointIndex::from_positions(positions);
     positions
         .iter()
         .enumerate()
         .map(|(i, p)| {
-            let hits = tree.nearest_n::<SquaredEuclidean>(&[p.x, p.y], LOCAL_PITCH_NEIGHBOURS + 1);
+            let hits = tree.nearest_n(*p, LOCAL_PITCH_NEIGHBOURS + 1);
             let mut dists: Vec<f32> = hits
                 .into_iter()
-                .filter(|nn| nn.item as usize != i)
-                .map(|nn| nn.distance.sqrt())
+                .filter(|nn| nn.item != i)
+                .map(|nn| nn.distance_sq.sqrt())
                 .filter(|d| d.is_finite() && *d > 1e-3)
                 .collect();
             if dists.is_empty() {

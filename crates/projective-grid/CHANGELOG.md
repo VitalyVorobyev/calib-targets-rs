@@ -9,6 +9,14 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Changed
 
+- **Neighbour queries no longer depend on `kiddo`.** `kiddo` depends on
+  `generator` on x86_64 and aarch64, whose build script compiles C and
+  assembly with `cc`, and it compiled `tracing-subscriber` into every build.
+  The crate now answers its radius and k-nearest queries from its own static
+  kd-tree (one array, median splits, no dependencies); grid detection runs at
+  the same speed, and the hex benchmarks about 20% faster. Hits are ordered by
+  distance, then index, including a tie at the k-th place, so labels do not
+  depend on the tree layout. No API change.
 - **Hex labels are orientation-preserving.** Hex `(q, r)` labels were
   documented only up to a D6 automorphism, which includes reflections, and in
   practice every hex labelling came out mirrored: the walk seeded its first

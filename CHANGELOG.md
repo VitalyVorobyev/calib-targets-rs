@@ -7,6 +7,16 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Changed
+
+- The build no longer compiles C or assembly for spatial queries:
+  `projective-grid` drops `kiddo` (and with it `generator`, whose build script
+  ran `cc`) for its own small kd-tree, which keeps detection speed on par.
+  Builds without the `tracing` feature no longer compile `tracing-subscriber`.
+  Detection output is unchanged.
+
 ## 0.16.2
 
 ### Added

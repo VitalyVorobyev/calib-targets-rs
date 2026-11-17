@@ -41,10 +41,10 @@
 //! attachments shrink the eligible set.
 
 use crate::shared::grow::{
-    collect_labelled_neighbours, predict_from_neighbours, Admit, FillEdgeCtx, GrowResult,
-    SquareAttachPolicy,
+    collect_labelled_neighbours, predict_from_neighbours, unlabelled_index, Admit, FillEdgeCtx,
+    GrowResult, SquareAttachPolicy,
 };
-use kiddo::{KdTree, SquaredEuclidean};
+use crate::spatial::PointIndex;
 use nalgebra::Point2;
 
 /// Tunables for [`fill_grid_holes`].
@@ -128,13 +128,12 @@ pub fn fill_grid_holes<V: SquareAttachPolicy>(
 
     for _iter in 0..params.max_iters.max(1) {
         stats.iterations += 1;
-        let (tree, slot_to_corner) = build_fill_tree(positions, grow, policy);
+        let tree = unlabelled_index(positions, grow, |idx| policy.eligible_for_fill(idx));
         let ctx = FillCtx {
             positions,
             cell_size,
             params,
             tree: &tree,
-            slot_to_corner: &slot_to_corner,
             policy,
         };
 
@@ -157,22 +156,6 @@ pub fn fill_grid_holes<V: SquareAttachPolicy>(
     }
 
     stats
-}
-
-fn build_fill_tree<V: SquareAttachPolicy>(
-    positions: &[Point2<f32>],
-    grow: &GrowResult,
-    policy: &V,
-) -> (KdTree<f32, 2>, Vec<usize>) {
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    let mut slot_to_corner: Vec<usize> = Vec::new();
-    for (idx, pos) in positions.iter().enumerate() {
-        if policy.eligible_for_fill(idx) && !grow.by_corner.contains_key(&idx) {
-            tree.add(&[pos.x, pos.y], slot_to_corner.len() as u64);
-            slot_to_corner.push(idx);
-        }
-    }
-    (tree, slot_to_corner)
 }
 
 /// Cells to try: every unlabelled cell inside the labelled bbox plus
@@ -231,8 +214,7 @@ struct FillCtx<'a, V: SquareAttachPolicy> {
     positions: &'a [Point2<f32>],
     cell_size: f32,
     params: &'a FillParams,
-    tree: &'a KdTree<f32, 2>,
-    slot_to_corner: &'a [usize],
+    tree: &'a PointIndex,
     policy: &'a V,
 }
 
@@ -245,7 +227,6 @@ fn try_fill_cell<V: SquareAttachPolicy>(
     let cell_size = ctx.cell_size;
     let params = ctx.params;
     let tree = ctx.tree;
-    let slot_to_corner = ctx.slot_to_corner;
     let policy = ctx.policy;
     // Collect 8-connected labelled neighbours of `cell`. For interior
     // gaps this will usually be 4+; for line extensions it will be 1
@@ -277,12 +258,8 @@ fn try_fill_cell<V: SquareAttachPolicy>(
     let search_r = params.attach_search_rel * cell_size;
     let r2 = search_r * search_r;
     let mut hits: Vec<(usize, f32)> = Vec::new();
-    for nn in tree
-        .within_unsorted::<SquaredEuclidean>(&[pred.x, pred.y], r2)
-        .into_iter()
-    {
-        let slot = nn.item as usize;
-        let idx = slot_to_corner[slot];
+    for nn in tree.within(pred, r2) {
+        let idx = nn.item;
         if grow.by_corner.contains_key(&idx) {
             continue;
         }
@@ -297,9 +274,9 @@ fn try_fill_cell<V: SquareAttachPolicy>(
         ) {
             continue;
         }
-        hits.push((idx, nn.distance.sqrt()));
+        hits.push((idx, nn.distance_sq.sqrt()));
     }
-    hits.sort_by(|a, b| a.1.total_cmp(&b.1));
+    hits.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
 
     let candidate_idx = match hits.len() {
         0 => return None,

@@ -7,13 +7,12 @@
 
 use std::collections::{HashMap, HashSet};
 
-use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 
 use crate::geometry::estimate_homography;
 use crate::shared::extension::common::{try_attach_at_cell, TryCellResult};
 use crate::shared::extension::{ExtensionStats, LocalExtensionParams};
-use crate::shared::grow::{GrowResult, SquareAttachPolicy};
+use crate::shared::grow::{unlabelled_index, GrowResult, SquareAttachPolicy};
 
 /// Extend the labelled grid outward (and into interior holes) using a
 /// **per-candidate local homography** fit from the K nearest labelled
@@ -50,14 +49,7 @@ pub fn extend_via_local_homography<V: SquareAttachPolicy>(
     }
 
     // KD-tree of un-labelled, eligible corners.
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    let mut tree_slot_to_corner: Vec<usize> = Vec::new();
-    for (idx, pos) in positions.iter().enumerate() {
-        if !grow.by_corner.contains_key(&idx) && policy.is_eligible(idx) {
-            tree.add(&[pos.x, pos.y], tree_slot_to_corner.len() as u64);
-            tree_slot_to_corner.push(idx);
-        }
-    }
+    let tree = unlabelled_index(positions, grow, |idx| policy.is_eligible(idx));
 
     let search_r = params.common.search_rel * cell_size;
     let r2 = search_r * search_r;
@@ -116,11 +108,8 @@ pub fn extend_via_local_homography<V: SquareAttachPolicy>(
             let required_label = policy.required_label_at(cell.0, cell.1);
             let mut hits: Vec<(usize, f32)> = Vec::new();
             let mut rejected_label_count = 0usize;
-            for nn in tree
-                .within_unsorted::<SquaredEuclidean>(&[pred.x, pred.y], r2)
-                .into_iter()
-            {
-                let idx = tree_slot_to_corner[nn.item as usize];
+            for nn in tree.within(pred, r2) {
+                let idx = nn.item;
                 if grow.by_corner.contains_key(&idx) {
                     continue;
                 }
@@ -134,7 +123,7 @@ pub fn extend_via_local_homography<V: SquareAttachPolicy>(
                         continue;
                     }
                 }
-                hits.push((idx, nn.distance.sqrt()));
+                hits.push((idx, nn.distance_sq.sqrt()));
             }
             stats.rejected_label += rejected_label_count;
             hits.sort_by(|a, b| a.1.total_cmp(&b.1).then_with(|| a.0.cmp(&b.0)));

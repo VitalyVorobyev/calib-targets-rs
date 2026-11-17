@@ -41,11 +41,11 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 
-use kiddo::{KdTree, SquaredEuclidean};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 use crate::lattice::{Coord, GridTransform, LatticeKind, D4_TRANSFORMS};
+use crate::spatial::PointIndex;
 
 // Preserve the historical square-facade tie-break order while deriving every
 // transform from the canonical lattice table.
@@ -225,22 +225,20 @@ fn find_best_alignment(
     if q_entries.is_empty() {
         return None;
     }
-    let mut tree: KdTree<f32, 2> = KdTree::new();
-    for (slot, (_, idx)) in q_entries.iter().enumerate() {
-        let pos = positions[*idx];
-        tree.add(&[pos.x, pos.y], slot as u64);
-    }
+    let tree = PointIndex::new(
+        q_entries
+            .iter()
+            .enumerate()
+            .map(|(slot, &(_, idx))| (positions[idx], slot)),
+    );
 
     // Pass 1: Hough enumeration. The bin counts position-close votes
     // only — that's a *lower bound* on the full label-space overlap.
     let mut hist: HashMap<(u8, i32, i32), usize> = HashMap::new();
     for (&ij_p, &idx_p) in labelled_p.iter() {
         let pos_p = positions[idx_p];
-        for nn in tree
-            .within_unsorted::<SquaredEuclidean>(&[pos_p.x, pos_p.y], pos_tol_sq)
-            .into_iter()
-        {
-            let slot = nn.item as usize;
+        for nn in tree.within(pos_p, pos_tol_sq) {
+            let slot = nn.item;
             let (ij_q, _idx_q) = q_entries[slot];
             for (t_idx, t) in transforms.iter().enumerate() {
                 let tij_p = apply_transform(*t, ij_p);
