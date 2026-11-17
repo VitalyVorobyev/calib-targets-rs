@@ -1,13 +1,12 @@
-# calib-targets 0.16.2
+# calib-targets 0.16.3
 
-Generate pixel-aligned Chessboard, ChArUco, and PuzzleBoard targets for
-grayscale displays. Use `calib-targets gen-screen` in Rust or Python, the
-`render_screen_target` API, or **Generate → Screen** in the playground.
-
-Generate a native-resolution PNG for 1:1 display and use the realized square
-size and marker geometry from its JSON sidecar when detecting. See the
-[screen-target tutorial](https://vitalyvorobyev.github.io/calib-targets-rs/book/tutorial_screen_target.html)
-and [workspace changelog](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/CHANGELOG.md#0162).
+A missing or undetected corner no longer costs a whole patch of the board: the
+square grid walk now refuses the cell that spans a hole instead of discarding
+the connected component around it, so dense, partly occluded boards keep
+corners they lost before, with no wrong labels. The build also no longer
+compiles C or assembly: `projective-grid` 0.14.5 answers its neighbour queries
+from its own kd-tree instead of `kiddo`. No API change. See the
+[workspace changelog](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/CHANGELOG.md#0163).
 
 ## Native C API archives
 
@@ -22,9 +21,16 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
-## Current ABI 6.0.1
+## Current ABI 6.0.2
 
-Workspace 0.16.2 ships the 6.0.1 native ABI.
+Workspace 0.16.3 ships the 6.0.2 native ABI, a fix with no type or layout
+change: a caller built against 6.0.0 or 6.0.1 links and runs unchanged.
+
+## ABI 6.0.2 — fix
+
+- Chessboard-grid detection (chessboard, ChArUco, PuzzleBoard, marker board)
+  keeps the corners around a missing one instead of dropping the surrounding
+  component; see the workspace CHANGELOG for 0.16.3.
 
 ## ABI 6.0.1 — fix
 

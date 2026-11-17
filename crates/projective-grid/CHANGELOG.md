@@ -7,6 +7,8 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.5] - 2026-11-17
+
 ### Changed
 
 - **Neighbour queries no longer depend on `kiddo`.** `kiddo` depends on
@@ -273,7 +275,8 @@ See [Road to 1.0](https://github.com/VitalyVorobyev/calib-targets-rs/blob/projec
 for the compact 0.11 → 0.12 request example, release process, readiness status,
 and remaining stabilization work.
 
-[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.4...HEAD
+[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.5...HEAD
+[0.14.5]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.4...projective-grid-v0.14.5
 [0.14.4]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.3...projective-grid-v0.14.4
 [0.14.3]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.2...projective-grid-v0.14.3
 [0.14.2]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.1...projective-grid-v0.14.2
