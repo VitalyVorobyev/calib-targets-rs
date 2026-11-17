@@ -253,3 +253,86 @@ fn position_only_matches_oriented_on_clean_grid() {
         pos_labels.len()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Large perspective board with holes — the square counterpart of the hex
+// board fixtures in `detect_hex_positions.rs`. Exact projected centres of a
+// 35 × 35 board (1,225 nodes, ~45 px pitch, image coordinates ~200..2,000 px)
+// with nodes removed. Recall is checked against all present nodes; the
+// square path's recovery schedule re-attaches nodes the quad walk misses.
+// On 0.14.4 one vertical double hole made the walk drop the whole board.
+// ---------------------------------------------------------------------------
+
+const SQUARE_BOARD: i32 = 35;
+
+fn square_board(removed: &HashSet<(i32, i32)>) -> (Vec<PointFeature>, HashMap<usize, (i32, i32)>) {
+    let h = nalgebra::Matrix3::<f64>::new(
+        -42.60, 12.99, 1840.4, //
+        -10.59, -45.66, 2026.5, //
+        0.00249, -0.0003, 1.0,
+    );
+    let mut feats = Vec::new();
+    let mut truth = HashMap::new();
+    for j in 0..SQUARE_BOARD {
+        for i in 0..SQUARE_BOARD {
+            if removed.contains(&(i, j)) {
+                continue;
+            }
+            let idx = (j * SQUARE_BOARD + i) as usize;
+            let p = h * nalgebra::Vector3::new(i as f64, j as f64, 1.0);
+            feats.push(PointFeature::new(
+                idx,
+                Point2::new((p.x / p.z) as f32, (p.y / p.z) as f32),
+            ));
+            truth.insert(idx, (i, j));
+        }
+    }
+    (feats, truth)
+}
+
+/// Every component's labels are correct and at least `present − slack` distinct
+/// nodes are labelled.
+fn assert_square_board_with_holes(removed: &HashSet<(i32, i32)>, slack: usize, ctx: &str) {
+    let (feats, truth) = square_board(removed);
+    let solutions = projective_grid::detect_grid_all(request(&feats))
+        .unwrap_or_else(|e| panic!("{ctx}: detect failed: {e}"));
+    let mut labelled = HashSet::new();
+    for (k, sol) in solutions.iter().enumerate() {
+        let entries = entries_with_truth(sol);
+        assert_labels_consistent_with_truth(&entries, &truth, &format!("{ctx}, component {k}"));
+        labelled.extend(entries.iter().map(|&(src, _)| src));
+    }
+    assert!(
+        labelled.len() + slack >= feats.len(),
+        "{ctx}: labelled {} of {} present nodes",
+        labelled.len(),
+        feats.len()
+    );
+}
+
+#[test]
+fn square_perspective_board_with_holes() {
+    assert_square_board_with_holes(&HashSet::new(), 0, "full square board");
+    for (i, j) in [(17, 17), (3, 20), (30, 8)] {
+        for (di, dj) in [(1, 0), (0, 1), (1, 1)] {
+            let removed = [(i, j), (i + di, j + dj)].into_iter().collect();
+            assert_square_board_with_holes(
+                &removed,
+                0,
+                &format!("holes at ({i}, {j}) + ({di}, {dj})"),
+            );
+        }
+    }
+    for seed in [0x5EED_4E11_u32, 0x0BAD_F00D, 0x1234_5678] {
+        let mut state = seed;
+        let mut removed = HashSet::new();
+        while removed.len() < (SQUARE_BOARD * SQUARE_BOARD) as usize / 20 {
+            state ^= state << 13;
+            state ^= state >> 17;
+            state ^= state << 5;
+            let k = (state % (SQUARE_BOARD * SQUARE_BOARD) as u32) as i32;
+            removed.insert((k % SQUARE_BOARD, k / SQUARE_BOARD));
+        }
+        assert_square_board_with_holes(&removed, 0, &format!("5% random holes, seed {seed:#x}"));
+    }
+}

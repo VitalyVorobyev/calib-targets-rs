@@ -15,6 +15,8 @@
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
+use nalgebra::{Point2, Vector2};
+
 use super::quads::Quad;
 use crate::lattice::Coord;
 
@@ -155,6 +157,154 @@ fn propagate(
     ))
 }
 
+/// Largest continuation residual two adjacent quads may show and still be
+/// walked across, in cells.
+///
+/// The walk labels the neighbour's two far corners one cell step beyond the
+/// shared edge. Half a cell is where the nearest *other* lattice node becomes
+/// as close as the predicted one (the inradius of a square lattice's Voronoi
+/// cell), so the test asks only "is that corner the predicted node rather than
+/// a neighbour of it". True adjacent cells miss by a second-order perspective
+/// term plus position noise; a quad that spans a missing corner misses by a
+/// whole cell.
+const MAX_CONTINUATION_RESIDUAL_CELLS: f32 = 0.5;
+
+/// Length of image vector `r` in cells, in the affine frame of the cell
+/// corner `origin` whose two edges `along − origin` and `across − origin` are
+/// unit lattice steps at a right angle. `None` when the frame is degenerate.
+fn length_in_cells(
+    positions: &[Point2<f32>],
+    origin: usize,
+    along: Point2<f32>,
+    across: Point2<f32>,
+    r: Vector2<f32>,
+) -> Option<f32> {
+    let u = along - positions[origin];
+    let v = across - positions[origin];
+    let det = u.x * v.y - u.y * v.x;
+    if !det.is_finite() || det.abs() <= f32::EPSILON * u.norm_squared().max(v.norm_squared()) {
+        return None;
+    }
+    let alpha = (r.x * v.y - r.y * v.x) / det;
+    let beta = (u.x * r.y - u.y * r.x) / det;
+    Some((alpha * alpha + beta * beta).sqrt())
+}
+
+/// Whether `nbr`, sharing `cur`'s edge `k` with its corner `nbr_a_pos` on
+/// `cur`'s corner `k + 1`, continues the lattice: each far corner of `nbr`
+/// must lie within [`MAX_CONTINUATION_RESIDUAL_CELLS`] of the one-step
+/// continuation of `cur`'s side through the shared corner, measured in both
+/// quads' frames (a quad that spans a hole has a distorted frame of its own,
+/// so only the two measurements together are symmetric).
+fn continues_lattice(
+    positions: &[Point2<f32>],
+    cur: &Quad,
+    k: usize,
+    nbr: &Quad,
+    nbr_a_pos: usize,
+) -> bool {
+    let p = |v: usize| positions[v];
+    let a = cur.vertices[k];
+    let b = cur.vertices[(k + 1) % 4];
+    let c = cur.vertices[(k + 2) % 4];
+    let d = cur.vertices[(k + 3) % 4];
+    // `nbr` runs b, a, then a's far corner, then b's far corner.
+    let far_a = nbr.vertices[(nbr_a_pos + 2) % 4];
+    let far_b = nbr.vertices[(nbr_a_pos + 3) % 4];
+    let residual_a = p(far_a) - (p(a) + (p(a) - p(d)));
+    let residual_b = p(far_b) - (p(b) + (p(b) - p(c)));
+    let within = |origin: usize, along: usize, across: Point2<f32>| {
+        [residual_a, residual_b].iter().all(|&r| {
+            length_in_cells(positions, origin, p(along), across, r)
+                .is_some_and(|cells| cells < MAX_CONTINUATION_RESIDUAL_CELLS)
+        })
+    };
+    within(a, b, p(d)) && within(a, b, p(far_a))
+}
+
+/// A walkable adjacency: quad `quad` shares this quad's perimeter edge `edge`.
+#[derive(Clone, Copy, Debug)]
+struct QuadLink {
+    quad: usize,
+    edge: usize,
+}
+
+/// The quad graph the walk runs on: quads sharing a perimeter edge are
+/// *linked* when the shared edge is consistently oriented and
+/// [`continues_lattice`] accepts the pair, and *refused* when only the
+/// geometric test fails.
+///
+/// Under perspective a quad that spans a missing corner can pass the cell
+/// filters. Walking into it labels its far corners one cell off, which the
+/// walk then detected as a conflict and, before this gate, answered by
+/// discarding the whole component. Refusing the link costs only that edge.
+struct QuadGraph {
+    links: Vec<Vec<QuadLink>>,
+    /// Edge-adjacent quad pairs `(qi, qj)`, `qi < qj`, whose link was refused.
+    refused: Vec<(usize, usize)>,
+}
+
+fn build_quad_graph(
+    quads: &[Quad],
+    edge_index: &HashMap<(usize, usize), Vec<(usize, usize)>>,
+    positions: &[Point2<f32>],
+) -> QuadGraph {
+    let mut links: Vec<Vec<QuadLink>> = vec![Vec::new(); quads.len()];
+    let mut refused = Vec::new();
+    for (qi, q) in quads.iter().enumerate() {
+        for (k, (u, v)) in q.perimeter_edges().iter().enumerate() {
+            let key = if u < v { (*u, *v) } else { (*v, *u) };
+            for &(qj, _) in &edge_index[&key] {
+                if qj == qi {
+                    continue;
+                }
+                let nbr = &quads[qj];
+                let (Some(nbr_a_pos), Some(nbr_b_pos)) = (
+                    position_of(nbr, q.vertices[(k + 1) % 4]),
+                    position_of(nbr, q.vertices[k]),
+                ) else {
+                    continue;
+                };
+                if (nbr_a_pos + 1) % 4 != nbr_b_pos {
+                    continue;
+                }
+                if continues_lattice(positions, q, k, nbr, nbr_a_pos) {
+                    links[qi].push(QuadLink { quad: qj, edge: k });
+                } else if qi < qj {
+                    refused.push((qi, qj));
+                }
+            }
+        }
+    }
+    QuadGraph { links, refused }
+}
+
+/// Connected components of the link graph, each as its member quads in BFS
+/// order from its smallest quad index.
+fn linked_components(links: &[Vec<QuadLink>]) -> Vec<Vec<usize>> {
+    let mut seen = vec![false; links.len()];
+    let mut out = Vec::new();
+    for start in 0..links.len() {
+        if seen[start] {
+            continue;
+        }
+        seen[start] = true;
+        let mut members = vec![start];
+        let mut queue = VecDeque::from([start]);
+        while let Some(qi) = queue.pop_front() {
+            for link in &links[qi] {
+                if !seen[link.quad] {
+                    seen[link.quad] = true;
+                    members.push(link.quad);
+                    queue.push_back(link.quad);
+                }
+            }
+        }
+        out.push(members);
+    }
+    out
+}
+
 /// Rebase a labelled set so the bbox starts at (0, 0). Mutates in place.
 fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
     if labelled.is_empty() {
@@ -177,8 +327,17 @@ fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
 }
 
 /// Walk the quad mesh and produce one labelled component per connected
-/// piece. Components with fewer than `min_quads_per_component` quads or
-/// fewer than `min_corners_per_component` labelled corners are dropped.
+/// piece of the link graph ([`QuadGraph`]).
+///
+/// Components are taken largest first. One is dropped when it has fewer than
+/// `min_quads_per_component` quads or `min_corners_per_component` labelled
+/// corners, when two of its quads disagree on a corner's label, when a larger
+/// kept component already labels every one of its corners (it adds nothing),
+/// or when a larger kept component *refuses* it: a quad of each shares an
+/// edge but fails [`continues_lattice`]. Two true cells never fail that test,
+/// so a refused pair holds a quad that spans a hole; linked quads continue
+/// each other's lattice, so such a quad's whole component is labelled in a
+/// wrong frame. The larger, majority side is the one kept.
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
@@ -189,6 +348,7 @@ fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
 )]
 pub(super) fn label_components(
     quads: &[Quad],
+    positions: &[Point2<f32>],
     min_quads_per_component: usize,
     min_corners_per_component: usize,
 ) -> Vec<TopologicalComponent> {
@@ -196,109 +356,141 @@ pub(super) fn label_components(
         return Vec::new();
     }
     let edge_index = build_edge_index(quads);
-    let (comp_of, n_comp) = connected_components(quads, &edge_index);
-
-    // Group quads per component.
-    let mut quads_by_comp: Vec<Vec<usize>> = vec![Vec::new(); n_comp as usize];
-    for (qi, &cid) in comp_of.iter().enumerate() {
-        quads_by_comp[cid as usize].push(qi);
+    let graph = build_quad_graph(quads, &edge_index, positions);
+    let components = linked_components(&graph.links);
+    let mut component_of = vec![0usize; quads.len()];
+    for (id, members) in components.iter().enumerate() {
+        for &qi in members {
+            component_of[qi] = id;
+        }
+    }
+    let mut refused_by: Vec<HashSet<usize>> = vec![HashSet::new(); components.len()];
+    for &(qi, qj) in &graph.refused {
+        let (ci, cj) = (component_of[qi], component_of[qj]);
+        if ci != cj {
+            refused_by[ci].insert(cj);
+            refused_by[cj].insert(ci);
+        }
     }
 
+    let mut candidates: Vec<(usize, HashMap<Coord, usize>)> = Vec::new();
+    for (id, members) in components.iter().enumerate() {
+        if members.len() < min_quads_per_component {
+            continue;
+        }
+        let Some(labelled) = label_component(quads, &graph.links, members[0]) else {
+            continue;
+        };
+        if labelled.len() >= min_corners_per_component {
+            candidates.push((id, labelled));
+        }
+    }
+
+    // Largest first, ties by smallest corner index, for determinism.
+    let min_corner = |m: &HashMap<Coord, usize>| m.values().copied().min();
+    candidates.sort_by(|(_, a), (_, b)| {
+        b.len()
+            .cmp(&a.len())
+            .then_with(|| min_corner(a).cmp(&min_corner(b)))
+    });
+    let mut kept: HashSet<usize> = HashSet::new();
+    let mut covered: HashSet<usize> = HashSet::new();
     let mut out = Vec::new();
-    for comp_quads in quads_by_comp {
-        if comp_quads.len() < min_quads_per_component {
+    for (id, mut labelled) in candidates {
+        if refused_by[id].iter().any(|other| kept.contains(other))
+            || labelled.values().all(|idx| covered.contains(idx))
+        {
             continue;
         }
-        // BFS: assign labels per quad-corner.
-        let mut quad_labels: HashMap<usize, [Coord; 4]> = HashMap::new();
-        let seed = comp_quads[0];
-        quad_labels.insert(seed, seed_labels());
-
-        let mut queue = VecDeque::new();
-        queue.push_back(seed);
-        while let Some(qi) = queue.pop_front() {
-            let cur_labels = *quad_labels.get(&qi).expect("seed assigned");
-            let q = &quads[qi];
-            for (k, (u, v)) in q.perimeter_edges().iter().enumerate() {
-                let key = if u < v { (*u, *v) } else { (*v, *u) };
-                let buddies = edge_index.get(&key).expect("edge in index");
-                for &(qj, _) in buddies {
-                    if qj == qi {
-                        continue;
-                    }
-                    let nbr = &quads[qj];
-                    let Some(nbr_labels) = propagate(q, &cur_labels, k, nbr) else {
-                        continue;
-                    };
-                    if let Some(existing) = quad_labels.get(&qj) {
-                        if existing != &nbr_labels {
-                            continue;
-                        }
-                    } else {
-                        quad_labels.insert(qj, nbr_labels);
-                        queue.push_back(qj);
-                    }
-                }
-            }
-        }
-
-        // Collapse per-quad labels into a single coord → feature_index
-        // map. Conflicts (two quads disagreeing on the same vertex) drop
-        // the component (it's not single-valued).
-        let mut labelled: HashMap<Coord, usize> = HashMap::new();
-        let mut ambiguous_labels: HashSet<Coord> = HashSet::new();
-        let mut by_corner: HashMap<usize, Coord> = HashMap::new();
-        let mut conflicts = false;
-        for (&qi, lbls) in &quad_labels {
-            let q = &quads[qi];
-            for (k, lbl) in lbls.iter().enumerate() {
-                let v = q.vertices[k];
-                if let Some(existing) = by_corner.get(&v) {
-                    if existing != lbl {
-                        conflicts = true;
-                    }
-                } else {
-                    by_corner.insert(v, *lbl);
-                }
-            }
-        }
-        if conflicts {
-            continue;
-        }
-        // Two distinct corners can still claim the same coord (e.g. a
-        // marker-internal false corner one cell width away from the true
-        // intersection). Before this rule the winner was whichever corner
-        // `HashMap` iteration visited last — nondeterministic, and on a
-        // measured real case the structural quad-support majority favours
-        // the false corner. A collision is ambiguity the walk cannot
-        // resolve (it has no positions or scores), so label neither
-        // corner: downstream recovery re-attaches the coord from local
-        // geometric prediction, which discriminates correctly.
-        for (v, lbl) in by_corner {
-            match labelled.entry(lbl) {
-                std::collections::hash_map::Entry::Vacant(e) => {
-                    e.insert(v);
-                }
-                std::collections::hash_map::Entry::Occupied(e) => {
-                    e.remove();
-                    ambiguous_labels.insert(lbl);
-                }
-            }
-        }
-        labelled.retain(|lbl, _| !ambiguous_labels.contains(lbl));
-        if labelled.len() < min_corners_per_component {
-            continue;
-        }
-
+        kept.insert(id);
+        covered.extend(labelled.values().copied());
         rebase_to_origin(&mut labelled);
         out.push(TopologicalComponent { labelled });
     }
     out
 }
 
+/// Flood-fill one link-graph component from `seed` and collapse the per-quad
+/// labels into `coord → corner`. `None` when two quads disagree on a corner:
+/// every link has passed the geometric continuation test, so a remaining
+/// disagreement means the input is genuinely ambiguous and the component is
+/// not single-valued.
+fn label_component(
+    quads: &[Quad],
+    links: &[Vec<QuadLink>],
+    seed: usize,
+) -> Option<HashMap<Coord, usize>> {
+    let mut quad_labels: HashMap<usize, [Coord; 4]> = HashMap::from([(seed, seed_labels())]);
+    let mut queue = VecDeque::from([seed]);
+    while let Some(qi) = queue.pop_front() {
+        let cur_labels = quad_labels[&qi];
+        for link in &links[qi] {
+            let Some(nbr_labels) = propagate(&quads[qi], &cur_labels, link.edge, &quads[link.quad])
+            else {
+                continue;
+            };
+            if let std::collections::hash_map::Entry::Vacant(slot) = quad_labels.entry(link.quad) {
+                slot.insert(nbr_labels);
+                queue.push_back(link.quad);
+            }
+        }
+    }
+
+    let mut by_corner: HashMap<usize, Coord> = HashMap::new();
+    for (&qi, lbls) in &quad_labels {
+        for (k, lbl) in lbls.iter().enumerate() {
+            let v = quads[qi].vertices[k];
+            if *by_corner.entry(v).or_insert(*lbl) != *lbl {
+                return None;
+            }
+        }
+    }
+    // Two distinct corners can still claim the same coord (e.g. a
+    // marker-internal false corner one cell width away from the true
+    // intersection). Before this rule the winner was whichever corner
+    // `HashMap` iteration visited last — nondeterministic, and on a
+    // measured real case the structural quad-support majority favours
+    // the false corner. A collision is ambiguity the walk cannot
+    // resolve (it has no positions or scores), so label neither
+    // corner: downstream recovery re-attaches the coord from local
+    // geometric prediction, which discriminates correctly.
+    let mut labelled: HashMap<Coord, usize> = HashMap::new();
+    let mut ambiguous_labels: HashSet<Coord> = HashSet::new();
+    for (v, lbl) in by_corner {
+        match labelled.entry(lbl) {
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(v);
+            }
+            std::collections::hash_map::Entry::Occupied(e) => {
+                e.remove();
+                ambiguous_labels.insert(lbl);
+            }
+        }
+    }
+    labelled.retain(|lbl, _| !ambiguous_labels.contains(lbl));
+    Some(labelled)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Corner positions for the fixtures below: corner `10 + n` and corner `n`
+    /// sit on a 3 × 2 unit lattice, row-major — `0..=5` for the two-quad case,
+    /// `10..=13` for the single quad.
+    fn unit_square_positions() -> Vec<Point2<f32>> {
+        let mut p = vec![Point2::new(0.0, 0.0); 14];
+        for (idx, (x, y)) in [(0, 0), (1, 0), (1, 1), (0, 1), (2, 0), (2, 1)]
+            .into_iter()
+            .enumerate()
+        {
+            p[idx] = Point2::new(x as f32, y as f32);
+        }
+        for (idx, (x, y)) in [(0, 0), (1, 0), (1, 1), (0, 1)].into_iter().enumerate() {
+            p[10 + idx] = Point2::new(x as f32, y as f32);
+        }
+        p
+    }
 
     fn quad(a: usize, b: usize, c: usize, d: usize) -> Quad {
         Quad {
@@ -308,7 +500,7 @@ mod tests {
 
     #[test]
     fn single_quad_labels() {
-        let comps = label_components(&[quad(10, 11, 12, 13)], 1, 4);
+        let comps = label_components(&[quad(10, 11, 12, 13)], &unit_square_positions(), 1, 4);
         assert_eq!(comps.len(), 1);
         let c = &comps[0];
         assert_eq!(c.labelled.get(&Coord::new(0, 0)), Some(&10));
@@ -322,7 +514,7 @@ mod tests {
         // Quad A: 0=(0,0) TL, 1=(1,0) TR, 2=(1,1) BR, 3=(0,1) BL
         // Quad B: 1=(1,0) TL, 4=(2,0) TR, 5=(2,1) BR, 2=(1,1) BL
         let qs = vec![quad(0, 1, 2, 3), quad(1, 4, 5, 2)];
-        let comps = label_components(&qs, 1, 4);
+        let comps = label_components(&qs, &unit_square_positions(), 1, 4);
         assert_eq!(comps.len(), 1);
         let c = &comps[0];
         assert_eq!(c.labelled.get(&Coord::new(0, 0)), Some(&0));

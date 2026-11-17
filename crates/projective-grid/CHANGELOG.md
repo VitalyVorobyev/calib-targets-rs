@@ -22,6 +22,15 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- **A missing corner no longer costs the whole square board.** The square
+  quad walk had the same all-or-nothing rule as the hex walk: a quad that
+  spans a missing corner labels its far corners one cell off, and the
+  resulting conflict discarded the component. It gets the same gate — a
+  shared edge is walked only when the neighbour's far corners lie within half
+  a cell of the one-step continuation, in both quads' frames — and the same
+  rule for the components left over. On a synthetic 1,225-point perspective
+  board, about one in six placements of two neighbouring holes left nothing
+  labelled; none does now.
 - **A missing point no longer costs the whole hex board.** Under perspective,
   a Delaunay triangle that spans a missing lattice point can pass the angular
   cell test. Walking into it labels its apex one lattice step off; the walk saw

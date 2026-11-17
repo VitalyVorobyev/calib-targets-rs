@@ -82,7 +82,7 @@ and [`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/P
 | Axis-driven edge classification | `pg topological/classify.rs` | mesh + axis caches → Grid/Diagonal/Spurious per half-edge | Does an edge align with a corner axis family? | ✅ |
 | Triangle-pair → quad | `pg topological/quads.rs` | triangles + classified edges → quads | Merge diagonal-sharing pairs into grid cells. | ✅ |
 | Quad filter | `pg topological/filter.rs::apply_topological_quad_filter` | quads + degrees → filtered quads | Reject degree>4, extreme parallelograms, out-of-band cell sizes. | ✅ |
-| Integer component labelling (walk) | `pg topological/walk.rs::label_components` | quads + seed → `(i,j)→index` per component | Flood-fill integer labels, rebase min→(0,0). | ✅ |
+| Integer component labelling (walk) | `pg topological/walk.rs::label_components` | quads + positions → `(i,j)→index` per component | Flood-fill integer labels across edges whose far corners continue the lattice within half a cell; components a larger one refuses across an edge are dropped; rebase min→(0,0). | ✅ |
 | Square orchestrator | `pg topological/square_detector.rs::detect_square_oriented2_all` | oriented features + params → labelled components | Drives delaunay→classify→quads→filter→walk. | ✅ |
 | Hex cell classification | `pg topological/hex.rs::classify_hex_cells` | mesh + hex axis caches → valid cells | Three-direction alignment + equilateral test. | 📚 |
 | Hex axial labelling | `pg topological/hex.rs::label_components` | hex cells + positions → axial labels | Axial flood-fill with parallelogram completion, gated on the image completion within half a step; components a larger one refuses across an edge are dropped (no quad merge). | 📚 |
