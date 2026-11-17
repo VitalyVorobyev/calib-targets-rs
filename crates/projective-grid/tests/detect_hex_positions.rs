@@ -555,3 +555,240 @@ fn axis_aligned_hex_rows_survive_subpixel_noise() {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Large perspective board with holes.
+//
+// A dense ring-marker target is a few hundred to ~1,200 centres under
+// perspective, and a real detector misses some of them. The fixtures below
+// project a 34-row board (rows alternating 37 / 36 nodes, 1,241 nodes) through
+// one fixed homography in `f64`, so the positions are the exact projected
+// centres, then remove nodes.
+// ---------------------------------------------------------------------------
+
+/// Board rows; even rows carry `BOARD_WIDE` nodes, odd rows one fewer.
+const BOARD_ROWS: i32 = 34;
+const BOARD_WIDE: i32 = 37;
+
+/// Model (unit-spacing hex basis) → image homography: ~45 px spacing, the
+/// board turned by ~195°, with a perspective row that changes the spacing by
+/// ~10 % across the board. Image coordinates span roughly 200..2,100 px.
+fn board_homography() -> nalgebra::Matrix3<f64> {
+    nalgebra::Matrix3::new(
+        -42.60, 12.99, 1640.4, //
+        -10.59, -45.66, 2026.5, //
+        0.00249, -0.0003, 1.0,
+    )
+}
+
+/// Axial `(q, r)` of every board node, in row-major order. The row-offset
+/// layout `x = col + (r mod 2) / 2` in the hex basis `(q + r/2, (√3/2) r)`
+/// gives `q = col − ⌊r / 2⌋`.
+fn board_coords() -> Vec<(i32, i32)> {
+    let mut out = Vec::new();
+    for r in 0..BOARD_ROWS {
+        let count = if r % 2 == 0 {
+            BOARD_WIDE
+        } else {
+            BOARD_WIDE - 1
+        };
+        for col in 0..count {
+            out.push((col - r.div_euclid(2), r));
+        }
+    }
+    out
+}
+
+/// Exact projected board centres, skipping `removed` axial coords. Returns the
+/// features (source index = row-major board index) and the ground truth.
+fn board_features(
+    removed: &std::collections::HashSet<(i32, i32)>,
+) -> (Vec<PointFeature>, HashMap<usize, (i32, i32)>) {
+    let h = board_homography();
+    let sqrt3_2 = 3.0_f64.sqrt() * 0.5;
+    let mut feats = Vec::new();
+    let mut truth = HashMap::new();
+    for (idx, (q, r)) in board_coords().into_iter().enumerate() {
+        if removed.contains(&(q, r)) {
+            continue;
+        }
+        let m = nalgebra::Vector3::new(q as f64 + 0.5 * r as f64, sqrt3_2 * r as f64, 1.0);
+        let p = h * m;
+        feats.push(PointFeature::new(
+            idx,
+            Point2::new((p.x / p.z) as f32, (p.y / p.z) as f32),
+        ));
+        truth.insert(idx, (q, r));
+    }
+    (feats, truth)
+}
+
+/// Present nodes that are a vertex of at least one *complete* unit triangle
+/// (all three vertices present). A node in no complete triangle has no cell
+/// to be labelled through, so this is the most any triangle-walk labeller can
+/// reach.
+fn coverable_nodes(present: &std::collections::HashSet<(i32, i32)>) -> usize {
+    let mut covered = std::collections::HashSet::new();
+    for &(q, r) in present {
+        // The two unit triangles whose lowest-index vertex is (q, r).
+        for [b, c] in [[(q + 1, r), (q, r + 1)], [(q + 1, r), (q + 1, r - 1)]] {
+            if present.contains(&b) && present.contains(&c) {
+                covered.extend([(q, r), b, c]);
+            }
+        }
+    }
+    covered.len()
+}
+
+/// Run `detect_grid_all` on the board minus `removed`. Asserts that every
+/// component's labels are correct and that at least `coverable − slack`
+/// distinct nodes are labelled across all components. (Components that the
+/// merge cannot reunite may share a vertex; each is checked on its own.)
+fn assert_board_with_holes(
+    removed: &std::collections::HashSet<(i32, i32)>,
+    slack: usize,
+    ctx: &str,
+) {
+    let (feats, truth) = board_features(removed);
+    let present: std::collections::HashSet<(i32, i32)> = truth.values().copied().collect();
+    let coverable = coverable_nodes(&present);
+    let solutions = projective_grid::detect_grid_all(request(&feats))
+        .unwrap_or_else(|e| panic!("{ctx}: detect failed: {e}"));
+    let mut labelled_sources = std::collections::HashSet::new();
+    for (k, sol) in solutions.iter().enumerate() {
+        let entries = entries_with_truth(sol);
+        assert_labels_consistent_with_truth(&entries, &truth, &format!("{ctx}, component {k}"));
+        labelled_sources.extend(entries.iter().map(|&(src, _)| src));
+    }
+    let labelled = labelled_sources.len();
+    assert!(
+        labelled + slack >= coverable,
+        "{ctx}: labelled {labelled} of {coverable} coverable nodes ({} present)",
+        feats.len()
+    );
+}
+
+#[test]
+fn perspective_board_labels_every_node() {
+    assert_board_with_holes(&Default::default(), 0, "full board");
+}
+
+#[test]
+fn perspective_board_two_neighbouring_holes() {
+    // Two lattice-adjacent interior nodes, along each of the three axis
+    // families and at several places on the board: one double hole must cost
+    // only those two nodes.
+    for (q, r) in [(10, 16), (2, 6), (14, 27), (25, 9)] {
+        for (dq, dr) in [(1, 0), (0, 1), (1, -1)] {
+            let removed = [(q, r), (q + dq, r + dr)].into_iter().collect();
+            assert_board_with_holes(&removed, 0, &format!("holes at ({q}, {r}) + ({dq}, {dr})"));
+        }
+    }
+}
+
+/// Two neighbouring holes next to the board edge, where the walk's link gate
+/// alone is not enough: the cells spanning the holes link to each other as a
+/// small component in a doubled-lattice frame, and the boundary nodes they
+/// cover belong to no true cell. Those components must be rejected (they
+/// were, on 0.14.4, only because the whole board collapsed); a node or two
+/// beside the holes may go unlabelled.
+#[test]
+fn perspective_board_two_holes_beside_the_edge_zero_wrong() {
+    for (q, r, dq, dr) in [
+        (14, 1, 0, 1),
+        (20, 1, 0, 1),
+        (-8, 17, 1, 0),
+        (-12, 25, 1, 0),
+        (9, 32, 1, -1),
+    ] {
+        let removed = [(q, r), (q + dq, r + dr)].into_iter().collect();
+        assert_board_with_holes(
+            &removed,
+            4,
+            &format!("edge holes at ({q}, {r}) + ({dq}, {dr})"),
+        );
+    }
+}
+
+/// About 5 % of the nodes removed at random (three seeds). Every label must be
+/// right; recall must reach 98 % of the nodes that lie in a complete unit
+/// triangle (measured: 98.9–99.8 %; 0.14.4 labelled under 1 %). The misses
+/// are nodes that clustered holes leave in no pair of adjacent true cells —
+/// an isolated cell, or cells whose position-synthesised axes are too poor
+/// for the angular cell test — which no triangle walk can reach.
+#[test]
+fn perspective_board_five_percent_random_holes() {
+    let coords = board_coords();
+    for seed in [0x5EED_4E11_u32, 0x0BAD_F00D, 0x1234_5678] {
+        let mut rng = Lcg::new(seed);
+        let mut removed = std::collections::HashSet::new();
+        while removed.len() < coords.len() / 20 {
+            let k = ((rng.next_centered() + 0.5) * coords.len() as f32) as usize;
+            removed.insert(coords[k.min(coords.len() - 1)]);
+        }
+        let present = coords.len() - removed.len();
+        assert_board_with_holes(
+            &removed,
+            present / 50,
+            &format!("5% random holes, seed {seed:#x}"),
+        );
+    }
+}
+
+/// Hex labels are orientation-preserving: the model basis `(1,0) ↦ (1, 0)`,
+/// `(0,1) ↦ (½, √3/2)` has positive signed area in the (x right, y down)
+/// frame the image shares, so every labelled unit triangle
+/// `c, c + (1,0), c + (0,1)` must have positive signed area in the image too —
+/// i.e. `det(model → image) > 0`, the same handedness the square path's
+/// canonical labels have. Only the rotation within D6 (and the translation)
+/// stays free.
+#[test]
+fn hex_labels_preserve_orientation() {
+    fn signed_areas(sol: &projective_grid::GridDetection) -> Vec<f32> {
+        let by_coord: HashMap<Coord, Point2<f32>> = sol
+            .grid()
+            .entries()
+            .iter()
+            .map(|e| (e.coord, e.image_position))
+            .collect();
+        by_coord
+            .iter()
+            .filter_map(|(c, &p0)| {
+                let p1 = by_coord.get(&Coord::new(c.u + 1, c.v))?;
+                let p2 = by_coord.get(&Coord::new(c.u, c.v + 1))?;
+                let (a, b) = (p1 - p0, p2 - p0);
+                Some(a.x * b.y - a.y * b.x)
+            })
+            .collect()
+    }
+    let mut cases: Vec<(String, Vec<PointFeature>)> = Vec::new();
+    cases.push(("board".into(), board_features(&Default::default()).0));
+    for deg in [0.0_f32, 17.0, 95.0, 142.0, 233.0, 300.0] {
+        let (s, c) = deg.to_radians().sin_cos();
+        let rot = Matrix3::new(c, -s, 0.0, s, c, 0.0, 0.0, 0.0, 1.0);
+        cases.push((
+            format!("rotation {deg}°"),
+            hex_patch(3, 30.0, 250.0, &rot).0,
+        ));
+    }
+    let persp = Matrix3::new(
+        1.0, 0.10, 0.0, //
+        0.03, 1.0, 0.0, //
+        0.0006, 0.0004, 1.0,
+    );
+    cases.push((
+        "perspective patch".into(),
+        hex_patch(4, 28.0, 200.0, &persp).0,
+    ));
+    for (name, feats) in &cases {
+        let sol = detect_grid(request(feats)).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let areas = signed_areas(&sol);
+        assert!(!areas.is_empty(), "{name}: no labelled unit triangle");
+        assert!(
+            areas.iter().all(|&a| a > 0.0),
+            "{name}: {} of {} labelled unit triangles are mirrored",
+            areas.iter().filter(|&&a| a <= 0.0).count(),
+            areas.len()
+        );
+    }
+}

@@ -69,7 +69,7 @@ pub(crate) fn detect_hex_oriented3_topological_all(
 
     let cells =
         hex::classify_hex_cells(&positions, &caches, &triangulation, topo.axis_align_tol_rad);
-    let components = hex::label_components(&cells, topo.min_corners_for_component);
+    let components = hex::label_components(&cells, &positions, topo.min_corners_for_component);
     if components.is_empty() {
         return Err(GridError::DegenerateGeometry);
     }

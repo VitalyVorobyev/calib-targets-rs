@@ -278,7 +278,18 @@ pub fn estimate_homography<F: Float>(
         let dst: &[Point2<F>; 4] = dst_pts.try_into().ok()?;
         return homography_from_4pt(src, dst);
     }
+    estimate_homography_dlt(src_pts, dst_pts)
+}
 
+/// Hartley-normalised homogeneous DLT for N >= 4 correspondences: the
+/// homography is the null vector of the normalised `2N × 9` system (the
+/// eigenvector of `AᵀA` for its smallest eigenvalue), so no entry is pinned
+/// to `1` while solving. The caller guarantees `src_pts.len() ==
+/// dst_pts.len() >= 4`.
+pub(super) fn estimate_homography_dlt<F: Float>(
+    src_pts: &[Point2<F>],
+    dst_pts: &[Point2<F>],
+) -> Option<Homography<F>> {
     let (r, tr) = normalize_points(src_pts);
     let (im, ti) = normalize_points(dst_pts);
 

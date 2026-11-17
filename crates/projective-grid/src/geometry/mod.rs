@@ -1,10 +1,11 @@
 //! Geometry helpers shared by grid tasks.
 //!
 //! Owns the crate's homography estimators: the public [`estimate_projective`]
-//! (plain DLT returning `nalgebra::Projective2`, used for the final lattice
-//! fit and consistency check) and the [`homography`] submodule's Hartley-
-//! normalised DLT + quality (returning the [`Homography`] wrapper, used for
-//! local per-cell fits in seed, validate, and extension).
+//! (returning `nalgebra::Projective2`, used for the final lattice fit and
+//! consistency check; always solved in `f64`) and the [`homography`]
+//! submodule's Hartley-normalised DLT + quality (returning the [`Homography`]
+//! wrapper in the caller's float type, used for local per-cell fits in seed,
+//! validate, and extension). Both share one normalised DLT core.
 
 pub mod homography;
 pub use homography::{
@@ -12,12 +13,17 @@ pub use homography::{
     homography_from_4pt_with_quality, Homography, HomographyQuality,
 };
 
-use nalgebra::{DMatrix, DVector, Matrix3, Point2, Projective2, Vector3};
+use nalgebra::{Matrix3, Point2, Projective2, Vector3};
 
 use crate::error::{GridError, Result};
 use crate::float::{lit, Float};
 
 /// Estimate a projective transform from model-plane points to image points.
+///
+/// A least-squares homogeneous DLT: both point sets are Hartley-normalised and
+/// the system is solved in `f64` regardless of `F`, so exact correspondences
+/// fit to rounding error even with image coordinates in the thousands of
+/// pixels. The returned matrix is scaled so its bottom-right entry is `1`.
 ///
 /// Returns [`GridError::InsufficientEvidence`] for fewer than four
 /// correspondences and [`GridError::DegenerateGeometry`] when either point set
@@ -41,43 +47,26 @@ pub fn estimate_projective<F: Float>(
         return Err(GridError::DegenerateGeometry);
     }
 
-    let rows = model_points.len() * 2;
-    let mut a = DMatrix::<F>::zeros(rows, 8);
-    let mut b = DVector::<F>::zeros(rows);
-    for (idx, (src, dst)) in model_points.iter().zip(image_points).enumerate() {
-        let x = src.x;
-        let y = src.y;
-        let u = dst.x;
-        let v = dst.y;
-        let r0 = 2 * idx;
-        let r1 = r0 + 1;
-
-        a[(r0, 0)] = x;
-        a[(r0, 1)] = y;
-        a[(r0, 2)] = F::one();
-        a[(r0, 6)] = -u * x;
-        a[(r0, 7)] = -u * y;
-        b[r0] = u;
-
-        a[(r1, 3)] = x;
-        a[(r1, 4)] = y;
-        a[(r1, 5)] = F::one();
-        a[(r1, 6)] = -v * x;
-        a[(r1, 7)] = -v * y;
-        b[r1] = v;
-    }
-
-    let svd = a.svd(true, true);
-    let eps = lit::<F>(1e-12);
-    let h = svd
-        .solve(&b, eps)
-        .map_err(|_| GridError::DegenerateGeometry)?;
-    let matrix = Matrix3::new(h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], F::one());
+    // Solve in f64 whatever `F` is: image coordinates in the thousands of
+    // pixels leave an f32 system too little precision for a sub-pixel fit.
+    let model_f64 = to_f64_points(model_points).ok_or(GridError::DegenerateGeometry)?;
+    let image_f64 = to_f64_points(image_points).ok_or(GridError::DegenerateGeometry)?;
+    let fitted = homography::estimate_homography_dlt(&model_f64, &image_f64)
+        .ok_or(GridError::DegenerateGeometry)?;
+    let matrix: Matrix3<F> = fitted.h.map(nalgebra::convert::<f64, F>);
     if matrix.iter().any(|x| !x.is_finite()) {
         return Err(GridError::DegenerateGeometry);
     }
 
     Ok(Projective2::from_matrix_unchecked(matrix))
+}
+
+/// Widen points to `f64`; `None` when a coordinate is not representable.
+fn to_f64_points<F: Float>(points: &[Point2<F>]) -> Option<Vec<Point2<f64>>> {
+    points
+        .iter()
+        .map(|p| Some(Point2::new(p.x.to_subset()?, p.y.to_subset()?)))
+        .collect()
 }
 
 /// Apply a projective transform to a point and return `None` when the
@@ -129,6 +118,70 @@ mod tests {
         let q = apply_projective(&h, Point2::new(0.25, 0.5)).unwrap();
         assert!((q.x - 10.5).abs() < 1e-9);
         assert!((q.y + 1.5).abs() < 1e-9);
+    }
+
+    /// Exact projected centres of a 1,239-node hex board (37 rows of 33 / 34
+    /// nodes) under perspective, in `f32` image coordinates in the low
+    /// thousands of pixels. Returns `(model, image)` correspondences.
+    fn perspective_hex_board() -> (Vec<Point2<f32>>, Vec<Point2<f32>>) {
+        let h = Matrix3::new(
+            11.18, -44.43, 1713.9, //
+            51.10, 13.89, 146.0, //
+            0.0018, 0.00426, 1.0,
+        );
+        let sqrt3_2 = 3.0_f64.sqrt() * 0.5;
+        let mut model = Vec::new();
+        let mut image = Vec::new();
+        for row in 0..37 {
+            let (count, shift) = if row % 2 == 0 { (33, 0.5) } else { (34, 0.0) };
+            for col in 0..count {
+                let m = Vector3::new(col as f64 + shift, row as f64 * sqrt3_2, 1.0);
+                let p = h * m;
+                model.push(Point2::new(m.x as f32, m.y as f32));
+                image.push(Point2::new((p.x / p.z) as f32, (p.y / p.z) as f32));
+            }
+        }
+        (model, image)
+    }
+
+    fn max_residual_px(h: &Projective2<f32>, model: &[Point2<f32>], image: &[Point2<f32>]) -> f32 {
+        model
+            .iter()
+            .zip(image)
+            .map(|(&m, &p)| (apply_projective(h, m).unwrap() - p).norm())
+            .fold(0.0, f32::max)
+    }
+
+    /// Exact data must fit exactly. An `f32` DLT with `h33 = 1` and no
+    /// conditioning left pixels of residual on this board, so a 2 px residual
+    /// gate rejected correct labels.
+    #[test]
+    fn estimate_projective_is_exact_on_a_large_perspective_board() {
+        let (model, image) = perspective_hex_board();
+        assert_eq!(model.len(), 1239);
+        let h = estimate_projective(&model, &image).unwrap();
+        let max = max_residual_px(&h, &model, &image);
+        assert!(max < 0.01, "max residual {max} px on exact centres");
+    }
+
+    /// The fit must not depend on where the model frame's origin sits: the
+    /// detector rebases labels and folds them by a lattice symmetry before
+    /// fitting, so the same points arrive with shifted, mirrored model coords.
+    #[test]
+    fn estimate_projective_is_exact_under_model_frame_changes() {
+        let (model, image) = perspective_hex_board();
+        for (sx, tx, ty) in [(1.0, 40.0, 30.0), (-1.0, 0.0, 0.0), (-1.0, 200.0, -150.0)] {
+            let moved: Vec<Point2<f32>> = model
+                .iter()
+                .map(|m| Point2::new(sx * m.x + tx, m.y + ty))
+                .collect();
+            let h = estimate_projective(&moved, &image).unwrap();
+            let max = max_residual_px(&h, &moved, &image);
+            assert!(
+                max < 0.01,
+                "max residual {max} px, model frame ({sx}, {tx}, {ty})"
+            );
+        }
     }
 
     #[test]

@@ -7,6 +7,48 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- **Hex labels are orientation-preserving.** Hex `(q, r)` labels were
+  documented only up to a D6 automorphism, which includes reflections, and in
+  practice every hex labelling came out mirrored: the walk seeded its first
+  triangle in Delaunay winding order, which is the opposite of the
+  `LatticeKind::Hex` model basis in the (x right, y down) image frame. The
+  seed is now assigned by the sign of its image area, so `det(model → image)`
+  of every hex `LatticeFit` is positive — the handedness square labels
+  already have — and only a rotation within D6 plus a translation remain
+  free. A consumer that un-mirrored hex labels itself must stop doing so;
+  positions, the labelled set and the fit residuals are unchanged.
+
+### Fixed
+
+- **A missing point no longer costs the whole hex board.** Under perspective,
+  a Delaunay triangle that spans a missing lattice point can pass the angular
+  cell test. Walking into it labels its apex one lattice step off; the walk saw
+  the resulting label conflict and discarded the entire connected component,
+  so one or two holes could leave a 1,200-point board with nothing labelled.
+  The walk now crosses a shared edge only when the neighbour's apex lies
+  within half a lattice step of the image parallelogram completion (measured
+  in both triangles' affine frames; half a step is where another lattice node
+  becomes as close), so a hole-spanning triangle costs its own edges. The
+  triangles it leaves behind, which label each other in a wrong, coarser
+  frame, are rejected because a larger component's cell refuses them across a
+  shared edge; a component that adds no feature to a larger one is dropped as
+  well. A conflict that survives the gate still drops its component. On a
+  synthetic 1,241-point perspective hex board, every placement of two
+  neighbouring holes away from the border now costs exactly those two points
+  (before, about one in ten placements labelled nothing), and 5 % random
+  holes label over 98 % of the reachable points (before, under 1 %), every
+  label checked against ground truth.
+- **The lattice fit is exact on exact data.** `estimate_projective` (and so
+  every `LatticeFit` and `check_consistency`) solved an `f32` DLT with
+  `h33 = 1` and no conditioning; on a 1,239-point board with image
+  coordinates in the thousands of pixels it left up to ~3 px of residual on
+  exact centres, so the default 2 px residual gate rejected correct labels. It
+  is now a Hartley-normalised homogeneous DLT solved in `f64` (the same core
+  as `estimate_homography`), with residuals at rounding level. The signature
+  is unchanged; the result is still scaled to `h33 = 1`.
+
 ## [0.14.4] - 2026-10-30
 
 ### Added
