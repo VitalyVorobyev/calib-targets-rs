@@ -7,7 +7,25 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.16.3
+
+A grid-labelling fix and a leaner build. Upgrade from 0.16.2; no API change.
+The C ABI moves to 6.0.2 (no type or layout change), and the workspace requires
+`projective-grid` 0.14.5.
+
+### Fixed
+
+- **A missing corner no longer costs a whole patch of the board.** The square
+  grid walk discarded an entire connected component at the first corner-label
+  conflict, and a grid cell that spans a missing or undetected corner produces
+  one: walking into it labels the far corners one cell off. A shared edge is
+  now walked only when the neighbouring cell continues the current one to
+  within half a cell, so a hole costs only its own cells. Dense, partly
+  occluded boards keep corners that were dropped before, with no wrong labels;
+  occasionally a corner next to a hole is now dropped by a later recovery
+  stage instead. This applies to every target built on the chessboard grid.
+- **Supply chain.** `zip` moves to 9.0.5 (RUSTSEC-2026-0548). The advisory
+  concerns stream extraction, which the FFI packaging code does not use.
 
 ### Changed
 
@@ -15,7 +33,10 @@ see [Older releases](#older-releases) at the bottom for the index.
   `projective-grid` drops `kiddo` (and with it `generator`, whose build script
   ran `cc`) for its own small kd-tree, which keeps detection speed on par.
   Builds without the `tracing` feature no longer compile `tracing-subscriber`.
-  Detection output is unchanged.
+  Labels and detection speed are unchanged by the switch.
+- `projective-grid` 0.14.5 also makes its lattice fit exact on exact data
+  and stops a missing point from dropping a whole hex board; see its
+  [changelog](crates/projective-grid/CHANGELOG.md).
 
 ## 0.16.2
 

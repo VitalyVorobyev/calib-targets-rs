@@ -118,7 +118,8 @@ never touches `extension`, `grow_extend`, or the `recovery` schedule — those d
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| BFS candidate search | `pg shared/grow/mod.rs::collect_candidates` | KD-tree + prediction + policy → ranked candidates | Radius search filtered by attach policy. | ✅ |
+| Point index | `pg spatial.rs::PointIndex` | positions + item tags → radius / k-nearest hits | Static kd-tree in one array (median splits); hits ordered by `(d², item)`, a tie at the k-th place broken by item. Backs every neighbour query in the crate. | ✅ |
+| BFS candidate search | `pg shared/grow/mod.rs::collect_candidates` | `PointIndex` + prediction + policy → ranked candidates | Radius search filtered by attach policy. | ✅ |
 | Per-neighbour prediction | `pg shared/grow/predict.rs::predict_from_neighbours` | labelled neighbours → predicted px | Weighted average from K nearest labelled corners. | ✅ |
 | Interior hole fill | `pg shared/fill.rs::fill_grid_holes` | labelled + bbox + policy → attached count | Enumerate empty cells in bbox+skirt, attach via the grow ladder. | ✅ |
 | Chessboard boosters | `chess pipeline/boosters.rs::apply_boosters_with_directional_edge_scale` | component + policy → grown component | Wrap `fill_grid_holes` with a weak-cluster-rescue `SquareAttachPolicy`. | ✅ (chess-local) |
