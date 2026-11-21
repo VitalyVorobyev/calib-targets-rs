@@ -19,6 +19,7 @@ calib-targets-core = { workspace = true }
 chess-corners = { workspace = true }
 clap = { workspace = true, features = ["derive", "env"] }
 image = { workspace = true }
+libm = { workspace = true }
 nalgebra = { workspace = true }
 # The grid-level bench engine drives the grid builder directly (bypassing the
 # chessboard recovery stages) for the orientation-source head-to-head.
