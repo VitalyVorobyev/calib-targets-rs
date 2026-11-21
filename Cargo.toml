@@ -94,6 +94,7 @@ image = { version = "0.25", default-features = false, features = [
     "tiff",
     "webp",
 ] }
+libm = "0.2"
 log = "0.4"
 # A range, so a consumer whose other dependencies still need 0.34 resolves one nalgebra.
 # CI job `nalgebra-0-34` builds and tests the low end.
