@@ -27,7 +27,8 @@ pub mod lattice {
 
     pub use crate::lattice::{
         predict_grid_position, GridTransform, Hex, Lattice, PredictedPosition, Square,
-        D4_TRANSFORMS, D6_TRANSFORMS, HEX_AXIAL_OFFSETS, SQUARE_CARDINAL_OFFSETS,
+        D4_TRANSFORMS, D6_TRANSFORMS, GRID_TRANSFORMS_D4, HEX_AXIAL_OFFSETS,
+        SQUARE_CARDINAL_OFFSETS,
     };
 
     /// Canonicalise square-grid coordinates while preserving entry provenance.
@@ -116,8 +117,9 @@ pub mod square {
     }
 }
 
-/// Labelled-component merge primitives.
+/// Labelled-component merge and scale primitives.
 pub mod component {
+    pub use crate::shared::cell_size::{max_axis_median_edge_length, median_edge_length};
     pub use crate::shared::merge::{merge_components_local, LocalMergeParams};
 }
 

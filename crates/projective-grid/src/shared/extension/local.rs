@@ -2,8 +2,8 @@
 //!
 //! [`extend_via_local_homography`] fits a per-candidate `H` from the K
 //! nearest labelled corners (by grid Manhattan distance) and applies the
-//! same per-cell filter ladder as the global-H pass. See the crate-level
-//! module doc in [`super`] for the motivation and precision contract.
+//! per-cell filter ladder of the private `common` module. See the module
+//! doc in [`super`] for the motivation and precision contract.
 
 use std::collections::{HashMap, HashSet};
 

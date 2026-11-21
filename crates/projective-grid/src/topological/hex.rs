@@ -39,6 +39,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use nalgebra::Point2;
 
 use super::delaunay::Triangulation;
+use crate::lattice::rebase::rebase_to_origin;
 use crate::lattice::Coord;
 
 /// Per-corner hex axis cache: the three axis families, each with an angle and
@@ -370,23 +371,6 @@ fn seed_labels(t: &Triangle, positions: &[Point2<f32>]) -> HashMap<usize, Coord>
         (b, Coord::new(1, 0)),
         (c, Coord::new(0, 1)),
     ])
-}
-
-/// Rebase a labelled set so the axial bbox starts at `(0, 0)`.
-fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
-    if labelled.is_empty() {
-        return;
-    }
-    let min_u = labelled.keys().map(|c| c.u).min().unwrap();
-    let min_v = labelled.keys().map(|c| c.v).min().unwrap();
-    if min_u == 0 && min_v == 0 {
-        return;
-    }
-    let rebased: HashMap<Coord, usize> = labelled
-        .drain()
-        .map(|(c, v)| (Coord::new(c.u - min_u, c.v - min_v), v))
-        .collect();
-    *labelled = rebased;
 }
 
 /// Flood-fill axial labels over one link-graph component by parallelogram

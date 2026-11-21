@@ -40,7 +40,7 @@ use super::square_detector::{triangulate_usable, ComponentOutput, MIN_USABLE_FOR
 /// [`LatticeKind::model_point`].
 ///
 /// Hex is **topological-only** with **no recovery schedule** (the recovery
-/// machinery is seed-and-grow-coupled); the geometric fit residual drop is the
+/// machinery is square-lattice-only); the geometric fit residual drop is the
 /// precision gate. Components are returned largest-first.
 pub(crate) fn detect_hex_oriented3_topological_all(
     features: &[crate::feature::OrientedFeature<3>],

@@ -7,10 +7,10 @@
 
 use std::collections::HashSet;
 
-use super::cluster::ClusterCenters;
 use crate::corner::{CornerAug, CornerStage};
 use crate::params::ChessboardParams;
 use projective_grid::expert::attachment::GrowResult;
+use projective_grid::expert::orientation::AxisClusterCenters;
 
 use super::types::GeometryCheckTrace;
 
@@ -45,7 +45,7 @@ const MIN_EDGE_SHAPE_LABELS: usize = 40;
 pub(crate) fn run_geometry_check(
     augs: &mut [CornerAug],
     grow_res: &mut GrowResult,
-    _centers: ClusterCenters,
+    _centers: AxisClusterCenters,
     cell_size: f32,
     blacklist: &mut HashSet<usize>,
     params: &ChessboardParams,

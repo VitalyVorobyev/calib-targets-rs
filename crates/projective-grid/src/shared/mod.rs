@@ -24,6 +24,8 @@
 //! The chessboard crate composes [`grow`] / [`fill`] / [`extension`] /
 //! [`grow_extend`] directly for its own topological recovery path.
 
+pub mod cell_size;
+
 // `fit` is engine-internal: only the in-crate strategy facades consume
 // `fit_component` / `FitComponentResult` (re-exported `pub(crate)` below). No
 // external consumer reaches it, so the module is crate-private — keeping the
@@ -32,9 +34,8 @@ pub(crate) mod fit;
 pub mod merge;
 pub mod validate;
 
-// Geometry-only grid-growth engine + recovery schedule (relocated from the
-// retired `seed_and_grow` module; consumed by the topological recovery path
-// and, externally, by the chessboard crate).
+// Geometry-only grid-growth engine + recovery schedule (consumed by the
+// topological recovery path and, externally, by the chessboard crate).
 pub mod extension;
 pub mod fill;
 pub mod grow;
@@ -42,10 +43,4 @@ pub mod grow_extend;
 mod positions_policy;
 pub mod recovery_schedule;
 
-/// Deprecated path alias for [`recovery_schedule`]. The module was renamed
-/// `recovery` → `recovery_schedule` in 0.10.0; this alias keeps external
-/// advanced-engine consumers that import
-/// `projective_grid::shared::recovery::{recover_components, local_pitch_of, …}`
-/// compiling. Remove after the 0.10.0 migration window.
-#[deprecated(since = "0.10.0", note = "renamed to `recovery_schedule`")]
 pub(crate) use fit::{fit_component, FitComponentResult};

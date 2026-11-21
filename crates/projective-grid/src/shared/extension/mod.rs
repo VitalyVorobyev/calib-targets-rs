@@ -1,33 +1,20 @@
 //! Boundary extension of a labelled grid via fitted homography.
 //!
 //! Once an inner block of `(i, j)` labels has been grown, this pass
-//! attempts to extend the labelled set outward by fitting a planar
-//! homography on the existing labels and projecting integer cells
+//! attempts to extend the labelled set outward by fitting planar
+//! homographies on the existing labels and projecting integer cells
 //! beyond the labelled boundary.
 //!
-//! Two strategies are available:
-//!
-//! - [`extend_via_global_homography`] — fits a single global H over the
-//!   entire labelled set. Cheap and simple, but the residual gate
-//!   refuses extrapolation under heavy radial distortion or
-//!   multi-region perspective (where one global H cannot fit
-//!   simultaneously). The labelled set must also be large enough for
-//!   the global fit to dominate boundary noise.
-//!
-//! - [`extend_via_local_homography`] — fits a *per-candidate* H from
-//!   the K nearest labelled corners (by grid distance). Each cell gets
-//!   a local model that adapts to the local distortion regime; the
-//!   per-candidate trust gate replaces the all-or-nothing global gate.
-//!   Closer to APAP / moving-DLT in spirit. More compute (one DLT per
-//!   candidate cell), but materially better recall on extreme-angle
-//!   inputs and frames where a single H doesn't fit.
-//!
-//! Callers pick a strategy based on the expected input.
+//! [`extend_via_local_homography`] fits a *per-candidate* H from the K
+//! nearest labelled corners (by grid distance). Each cell gets a local
+//! model that adapts to the local distortion regime, gated by a
+//! per-candidate trust test — closer to APAP / moving-DLT in spirit than a
+//! single global fit, which cannot hold under heavy radial distortion or
+//! multi-region perspective.
 //!
 //! | Submodule | Responsibility |
 //! |---|---|
-//! | `common` (private) | Shared per-cell attachment ladder |
-//! | [`global`] | [`extend_via_global_homography`] + cell enumeration |
+//! | `common` (private) | Per-cell attachment ladder |
 //! | [`local`] | [`extend_via_local_homography`] + deep cell enumeration + K-NN |
 //!
 //! # Precision contract
@@ -35,10 +22,10 @@
 //! Boundary-extension attachments must obey the same invariants as BFS
 //! attachments (zero false-positive labels). Three layers of defence:
 //!
-//! 1. **Reprojection-residual gate.** Median and worst-case residual of
-//!    `|H · (i, j) − pos(label)|` are measured on the labelled set; if
-//!    either exceeds the configured thresholds (× `cell_size`), the
-//!    pass refuses to extrapolate.
+//! 1. **Reprojection-residual gate.** The worst-case residual of the
+//!    local fit `|H · (i, j) − pos(label)|` over its supports is measured;
+//!    if it exceeds the configured threshold (× `cell_size`), the candidate
+//!    cell is skipped.
 //!
 //! 2. **Same per-corner gates as BFS.** Candidate filtering uses the
 //!    policy's `is_eligible` + `label_of` against `required_label_at`,
@@ -49,23 +36,12 @@
 //!    immediately, so a corner index can only be claimed by one cell.
 
 mod common;
-#[cfg(test)]
-mod global;
 pub mod local;
 
-#[cfg(test)]
-pub use global::extend_via_global_homography;
 pub use local::extend_via_local_homography;
 
-#[cfg(test)]
-use crate::geometry::HomographyQuality;
-
-/// Parameters shared between [`ExtensionParams`] (global-H extension)
-/// and [`LocalExtensionParams`] (local-H extension).
-///
-/// Factoring these into a single struct ensures that tuning one
-/// strategy's common knobs and then switching strategies doesn't
-/// silently revert the change.
+/// Attachment knobs of the boundary-extension ladder, nested in
+/// [`LocalExtensionParams`].
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
 pub struct ExtensionCommonParams {
@@ -79,8 +55,8 @@ pub struct ExtensionCommonParams {
     /// Per-pass cap on iterations.
     pub max_iters: u32,
     /// Maximum allowed worst-case reprojection residual on the labelled
-    /// support set, expressed as a fraction of `cell_size`. For global H
-    /// this gates the whole pass; for local H it gates each candidate.
+    /// support set of each candidate's local fit, expressed as a fraction of
+    /// `cell_size`.
     pub max_residual_rel: f32,
 }
 
@@ -95,34 +71,6 @@ impl Default for ExtensionCommonParams {
     }
 }
 
-/// Tuning knobs for [`extend_via_global_homography`].
-#[non_exhaustive]
-#[derive(Clone, Copy, Debug)]
-#[cfg(test)]
-pub struct ExtensionParams {
-    /// Shared knobs — search radius, ambiguity, iteration cap, residual
-    /// gate. See [`ExtensionCommonParams`].
-    pub common: ExtensionCommonParams,
-    /// Minimum labelled count below which we refuse to fit a global H.
-    /// 12 is enough for an over-determined 9-DOF DLT (3× over) on a
-    /// non-degenerate quad layout.
-    pub min_labels_for_h: usize,
-    /// Maximum allowed *median* reprojection residual on the labelled
-    /// set, expressed as a fraction of `cell_size`.
-    pub max_median_residual_rel: f32,
-}
-
-#[cfg(test)]
-impl Default for ExtensionParams {
-    fn default() -> Self {
-        Self {
-            common: ExtensionCommonParams::default(),
-            min_labels_for_h: 12,
-            max_median_residual_rel: 0.10,
-        }
-    }
-}
-
 /// Tuning knobs for [`extend_via_local_homography`].
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug)]
@@ -130,8 +78,9 @@ pub struct LocalExtensionParams {
     /// Shared knobs — search radius, ambiguity, iteration cap, residual
     /// gate. See [`ExtensionCommonParams`].
     ///
-    /// Note: for local-H the default `max_iters` is 8 (vs 5 for global-H)
-    /// because local-H typically needs more passes to propagate outward.
+    /// Note: the local-H default `max_iters` is 8 (vs the
+    /// [`ExtensionCommonParams`] default of 5) because local-H typically
+    /// needs more passes to propagate outward.
     pub common: ExtensionCommonParams,
     /// Number of nearest labelled corners (by grid Manhattan distance)
     /// used to fit each candidate cell's local H.
@@ -151,7 +100,7 @@ impl Default for LocalExtensionParams {
     fn default() -> Self {
         Self {
             common: ExtensionCommonParams {
-                max_iters: 8, // local-H default differs from global-H
+                max_iters: 8, // local-H default differs from the common default
                 ..ExtensionCommonParams::default()
             },
             k_nearest: 12,
@@ -161,7 +110,7 @@ impl Default for LocalExtensionParams {
     }
 }
 
-/// Diagnostic counters returned by both extension strategies.
+/// Diagnostic counters returned by [`extend_via_local_homography`].
 ///
 /// `attached_indices` lets callers identify boundary-extension
 /// attachments distinct from BFS-grow labels, e.g., for downstream
@@ -171,9 +120,6 @@ impl Default for LocalExtensionParams {
 pub struct ExtensionStats {
     /// Number of extension iterations actually run (≤ the configured cap).
     pub iterations: usize,
-    /// `None` when the H wasn't fit (too few labels or solver failure).
-    #[cfg(test)]
-    pub h_quality: Option<HomographyQuality<f32>>,
     /// `None` when the H wasn't fit. Pixel units.
     pub h_residual_median_px: Option<f32>,
     /// Maximum reprojection residual on the labelled set, in pixels.
@@ -331,203 +277,6 @@ mod tests {
     }
 
     #[test]
-    fn extends_clean_perspective_grid() {
-        let cols = 6_i32;
-        let rows = 4_i32;
-        let scale = 50.0_f32;
-        let positions = synthetic_grid(rows, cols, scale);
-        let mut grow = label_subgrid(&positions, cols, 1..5, 1..3);
-        let starting_count = grow.labelled.len();
-        assert_eq!(starting_count, 8);
-
-        let stats = extend_via_global_homography(
-            &positions,
-            &mut grow,
-            scale,
-            &ExtensionParams {
-                min_labels_for_h: 4,
-                ..Default::default()
-            },
-            &OpenValidator,
-        );
-
-        assert!(stats.h_trusted, "H must be trusted on a clean affine grid");
-        assert!(
-            grow.labelled.len() > starting_count,
-            "extension should add corners on a clean grid"
-        );
-    }
-
-    #[test]
-    fn refuses_to_extend_when_residuals_too_high() {
-        let cols = 4_i32;
-        let rows = 4_i32;
-        let scale = 50.0_f32;
-        let mut positions = synthetic_grid(rows, cols, scale);
-        positions[(cols + 1) as usize].x += scale * 0.5;
-        let mut grow = label_subgrid(&positions, cols, 0..4, 0..4);
-
-        let stats = extend_via_global_homography(
-            &positions,
-            &mut grow,
-            scale,
-            &ExtensionParams {
-                min_labels_for_h: 4,
-                common: ExtensionCommonParams {
-                    max_residual_rel: 0.30,
-                    ..ExtensionCommonParams::default()
-                },
-                ..Default::default()
-            },
-            &OpenValidator,
-        );
-        assert!(!stats.h_trusted);
-        assert_eq!(stats.attached, 0);
-    }
-
-    #[test]
-    fn no_op_when_too_few_labels() {
-        let cols = 4_i32;
-        let rows = 4_i32;
-        let positions = synthetic_grid(rows, cols, 50.0);
-        let mut grow = label_subgrid(&positions, cols, 0..2, 0..2);
-        let stats = extend_via_global_homography(
-            &positions,
-            &mut grow,
-            50.0,
-            &ExtensionParams::default(),
-            &OpenValidator,
-        );
-        assert_eq!(stats.attached, 0);
-        assert!(stats.h_quality.is_none());
-    }
-
-    #[test]
-    fn rejects_wrong_alternating_label_at_h_prediction() {
-        let cols = 4_i32;
-        let rows = 4_i32;
-        let scale = 50.0_f32;
-        let positions = synthetic_grid(rows, cols, scale);
-        let mut grow = label_subgrid(&positions, cols, 1..3, 1..3);
-        let labels: Vec<u8> = (0..(rows * cols))
-            .map(|k| {
-                let i = k % cols;
-                let j = k / cols;
-                ((i + j).rem_euclid(2)) as u8
-            })
-            .collect();
-        let bad_idx = cols as usize;
-        let mut labels = labels;
-        labels[bad_idx] = 0;
-        let policy = AlternatingLabelPolicy { labels };
-
-        let stats = extend_via_global_homography(
-            &positions,
-            &mut grow,
-            scale,
-            &ExtensionParams {
-                min_labels_for_h: 4,
-                ..Default::default()
-            },
-            &policy,
-        );
-        assert!(stats.h_trusted);
-        assert!(!grow.labelled.contains_key(&(0, 1)) || grow.labelled[&(0, 1)] != bad_idx);
-        assert!(stats.rejected_label >= 1);
-    }
-
-    #[test]
-    fn rejects_bad_edge_via_edge_ok_gate() {
-        let cols = 4_i32;
-        let rows = 4_i32;
-        let scale = 50.0_f32;
-        let positions = synthetic_grid(rows, cols, scale);
-        let mut grow = label_subgrid(&positions, cols, 1..3, 1..3);
-
-        let bad_candidate = cols as usize;
-        let policy = EdgeRejectingValidator {
-            forbid_idx: bad_candidate,
-        };
-
-        let stats = extend_via_global_homography(
-            &positions,
-            &mut grow,
-            scale,
-            &ExtensionParams {
-                min_labels_for_h: 4,
-                ..Default::default()
-            },
-            &policy,
-        );
-        assert!(stats.h_trusted);
-        assert!(stats.rejected_edge >= 1);
-        assert!(!grow.labelled.contains_key(&(0, 1)));
-    }
-
-    #[test]
-    fn single_claim_prevents_double_attach() {
-        let scale = 50.0_f32;
-        let mut positions = Vec::new();
-        for j in 0..3_i32 {
-            for i in 0..3_i32 {
-                positions.push(Point2::new(
-                    i as f32 * scale + 100.0,
-                    j as f32 * scale + 50.0,
-                ));
-            }
-        }
-        positions.push(Point2::new(250.0, 125.0));
-
-        let mut labelled = HashMap::new();
-        let mut by_corner = HashMap::new();
-        for j in 0..3_i32 {
-            for i in 0..3_i32 {
-                let idx = (j * 3 + i) as usize;
-                labelled.insert((i, j), idx);
-                by_corner.insert(idx, (i, j));
-            }
-        }
-        let mut grow = GrowResult {
-            labelled,
-            by_corner,
-            ..Default::default()
-        };
-
-        let stats = extend_via_global_homography(
-            &positions,
-            &mut grow,
-            scale,
-            &ExtensionParams {
-                min_labels_for_h: 4,
-                common: ExtensionCommonParams {
-                    search_rel: 1.5,
-                    ambiguity_factor: 1.01,
-                    ..ExtensionCommonParams::default()
-                },
-                ..Default::default()
-            },
-            &OpenValidator,
-        );
-        assert!(stats.h_trusted);
-        let attached_for_idx_9: Vec<&(i32, i32)> = grow
-            .labelled
-            .iter()
-            .filter_map(|(k, &v)| if v == 9 { Some(k) } else { None })
-            .collect();
-        assert!(
-            attached_for_idx_9.len() <= 1,
-            "corner index 9 attached to {} cells: {:?}",
-            attached_for_idx_9.len(),
-            attached_for_idx_9
-        );
-        for (&cell, &idx) in &grow.labelled {
-            assert_eq!(grow.by_corner.get(&idx), Some(&cell));
-        }
-    }
-
-    // --- local-H Stage 6 tests ---
-
-    #[test]
     fn local_h_extends_clean_perspective_grid() {
         let cols = 6_i32;
         let rows = 4_i32;
@@ -637,5 +386,96 @@ mod tests {
         );
         assert!(!grow.labelled.contains_key(&(0, 1)) || grow.labelled[&(0, 1)] != bad_idx);
         assert!(stats.rejected_label >= 1);
+    }
+
+    #[test]
+    fn local_h_rejects_bad_edge_via_edge_ok_gate() {
+        let cols = 4_i32;
+        let rows = 4_i32;
+        let scale = 50.0_f32;
+        let positions = synthetic_grid(rows, cols, scale);
+        let mut grow = label_subgrid(&positions, cols, 1..3, 1..3);
+
+        let bad_candidate = cols as usize;
+        let policy = EdgeRejectingValidator {
+            forbid_idx: bad_candidate,
+        };
+
+        let stats = extend_via_local_homography(
+            &positions,
+            &mut grow,
+            scale,
+            &LocalExtensionParams {
+                min_k: 4,
+                ..Default::default()
+            },
+            &policy,
+        );
+        assert!(stats.rejected_edge >= 1);
+        assert!(!grow.labelled.contains_key(&(0, 1)));
+    }
+
+    #[test]
+    fn local_h_single_claim_prevents_double_attach() {
+        let scale = 50.0_f32;
+        let mut positions = Vec::new();
+        for j in 0..3_i32 {
+            for i in 0..3_i32 {
+                positions.push(Point2::new(
+                    i as f32 * scale + 100.0,
+                    j as f32 * scale + 50.0,
+                ));
+            }
+        }
+        positions.push(Point2::new(250.0, 125.0));
+
+        let mut labelled = HashMap::new();
+        let mut by_corner = HashMap::new();
+        for j in 0..3_i32 {
+            for i in 0..3_i32 {
+                let idx = (j * 3 + i) as usize;
+                labelled.insert((i, j), idx);
+                by_corner.insert(idx, (i, j));
+            }
+        }
+        let mut grow = GrowResult {
+            labelled,
+            by_corner,
+            ..Default::default()
+        };
+
+        let stats = extend_via_local_homography(
+            &positions,
+            &mut grow,
+            scale,
+            &LocalExtensionParams {
+                min_k: 4,
+                common: ExtensionCommonParams {
+                    search_rel: 1.5,
+                    ambiguity_factor: 1.01,
+                    ..ExtensionCommonParams::default()
+                },
+                ..Default::default()
+            },
+            &OpenValidator,
+        );
+        assert!(
+            stats.attached >= 1,
+            "the extra corner must be attached once"
+        );
+        let attached_for_idx_9: Vec<&(i32, i32)> = grow
+            .labelled
+            .iter()
+            .filter_map(|(k, &v)| if v == 9 { Some(k) } else { None })
+            .collect();
+        assert!(
+            attached_for_idx_9.len() <= 1,
+            "corner index 9 attached to {} cells: {:?}",
+            attached_for_idx_9.len(),
+            attached_for_idx_9
+        );
+        for (&cell, &idx) in &grow.labelled {
+            assert_eq!(grow.by_corner.get(&idx), Some(&cell));
+        }
     }
 }

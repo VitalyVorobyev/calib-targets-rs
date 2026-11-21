@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use calib_targets::DetectionQuality;
 use nalgebra::{Point2, Vector2};
+use projective_grid::expert::lattice::D4_TRANSFORMS;
 use serde::{Deserialize, Serialize};
 
 use super::families::{Delivered, FamilyRun, GtCorner};
@@ -114,18 +115,6 @@ impl LabelMap {
     }
 }
 
-/// The eight grid symmetries as integer 2×2 matrices.
-const D4: [[[i32; 2]; 2]; 8] = [
-    [[1, 0], [0, 1]],
-    [[0, -1], [1, 0]],
-    [[-1, 0], [0, -1]],
-    [[0, 1], [-1, 0]],
-    [[-1, 0], [0, 1]],
-    [[1, 0], [0, -1]],
-    [[0, 1], [1, 0]],
-    [[0, -1], [-1, 0]],
-];
-
 fn map_label(t: &[[i32; 2]; 2], off: (i32, i32), u: i32, v: i32) -> (i32, i32) {
     (
         t[0][0] * u + t[0][1] * v + off.0,
@@ -152,15 +141,18 @@ fn consensus_map(delivered: &[Delivered], truth: &TruthMap) -> Option<LabelMap> 
         if distance > WRONG_LABEL_CELL_FRACTION * cell {
             continue;
         }
-        for (k, t) in D4.iter().enumerate() {
-            let m = map_label(t, (0, 0), d.grid.u, d.grid.v);
+        for (k, t) in D4_TRANSFORMS.iter().enumerate() {
+            let m = map_label(&t.matrix(), (0, 0), d.grid.u, d.grid.v);
             *votes.entry((k, (idx.0 - m.0, idx.1 - m.1))).or_default() += 1;
         }
     }
     votes
         .into_iter()
         .max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0)))
-        .map(|((k, offset), _)| LabelMap { t: D4[k], offset })
+        .map(|((k, offset), _)| LabelMap {
+            t: D4_TRANSFORMS[k].matrix(),
+            offset,
+        })
 }
 
 /// Score `run` against the board truth seen through `camera`.

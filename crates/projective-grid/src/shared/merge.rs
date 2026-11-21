@@ -44,21 +44,10 @@ use std::collections::{HashMap, HashSet};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
-use crate::lattice::{Coord, GridTransform, LatticeKind, D4_TRANSFORMS};
+use crate::lattice::rebase::rebase_to_origin;
+use crate::lattice::{Coord, GridTransform, LatticeKind, GRID_TRANSFORMS_D4};
+use crate::shared::cell_size::median_edge_length;
 use crate::spatial::PointIndex;
-
-// Preserve the historical square-facade tie-break order while deriving every
-// transform from the canonical lattice table.
-const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
-    D4_TRANSFORMS[0],
-    D4_TRANSFORMS[3],
-    D4_TRANSFORMS[2],
-    D4_TRANSFORMS[1],
-    D4_TRANSFORMS[4],
-    D4_TRANSFORMS[5],
-    D4_TRANSFORMS[6],
-    D4_TRANSFORMS[7],
-];
 
 /// Tuning knobs for [`merge_components_local`].
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
@@ -117,26 +106,6 @@ pub struct ComponentMergeStats {
 
 fn euclidean(p: Point2<f32>, q: Point2<f32>) -> f32 {
     ((p.x - q.x).powi(2) + (p.y - q.y).powi(2)).sqrt()
-}
-
-/// Median nearest-neighbour cell size along grid axes (i and j directions).
-/// Falls back to 0.0 if the component has fewer than two corners.
-fn estimate_cell_size(labelled: &HashMap<(i32, i32), usize>, positions: &[Point2<f32>]) -> f32 {
-    let mut dists: Vec<f32> = Vec::new();
-    for (&(i, j), &idx) in labelled.iter() {
-        let p = positions[idx];
-        if let Some(&right) = labelled.get(&(i + 1, j)) {
-            dists.push(euclidean(p, positions[right]));
-        }
-        if let Some(&down) = labelled.get(&(i, j + 1)) {
-            dists.push(euclidean(p, positions[down]));
-        }
-    }
-    if dists.is_empty() {
-        return 0.0;
-    }
-    dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    dists[dists.len() / 2]
 }
 
 /// Apply D4 transform to label coordinates.
@@ -295,22 +264,6 @@ fn find_best_alignment(
     best.map(|(t_idx, d, n, _)| (transforms[t_idx as usize], d, n))
 }
 
-fn rebase(labelled: &mut HashMap<(i32, i32), usize>) {
-    if labelled.is_empty() {
-        return;
-    }
-    let min_i = labelled.keys().map(|(i, _)| *i).min().unwrap();
-    let min_j = labelled.keys().map(|(_, j)| *j).min().unwrap();
-    if min_i == 0 && min_j == 0 {
-        return;
-    }
-    let rebased: HashMap<(i32, i32), usize> = labelled
-        .drain()
-        .map(|((i, j), v)| ((i - min_i, j - min_j), v))
-        .collect();
-    *labelled = rebased;
-}
-
 /// Greedy local merge.
 ///
 /// Strategy: estimate each component's cell size, then for every pair
@@ -386,7 +339,7 @@ fn merge_components_local_with_transforms(
     let mut working: Vec<HashMap<(i32, i32), usize>> = components.to_vec();
     let mut cell_sizes: Vec<f32> = components
         .iter()
-        .map(|labelled| estimate_cell_size(labelled, positions))
+        .map(|labelled| median_edge_length(labelled, positions))
         .collect();
 
     let mut alive: Vec<bool> = vec![true; components.len()];
@@ -474,7 +427,7 @@ fn merge_components_local_with_transforms(
     out.sort_by_key(|m| std::cmp::Reverse(m.len()));
     out.truncate(params.max_components);
     for m in &mut out {
-        rebase(m);
+        rebase_to_origin(m);
     }
     stats.components_out = out.len();
     ComponentMergeResult {

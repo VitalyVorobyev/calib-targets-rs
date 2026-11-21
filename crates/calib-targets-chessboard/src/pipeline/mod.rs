@@ -79,9 +79,9 @@ use std::collections::HashMap;
 
 use crate::params::ChessboardParams;
 
-use self::cluster::ClusterCenters;
 use self::inputs::{topological_inputs, TopologicalInputs};
 use self::recover::{build_topological_detections, clustered_augs, recover_topological_components};
+use projective_grid::expert::orientation::AxisClusterCenters;
 
 type LabelledComponent = HashMap<(i32, i32), usize>;
 type LabelledComponents = Vec<LabelledComponent>;
@@ -190,7 +190,7 @@ fn build_oriented_features(
 struct PreparedTopological {
     inputs: TopologicalInputs,
     base_augs: Vec<CornerAug>,
-    clustered_centers: Option<ClusterCenters>,
+    clustered_centers: Option<AxisClusterCenters>,
     features: Vec<OrientedFeature<2>>,
     component_params: NextTopologicalParams,
     /// Grid-builder configuration, kept alongside the prepared features so the

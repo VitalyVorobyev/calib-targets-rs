@@ -1,7 +1,7 @@
-//! Shared per-cell attachment ladder for homography-based boundary extension.
+//! Per-cell attachment ladder for homography-based boundary extension.
 //!
-//! [`try_attach_at_cell`] runs the filter pipeline common to both the
-//! global-H and local-H passes: optional label gate, ambiguity check,
+//! [`try_attach_at_cell`] runs the filter pipeline of the local-H pass:
+//! optional label gate, ambiguity check,
 //! [`SquareAttachPolicy::accept_candidate`], and [`SquareAttachPolicy::edge_ok`].
 //! Callers supply the sorted candidate list (already filtered by
 //! `is_eligible` and `by_corner`); this function decides whether to

@@ -7,6 +7,7 @@ use std::collections::HashMap;
 
 use nalgebra::{Point2, Projective2};
 
+use crate::lattice::rebase::rebase_slice_to_origin;
 use crate::lattice::{Coord, GridDimensions, LatticeKind};
 
 /// One labelled grid feature in a solved grid.
@@ -131,7 +132,7 @@ impl LabelledGrid {
     /// [`LatticeFit`] computed against the *pre*-normalization labels is no
     /// longer valid afterwards — normalize before fitting, or refit.
     pub(crate) fn normalize(&mut self) {
-        rebase_entries_to_origin(&mut self.entries);
+        rebase_slice_to_origin(&mut self.entries, |e| &mut e.coord);
         let swapped = canonicalize_to_image_axes(&mut self.entries);
         if swapped {
             // The `u` ↔ `v` transpose must carry to caller-supplied dimensions,
@@ -328,22 +329,6 @@ impl ConsistencyReport {
     /// when one was computed.
     pub fn max_residual_px(&self) -> f32 {
         self.fit.residuals.max_px
-    }
-}
-
-/// Shift every entry's coordinate so the bounding-box minimum is `(0, 0)`.
-fn rebase_entries_to_origin(entries: &mut [GridEntry]) {
-    if entries.is_empty() {
-        return;
-    }
-    let (min_u, min_v) = entries.iter().fold((i32::MAX, i32::MAX), |(a, b), e| {
-        (a.min(e.coord.u), b.min(e.coord.v))
-    });
-    if min_u != 0 || min_v != 0 {
-        for e in entries.iter_mut() {
-            e.coord.u -= min_u;
-            e.coord.v -= min_v;
-        }
     }
 }
 
