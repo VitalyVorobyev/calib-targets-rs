@@ -71,6 +71,9 @@ corners — it is the production path serialized stage-by-stage.
 | 6 | `detector/corner_refit.rs::validate_and_fix_corners` (homography via `core::estimate_homography_rect_to_img`) |
 | 7 | `detector/merge.rs::merge_charuco_results` (multi-component merge) |
 
+Off the detection path: `link_check.rs::validate_marker_corner_links` lets a
+caller audit a finished result against the board spec.
+
 ## Cross-references
 
 - `crates/calib-targets-chessboard/docs/PIPELINE.md` — the upstream

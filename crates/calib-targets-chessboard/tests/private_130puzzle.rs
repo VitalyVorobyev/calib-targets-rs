@@ -27,25 +27,7 @@ const UPSCALE: u32 = 2;
 /// Topological-pipeline any-detection floor on the 120-snap sweep. A
 /// "detection" is any frame where `ChessboardDetector::detect()` returns `Some(_)`
 /// whose grid labels satisfy the workspace invariants (no duplicates, finite
-/// positions, origin rebased). Ratchets up phase by phase per
-/// `.claude/plans/we-changed-topological-grid-eager-valiant.md`.
-///
-/// History:
-/// - Pre-Phase-A baseline (22°/18°, no cluster gate): 119/120.
-/// - Phase A (cluster gate at 16°): 117/120 (slight regression as the
-///   gate filters borderline corners; meant as precision insurance for
-///   subsequent tightening).
-/// - Phase B (geometry check on topological output): 117/120 with
-///   ~4 fewer labelled per detection on average (drops residual
-///   outliers — pure precision).
-/// - Phase C (15°/15° tolerances paired with cluster gate): 119/120,
-///   mean labelled per detection up from ~405 to ~590. The narrower
-///   angle window shed spurious-quad pollution that was fragmenting
-///   components, which is what the cluster gate was designed to make
-///   safe.
-/// - Phase D2 (per-component cell-size upper bound at 1.8×): 120/120,
-///   mean labelled steady. Catches the double-cell hop case that
-///   produced oversized quads at component edges.
+/// positions, origin rebased).
 ///
 /// Bumping this constant lower is a regression — fix the algorithm,
 /// not the gate.

@@ -58,16 +58,17 @@ jobs:
 
       # Every crate has off-by-default features, and until 0.14.0 nothing built
       # them: `--all-targets` above compiles default features only, and the
-      # `--all-features` gate runs at release time, so code behind an
-      # off-by-default feature can break on `main` with every other check
-      # green.
+      # `--all-features` gate runs at release time. So `link_check` — behind
+      # `link-check`, off by default — sat broken on `main` after a
+      # `#[non_exhaustive]` struct gained a field, with five green checks.
       #
-      # This enables every local feature. It compiles in seconds.
+      # This enables every local feature. It compiles in seconds and would have
+      # caught that break.
       - name: check (every local feature)
         if: matrix.toolchain == 'stable'
         run: >
           cargo check --workspace --all-targets --features
-          calib-targets-aruco/tracing,calib-targets-charuco/diagnostics,calib-targets-charuco/dataset,calib-targets-charuco/tracing,calib-targets-chessboard/diagnostics,calib-targets-chessboard/tracing,calib-targets-core/tracing,calib-targets-marker/diagnostics,calib-targets-marker/tracing,calib-targets-puzzleboard/diagnostics,calib-targets-puzzleboard/dataset,calib-targets-puzzleboard/tracing,calib-targets/image,calib-targets/cli,calib-targets/diagnostics,calib-targets/tracing,projective-grid/diagnostics,projective-grid/tracing,calib-targets-ffi/generate-header
+          calib-targets-aruco/tracing,calib-targets-charuco/diagnostics,calib-targets-charuco/link-check,calib-targets-charuco/dataset,calib-targets-charuco/tracing,calib-targets-chessboard/diagnostics,calib-targets-chessboard/tracing,calib-targets-core/tracing,calib-targets-marker/diagnostics,calib-targets-marker/tracing,calib-targets-puzzleboard/diagnostics,calib-targets-puzzleboard/dataset,calib-targets-puzzleboard/tracing,calib-targets/image,calib-targets/cli,calib-targets/diagnostics,calib-targets/tracing,projective-grid/diagnostics,projective-grid/tracing,calib-targets-ffi/generate-header
 
       # `cargo doc` is a *hard* gate in this workspace: broken intra-doc links
       # and ambiguous references (a name that is both a module and a function)

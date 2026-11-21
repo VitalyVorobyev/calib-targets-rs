@@ -19,10 +19,6 @@ Rarely used public surface with no in-workspace consumers is removed.
 - `calib_targets_core::square_predict_grid_position` removed; call
   `projective_grid::expert::lattice::predict_grid_position(grid, idx,
   LatticeKind::Square)` and read the prediction's `position`.
-- The `link-check` feature of `calib-targets-charuco` is removed, and with it
-  the `link_check` module (`validate_marker_corner_links`,
-  `CharucoMarkerCornerLinks`, `LinkCheckMode`, `LinkViolation`,
-  `LinkViolationKind`, `MarkerCornerLink`).
 - The `dataset` feature of `calib-targets-chessboard` is removed; it enabled
   nothing.
 

@@ -133,7 +133,7 @@ here.
   path and drop them; ChArUco uses a zero-cost sink.
 - Chessboard "detect corners → run detector → attach noise" is written in the
   facade (×3), WASM, FFI (×2) and the bench.
-- **Fix.** `ChessboardDetection::{labeled_corners, corner_map}`, drop the
+- **Fix.** `ChessboardDetection::labeled_corners`, drop the
   `inliers` parameters, one `decode_edges` shared by planar and pole, a
   diagnostics sink everywhere, `ChessboardDetector::detect_image`.
 

@@ -25,6 +25,10 @@ default = []
 # the diagnostic matcher and the diagnostics-collecting pipeline path are
 # compiled in only when the feature is on.
 diagnostics = []
+# Opt-in marker↔corner linkage validation (`link_check` module + its public
+# re-exports). OFF by default; it has no in-tree consumers but is intentional,
+# documented validation logic, preserved behind a gate rather than removed.
+link-check = []
 # The dataset harness / example renders per-component diagnostics overlays, so
 # it pulls in both the charuco and chessboard diagnostics surfaces.
 dataset = ["dep:env_logger", "diagnostics", "calib-targets-chessboard/diagnostics"]
