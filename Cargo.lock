@@ -439,6 +439,7 @@ dependencies = [
  "chess-corners",
  "clap",
  "image",
+ "libm",
  "nalgebra",
  "projective-grid",
  "serde",
@@ -497,6 +498,7 @@ name = "calib-targets-core"
 version = "0.16.3"
 dependencies = [
  "chess-corners",
+ "libm",
  "nalgebra",
  "projective-grid",
  "serde",

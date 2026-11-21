@@ -614,50 +614,7 @@ fn kernel_weights(s: usize, reach: usize, sigma: f64) -> Vec<f64> {
 
 /// Standard normal CDF.
 fn phi(x: f64) -> f64 {
-    0.5 * (1.0 + erf(x / std::f64::consts::SQRT_2))
-}
-
-/// `erf` to ~1e-14: the Maclaurin series for |x| < 2.5, the continued
-/// fraction of `erfc` (Lentz) beyond. Abramowitz–Stegun 7.1.26 (1.5e-7) would
-/// leave a visible asymmetry in the kernel at this precision.
-fn erf(x: f64) -> f64 {
-    let ax = x.abs();
-    let r = if ax < 2.5 {
-        // Maclaurin series: erf x = 2/√π Σ (−1)ⁿ x^{2n+1} / (n! (2n+1)).
-        let mut term = ax;
-        let mut sum = ax;
-        let x2 = ax * ax;
-        let mut n = 0.0f64;
-        loop {
-            n += 1.0;
-            term *= -x2 / n;
-            let add = term / (2.0 * n + 1.0);
-            sum += add;
-            if add.abs() <= 1e-17 * sum.abs() {
-                break;
-            }
-        }
-        sum * 2.0 / std::f64::consts::PI.sqrt()
-    } else {
-        // Lentz continued fraction for erfc.
-        let x2 = ax * ax;
-        let mut f = ax;
-        let mut c = ax;
-        let mut d = 0.0f64;
-        for k in 1..300 {
-            let a = 0.5 * k as f64;
-            d = ax + a * d;
-            d = if d == 0.0 { 1e-300 } else { 1.0 / d };
-            c = ax + a / c;
-            let delta = c * d;
-            f *= delta;
-            if (delta - 1.0).abs() < 1e-16 {
-                break;
-            }
-        }
-        1.0 - (-x2).exp() / (f * std::f64::consts::PI.sqrt())
-    };
-    r.copysign(x)
+    0.5 * (1.0 + libm::erf(x / std::f64::consts::SQRT_2))
 }
 
 /// SplitMix64: a tiny, seedable, well-mixed generator (no RNG dependency).
@@ -714,20 +671,6 @@ mod tests {
             },
             0.0,
         )
-    }
-
-    #[test]
-    fn erf_matches_reference_values() {
-        for (x, want) in [
-            (0.0, 0.0),
-            (0.5, 0.520_499_877_813_046_5),
-            (1.0, 0.842_700_792_949_714_9),
-            (2.0, 0.995_322_265_018_952_7),
-            (3.0, 0.999_977_909_503_001_4),
-            (-1.0, -0.842_700_792_949_714_9),
-        ] {
-            assert!((erf(x) - want).abs() < 1e-13, "erf({x}) = {}", erf(x));
-        }
     }
 
     #[test]

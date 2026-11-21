@@ -20,6 +20,7 @@ tracing = ["projective-grid/tracing"]
 
 [dependencies]
 chess-corners = { workspace = true }
+libm = { workspace = true }
 projective-grid = { workspace = true }
 nalgebra = { workspace = true, features = ["serde-serialize"] }
 serde = { workspace = true, features = ["derive"] }

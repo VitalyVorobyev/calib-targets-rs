@@ -5,6 +5,7 @@
 use calib_targets::aruco::resolve_dictionary;
 use calib_targets::charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
 use calib_targets::chessboard::ChessboardParams;
+use calib_targets::core::edge_blur::{EdgeBlurParams, EdgeBlurWindow};
 use calib_targets::core::GrayImageView;
 use calib_targets::detect::{default_chess_config, detect_chessboard, DetectorConfig};
 use calib_targets::marker::{MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec};
@@ -25,6 +26,8 @@ pub const SQUARE_MM: f64 = 10.0;
 const SQUARES_X: u32 = 10;
 const SQUARES_Y: u32 = 8;
 const DICTIONARY: &str = "DICT_4X4_50";
+/// PuzzleBoard master coordinates wrap at this period.
+const PUZZLE_MASTER_PERIOD: i32 = 501;
 
 /// A detector family of the suite.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, PartialOrd, Ord)]
@@ -191,6 +194,26 @@ impl Board {
         }
     }
 
+    /// The edge-blur estimator's settings for this board: the family's
+    /// window from its print geometry, and the PuzzleBoard's master labels
+    /// wrapping at 501.
+    pub fn edge_blur_params(&self) -> EdgeBlurParams {
+        match &self.target {
+            TargetSpec::Chessboard(_) => EdgeBlurParams::new(EdgeBlurWindow::chessboard()),
+            TargetSpec::Charuco(t) => {
+                EdgeBlurParams::new(EdgeBlurWindow::charuco(t.marker_size_rel))
+            }
+            TargetSpec::PuzzleBoard(t) => {
+                EdgeBlurParams::new(EdgeBlurWindow::puzzleboard(t.dot_diameter_rel))
+                    .with_label_period(PUZZLE_MASTER_PERIOD)
+            }
+            TargetSpec::MarkerBoard(t) => {
+                EdgeBlurParams::new(EdgeBlurWindow::marker_board(t.circle_diameter_rel))
+            }
+            _ => unreachable!("the suite builds only its four families"),
+        }
+    }
+
     /// The family's default corner front-end with `refine` applied.
     fn front_end(&self, refine: &dyn Fn(DetectorConfig) -> DetectorConfig) -> DetectorConfig {
         let base = match self.family {
@@ -293,8 +316,10 @@ impl Board {
                         .corners
                         .iter()
                         .map(|c| {
-                            let from_id =
-                                Point2::new((c.id % 501) as f32 * cell, (c.id / 501) as f32 * cell);
+                            let from_id = Point2::new(
+                                (c.id % PUZZLE_MASTER_PERIOD as u32) as f32 * cell,
+                                (c.id / PUZZLE_MASTER_PERIOD as u32) as f32 * cell,
+                            );
                             Delivered {
                                 position: c.position,
                                 covariance: c.position_covariance,
