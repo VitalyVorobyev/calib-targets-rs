@@ -43,6 +43,7 @@ A Cargo workspace; all publishable crates live under `crates/`:
 | `calib-targets-wasm` | wasm-bindgen WebAssembly bindings (published to npm as `@vitavision/calib-targets`) |
 | `calib-targets-bench` | Bench / regression harness (`bench run`, `check`, `diagnose`, ...) and stage-timing binaries (not published) |
 | `calib-targets-studio` | axum + React detection studio GUI (not published) |
+| `xtask` | Workspace task runner (JSON Schema generation: `cargo xtask`; not published) |
 
 **CLI**: the `calib-targets` binary lives in the facade crate behind the default
 `cli` feature (`cargo install calib-targets`); the Python package exposes the
@@ -52,27 +53,23 @@ same subcommands as a console script via `[project.scripts]`.
 depends on `projective-grid`. `charuco` may depend on `chessboard` and `aruco`.
 No cyclic deps.
 
-**Detection pipeline** (same structure for all target types):
-
-1. Run `chess-corners` (external crate) to detect ChESS corner features.
-2. Build a proximity/orientation graph over corners and assemble a chessboard
-   grid with the `Topological` grid builder (Delaunay triangulation + an
-   axis-driven cell test) in `projective-grid` — the sole grid builder, used by
-   every target type including ChArUco. See the pipeline guide below.
-3. For ChArUco/marker boards: locally warp candidate cells and decode
-   markers/circles.
-4. For PuzzleBoard: sample edge-midpoint dots and decode the master edge-code
-   pattern.
-5. Output a `TargetDetection` (or wrapping result struct) containing
-   `LabeledCorner` entries.
+**Detection pipeline** (same structure for all target types): `chess-corners`
+detects ChESS corners; the `Topological` builder in `projective-grid` (Delaunay
++ axis-driven cell test, the sole grid builder) assembles labelled components;
+ChArUco / marker boards then decode markers or circles, PuzzleBoard decodes
+edge-midpoint dots; the result is a `TargetDetection` of `LabeledCorner`s. Stage
+maps: [`topological-grid-detection.md`](../docs/algorithms/topological-grid-detection.md)
+and each crate's `docs/PIPELINE.md`.
 
 **Multi-config sweep:** `detect_*_best` functions try multiple parameter configs
 and return the best result (most markers/corners). Presets:
 `ChessboardParams::sweep_default()`, `CharucoParams::sweep_for_board()`,
-`PuzzleBoardParams::sweep_for_board()`, `MarkerBoardParams::sweep_for_board()`.
+`PuzzleBoardParams::sweep_for_board()`, `MarkerBoardParams::sweep_for_board()`,
+`PuzzlePoleParams::sweep_for_pole()`.
 
 **`TargetDetection` / `LabeledCorner`** — the common output container. Fields:
-`position`, `grid` (i,j), `id`, `target_position` (board units / mm), `score`.
+`position`, `grid` (i,j), `id`, `target_position` (board units / mm), `score`, `position_covariance`
+(optional).
 See README for per-target field usage.
 
 **`tracing` feature** — optional, gates all performance-tracing instrumentation
@@ -85,8 +82,8 @@ across the workspace.
 distinct). Read before touching the relevant area — these three always:
 
 - [`detection-pipeline.md`](../docs/development/detection-pipeline.md) — the
-  grid builder, component merge, axes-only orientation contract, cell-size
-  gotcha.
+  axes-only orientation contract, cell-size rule, and where each pipeline topic
+  lives.
 - [`debugging.md`](../docs/development/debugging.md) — the **mandatory**
   evidence-driven protocol for any detector failure.
 - [`conventions.md`](../docs/development/conventions.md) — public struct
@@ -112,8 +109,8 @@ consumers; the chessboard output stage (`build_detection`) re-rebases every
 labelled set before it ships, and `projective-grid`'s shared grow/recovery
 applies the same `min (i, j) → (0, 0)` shift.
 
-**Corner orientation is axes-only.** `Corner::orientation` has been removed
-workspace-wide — never reintroduce it. The only signal is
+**Corner orientation is axes-only.** There is no `Corner::orientation`
+field and none may be added. The only signal is
 `ChessCorner.axes: [AxisEstimate; 2]`; any circular mean of axis angles MUST
 accumulate `(cos 2θ, sin 2θ)`. Full contract in the
 [detection-pipeline guide](../docs/development/detection-pipeline.md#corner-orientation-contract-axes-only).
@@ -124,11 +121,10 @@ a measured number or a verifiable spatial fact — never a plausible narrative.
 independent geometry check are mandatory. Full protocol in
 [`docs/development/debugging.md`](../docs/development/debugging.md).
 
-**Private dataset disclosure.** Never cite a private regression dataset (counts,
-filenames, hashes, frame ids) in any public surface — READMEs, `book/src/`,
-CHANGELOG, rustdoc, commit messages on `main`, PRs. General performance
-statements only. Concrete numbers live only in local-only surfaces. Full policy
-in [`docs/development/private-dataset-policy.md`](../docs/development/private-dataset-policy.md).
+**Private dataset disclosure.** Never cite a private regression dataset
+(counts, filenames, hashes, frame ids) in any public surface; general
+performance statements only. Policy:
+[`private-dataset-policy.md`](../docs/development/private-dataset-policy.md).
 
 **Public structs/enums:** `#[non_exhaustive]` + a named constructor on every
 public type in a published crate. New match arms in consumer code need wildcard
@@ -201,12 +197,9 @@ review approval. Workspace-level clippy lints are enforced via
 every crate — `too_many_arguments` is `deny` and must not be re-introduced via
 an inline allow.
 
-**Local-only artifacts — never commit.** `bench_results/`, rendered overlays,
-per-frame JSONLs, aggregate JSONs, profiling dumps, sweep CSVs, and similar
-generated data stay out of Git. Stage files individually; never `git add -A` in
-a directory that may contain them. Details in
-[`docs/development/conventions.md`](../docs/development/conventions.md#local-only-artifacts--never-commit).
+**Local-only artifacts — never commit** `bench_results/`, overlays, JSONLs,
+profiling dumps or sweep CSVs; stage files individually, never `git add -A`.
+See [`conventions.md`](../docs/development/conventions.md#local-only-artifacts--never-commit).
 
-**MSRV:** workspace sets `rust-version = "1.91"`, enforced by the `msrv` CI job;
-`rust-toolchain.toml` stays on `stable`. Raising it touches several files in
-lockstep — see [`release-gates.md`](../docs/development/release-gates.md#releasing).
+**MSRV:** `rust-version = "1.91"`, enforced by the `msrv` CI job; raising it is a
+multi-file change — see [`release-gates.md`](../docs/development/release-gates.md#releasing).

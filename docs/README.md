@@ -38,7 +38,7 @@ The best entry point when onboarding or auditing the detector crates.
 
 | File | What it covers |
 |---|---|
-| [`detection-pipeline.md`](development/detection-pipeline.md) | Topological grid builder, component merge, orientation source, axes-only contract, cell-size gotcha. |
+| [`detection-pipeline.md`](development/detection-pipeline.md) | Axes-only corner-orientation contract, cell-size rule, pointers to where each pipeline topic lives. |
 | [`debugging.md`](development/debugging.md) | Mandatory evidence-driven protocol for any detector failure. |
 | [`conventions.md`](development/conventions.md) | Public-struct conventions, binding/CLI/dict-key parity, local-only-artifact rules. |
 | [`private-dataset-policy.md`](development/private-dataset-policy.md) | Disclosure policy + the two private regression datasets. |
@@ -47,7 +47,6 @@ The best entry point when onboarding or auditing the detector crates.
 | [`profiling.md`](development/profiling.md) | Flamegraph / per-span timing capture for the grid-build pipeline. |
 | [`performance.md`](development/performance.md) | Benchmark methodology, current bottleneck ranking, optimization backlog. |
 | [`backlog.md`](development/backlog.md) | Open engineering items that are not detector algorithms (bindings, plumbing, packaging). |
-| [`subagent-workflow.md`](development/subagent-workflow.md) | Dispatching quick-/deep-implementer subagents. |
 
 ## `algorithms/` — algorithm deep-dives
 
@@ -55,7 +54,7 @@ The best entry point when onboarding or auditing the detector crates.
 |---|---|
 | [`topological-grid-detection.md`](algorithms/topological-grid-detection.md) | Canonical stage-by-stage map of the sole grid builder. |
 | [`algorithmic_gaps.md`](algorithms/algorithmic_gaps.md) | Ledger of open algorithmic gaps and known limits. |
-| [`puzzle_detection_spec.md`](algorithms/puzzle_detection_spec.md) | PuzzleBoard soft-edge-decode + global-inference design. |
+| [`puzzle_detection_spec.md`](algorithms/puzzle_detection_spec.md) | PuzzleBoard decode contract (edge-code decode, search modes, uniqueness). |
 | [`puzzlepole_construction.md`](algorithms/puzzlepole_construction.md) | PuzzlePole cylindrical construction, decoder cost, coordinate conventions. |
 
 ## `ffi/` — C / C++ consumer docs
@@ -64,7 +63,6 @@ The best entry point when onboarding or auditing the detector crates.
 |---|---|
 | [`ffi/README.md`](ffi/README.md) | C API guide: headers, build, CMake staging, ABI versioning, diagnostics JSON. |
 | [`ffi/cmake-consumer-quickstart.md`](ffi/cmake-consumer-quickstart.md) | Shortest-path CMake integration with a minimal C++ example. |
-| [`ffi/decision-record.md`](ffi/decision-record.md) | Accepted ADR for the FFI ABI choices. |
 
 ## Release history
 

@@ -11,16 +11,17 @@ them together. Scope is the algorithm-implementing crates (L0–L3):
 
 ## The one-screen answer
 
-If you only read one paragraph: the dependency graph is a clean DAG; the four
-detectors share one grid spine by *embedding* `chessboard`, not by copy-paste;
-and the decode layers (`aruco`, `puzzle`, `marker`) are cohesive and
-duplication-free. Numerical primitives — the normalized DLT, the grid-position
-predictor, `Coord`, the D4/D6 tables — live once, in `projective-grid`, and
-`core` wraps them with the image-domain extras. The big crate
-(`projective-grid`, 3× the next) is big on purpose: it is a **published
-standalone library** whose hex / dot-grid / orientation-free breadth is intended
-product that no in-workspace detector uses — see
-[`dependency-and-layering.md`](dependency-and-layering.md#the-library-only-surface).
+If you only read one paragraph: the dependency graph is a clean DAG, and the four
+detectors share one grid spine by *embedding* `chessboard`. Canonical numerical
+primitives — the normalized DLT core, the grid-position predictor, `Coord`, the
+D4/D6 tables — live in `projective-grid`, and `core` wraps them with the
+image-domain extras. Known duplication is tracked in the backlog: the
+per-family detection skeleton is copied across the ChArUco / PuzzleBoard / pole /
+marker crates ([B-13](../development/backlog.md#b-13)), and small grid helpers
+repeat across crates ([B-14](../development/backlog.md#b-14)). The biggest crate,
+`projective-grid`, is a **published standalone library** whose hex / dot-grid /
+orientation-free breadth is intended product that no in-workspace detector uses —
+see [`projective-grid/docs/DESIGN.md`](../../crates/projective-grid/docs/DESIGN.md#public-surface).
 
 ## Map
 
@@ -28,7 +29,7 @@ product that no in-workspace detector uses — see
 |---|---|
 | [`algorithm-atlas.md`](algorithm-atlas.md) | **What** — every atomic algorithm (home, signature, one-liner, used-by) + the algorithm×pipeline matrix. |
 | [`pipeline-maps.md`](pipeline-maps.md) | **How they compose** — the shared grid spine plus an index of each crate's `docs/PIPELINE.md` stage map. |
-| [`dependency-and-layering.md`](dependency-and-layering.md) | **Who depends on whom** — the crate DAG, the layering, why the big crate is big, the library-only surface. |
+| [`dependency-and-layering.md`](dependency-and-layering.md) | **Who depends on whom** — the crate DAG, the layering, why the big crate is big. |
 
 **Suggested reading order for onboarding:** this page → `pipeline-maps.md` and one
 crate `docs/PIPELINE.md` (trace one detector end-to-end) → `algorithm-atlas.md` (look up any stage's algorithm) →
@@ -43,8 +44,9 @@ moves, so it carries a lightweight refresh rule (wired into
 > **When a PR adds, removes, renames, or relocates an atomic algorithm, or changes a
 > detector's pipeline stages, update [`algorithm-atlas.md`](algorithm-atlas.md) and
 > the owning crate's `docs/PIPELINE.md` in the same PR.** When it changes a crate's
-> internal dependencies or public tiers, update
-> [`dependency-and-layering.md`](dependency-and-layering.md).
+> internal dependencies, update
+> [`dependency-and-layering.md`](dependency-and-layering.md); when it changes
+> `projective-grid`'s public surface, update its `docs/DESIGN.md`.
 
 Practical guidance:
 

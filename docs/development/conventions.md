@@ -15,9 +15,8 @@ which constructor shape reads best.
   for every external consumer — they can neither build the struct with literal
   syntax nor match it exhaustively, so adding a field cannot break them. This
   applies even to result and data-carrier structs that callers mostly *read*: a
-  result struct accretes fields over its life (this workspace's result structs
-  have done so repeatedly), and without `#[non_exhaustive]` each addition is a
-  semver break.
+  result struct accretes fields over its life, and without
+  `#[non_exhaustive]` each addition is a semver break.
 - A named constructor so the struct stays buildable from other crates (test
   fixtures, bindings, downstream consumers) despite the literal-construction
   block. Pick the shape that reads best:
@@ -84,9 +83,8 @@ hand-mirrored from Rust rather than generated, each with a drift contract:
   construction there for any shape you add. Type-checking the `.d.ts` alone
   proves only that it parses — it cannot see a declaration that is
   unsatisfiable, and TypeScript merges two same-named `interface` declarations
-  in one module *silently*, so a second `MarkerCircleSpec` (the printable
-  model's, next to the detector's) once left both marker-board types
-  unconstructible with every check green. Two Rust crates may share a type
+  in one module *silently*, making both types unconstructible with every check
+  green. Two Rust crates may share a type
   name; this one flat namespace may not — disambiguate the new one (e.g.
   `PrintableMarkerCircleSpec`) rather than repeating the name.
 - **Studio param-schema catalogue**

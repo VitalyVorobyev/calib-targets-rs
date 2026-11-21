@@ -3,9 +3,8 @@
 The single home of the workspace's gate lists. Three tiers, each a superset of
 the one before:
 
-1. **Everyday gate** — every commit; listed in `.claude/CLAUDE.md` ("Everyday
-   gate"): `fmt --check`, `clippy -D warnings`, `test --workspace`,
-   `doc --no-deps` with zero warnings.
+1. **Everyday gate** — every commit; defined in `.claude/CLAUDE.md` ("Everyday
+   gate").
 2. **Label-moving changes** — any change that can alter which corners get
    labelled or how (below).
 3. **Pre-release** — before tagging (below).
@@ -68,16 +67,10 @@ stale when the Rust API surface changes (new functions, `#[non_exhaustive]`,
 renamed types, etc.).
 
 ```bash
-# 1. Standard Rust checks
-cargo fmt --all -- --check
-cargo clippy --workspace --all-targets -- -D warnings
-cargo test --workspace
+# 1. Everyday gate (.claude/CLAUDE.md) plus all-features tests
 cargo test --workspace --all-features
 
-# 2. Doc warnings (broken intra-doc links, name collisions)
-cargo doc --workspace --no-deps  # must produce zero warnings
-
-# 2b. Supply chain: RustSec advisories, licences, bans, sources.
+# 2. Supply chain: RustSec advisories, licences, bans, sources.
 # Policy and every documented exception live in the root `deny.toml` —
 # that file is the single source of truth. `cargo audit` reads a *different*
 # config, so do not add a second ignore list there; use `cargo deny`.

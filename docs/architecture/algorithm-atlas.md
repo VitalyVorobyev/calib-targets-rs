@@ -23,13 +23,8 @@ durable anchor; line numbers drift and are omitted except where pinned in prose)
 | Badge | Meaning |
 |---|---|
 | ✅ **exercised** | On a shipping in-workspace detector's production path. |
-| 📚 **library-only** | Reachable only through `projective-grid`'s *public API* — its intended external product surface (hex lattices, dot-grid / orientation-free evidence, the geometry-only recovery schedule). **No workspace detector calls it.** This is *not* dead code; it is library scope. See [`dependency-and-layering.md`](dependency-and-layering.md#the-library-only-surface). |
+| 📚 **library-only** | Reachable only through `projective-grid`'s public API (hex lattices, dot-grid / orientation-free evidence, the geometry-only recovery schedule). **No workspace detector calls it**; it is intended library scope — see [`projective-grid/docs/DESIGN.md`](../../crates/projective-grid/docs/DESIGN.md#production-path-vs-library-only-breadth). |
 | 🧪 **diagnostic** | Trace/debug path only. |
-
-The `📚` rows are the single biggest reason `projective-grid` is ~3× the size of
-any other crate. They are deliberately kept (the crate is a published standalone
-grid library); they are flagged here only so a reader of *this workspace* knows
-the in-workspace detectors never reach them.
 
 ---
 
@@ -39,10 +34,11 @@ The numerical bedrock: homography / projective fits and warps.
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Normalized DLT homography (N≥4) | `pg geometry/homography.rs::estimate_homography` | src/dst point pairs → `Homography<F>` | Hartley-normalize → accumulate `AᵀA` → smallest-eigenvector → denormalize → scale-fix. | ✅ (via `shared::fit`) |
+| Normalized DLT core (N≥4) | `pg geometry/homography.rs::estimate_homography_dlt` | src/dst point pairs → `Homography<F>` | Hartley-normalize → accumulate `AᵀA` → smallest-eigenvector → denormalize → scale-fix. The one DLT solver; both estimators below call it. | ✅ |
+| Homography estimate | `pg geometry/homography.rs::estimate_homography` | src/dst point pairs → `Homography<F>` | 4-point solver for N = 4, the DLT core for N > 4. Local per-cell fits (validate, extension). | ✅ |
 | 4-point homography | `pg geometry/homography.rs::homography_from_4pt` | 4 src + 4 dst → `Homography<F>` | Direct 8×8 LU solve on normalized points. | ✅ |
 | Homography quality | `pg geometry/homography.rs::HomographyQuality::from_homography` | `Homography` → (cond, det, σ) | SVD condition number + determinant; **diagnostic only, scale-dependent**. | ✅ |
-| 8-DOF projective DLT | `pg geometry/mod.rs::estimate_projective` | src/dst → `Projective2<F>` | Generic-`F` plain DLT (no Hartley); used where a `Projective2` is wanted. | ✅ |
+| Projective fit | `pg geometry/mod.rs::estimate_projective` | src/dst → `Projective2<F>` | The DLT core solved in `f64` whatever `F`; the lattice fit (`shared/fit.rs`) and the consistency check. | ✅ |
 | Core homography alias (N≥4) | `core homography.rs::estimate_homography_rect_to_img` | src/dst → `Homography` | Re-export of the canonical `pg` normalized DLT under the detector-facing frame name. | ✅ (single implementation) |
 | Perspective warp (gray) | `core homography.rs::warp_perspective_gray` | image + H + size → rectified image | Per-output-pixel inverse-map + bilinear sample. | ✅ |
 | Grid-position prediction | `pg lattice/predict.rs::predict_grid_position` | labelled neighbours + lattice → predicted position | Average opposite-neighbour midpoints across the lattice's axis families. | ✅ (canonical) |
@@ -83,7 +79,8 @@ and [`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/P
 | Triangle-pair → quad | `pg topological/quads.rs` | triangles + classified edges → quads | Merge diagonal-sharing pairs into grid cells. | ✅ |
 | Quad filter | `pg topological/filter.rs::apply_topological_quad_filter` | quads + degrees → filtered quads | Reject degree>4, extreme parallelograms, out-of-band cell sizes. | ✅ |
 | Integer component labelling (walk) | `pg topological/walk.rs::label_components` | quads + positions → `(i,j)→index` per component | Flood-fill integer labels across edges whose far corners continue the lattice within half a cell; components a larger one refuses across an edge are dropped; rebase min→(0,0). | ✅ |
-| Square orchestrator | `pg topological/square_detector.rs::detect_square_oriented2_all` | oriented features + params → labelled components | Drives delaunay→classify→quads→filter→walk. | ✅ |
+| Square assembly | `pg topological/square_detector.rs::assemble_square_oriented2_components` | oriented features + params → merged labelled components | Drives delaunay→classify→quads→filter→walk→local merge; the chessboard seam (`expert::square::assemble_oriented2_components`). | ✅ |
+| Square facade orchestrator | `pg topological/square_detector.rs::detect_square_oriented2_all` | oriented features + params → `GridSolution`s | Square assembly + recovery schedule (synthesized axes) + validate → normalize → fit. | 📚 |
 | Hex cell classification | `pg topological/hex.rs::classify_hex_cells` | mesh + hex axis caches → valid cells | Three-direction alignment + equilateral test. | 📚 |
 | Hex axial labelling | `pg topological/hex.rs::label_components` | hex cells + positions → axial labels | Axial flood-fill with parallelogram completion, gated on the image completion within half a step; components a larger one refuses across an edge are dropped (no quad merge). | 📚 |
 | Hex orchestrator | `pg topological/hex_detect.rs::detect_hex_oriented3_topological_all` | features → labelled hex components | Hex analogue of the square orchestrator + D6 merge. | 📚 |
@@ -98,8 +95,8 @@ detector feeds native ChESS dual axes (`Oriented2`). Deep dive:
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Synthesize dual axes (from positions) | `pg orient.rs::synthesize_oriented2` | `&[PointFeature]` → `OrientedFeature<2>` | Perspective-invariant mod-π 2-means per corner from neighbour geometry. | 📚 |
-| Synthesize 2nd axis (from 1) | `pg orient.rs::synthesize_oriented2_from_oriented1` | `OrientedFeature<1>` → `<2>` | Keep the trusted axis, recover the orthogonal. | 📚 |
+| Synthesize dual axes (from positions) | `pg orient.rs::synthesize_oriented2` | `&[PointFeature]` → `OrientedFeature<2>` | Per-corner mod-π 2-means over nearest-neighbour chords, seeded from the global modes; no inter-axis-angle constraint. | 📚 |
+| Synthesize 2nd axis (from 1) | `pg orient.rs::synthesize_oriented2_from_oriented1` | `OrientedFeature<1>` → `<2>` | Keep the trusted axis, recover the second (not assumed orthogonal). | 📚 |
 | Synthesize triple axes (hex) | `pg orient.rs::synthesize_oriented3` | `&[PointFeature]` → `OrientedFeature<3>` | Three-family generalisation for hex. | 📚 |
 
 ## 6. Component merge
@@ -107,14 +104,15 @@ detector feeds native ChESS dual axes (`Oriented2`). Deep dive:
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
 | Local geometric merge | `pg shared/merge.rs::merge_components_local` | labelled components + shared positions → merged | Reunite components under D4 symmetry via shortest label-space edge; keeps the labelling injective in both directions. | ✅ |
-| Shared-corner-index merge | `chess pipeline/recover.rs::merge_components_with_shared_corners` | two label maps → merged | Merge by shared *corner indices* under D4 (runs after the geometric merge; needs core's `GRID_TRANSFORMS_D4`). | ✅ (chess-local) |
+| Shared-corner-index merge | `chess pipeline/recover.rs::merge_components_with_shared_corners` | two label maps → merged | Merge by shared *corner indices* under D4 (`core`'s `GRID_TRANSFORMS_D4`); runs after the boosters and is followed by a second geometric merge. | ✅ (chess-local) |
 
 ## 7. Growth & recovery — the geometry-only engine
 
 `projective-grid`'s grow/fill/extend/recover machinery. Chessboard composes the
 `grow` + `fill` primitives in its own boosters; its builder seam
 (`pg expert.rs::assemble_oriented2_components`) returns before any recovery, so it
-never touches `extension`, `grow_extend`, or the `recovery` schedule — those drive the library-only orientation-free path.
+never touches `extension`, `grow_extend`, or `recovery_schedule` — those drive the
+library-only orientation-free path.
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
@@ -125,7 +123,6 @@ never touches `extension`, `grow_extend`, or the `recovery` schedule — those d
 | Chessboard boosters | `chess pipeline/boosters.rs::apply_boosters_with_directional_edge_scale` | component + policy → grown component | Wrap `fill_grid_holes` with a weak-cluster-rescue `SquareAttachPolicy`. | ✅ (chess-local) |
 | Directional edge scale | `chess pipeline/recover.rs::directional_edge_lengths` | component + positions → per-axis medians | Anisotropy-tolerant edge-length gate for boosters. | ✅ (chess-local) |
 | Local-H boundary extension | `pg shared/extension/local.rs::extend_via_local_homography` | candidate + K-nearest → attached | Per-candidate local homography, project + revalidate. | 📚 |
-| Global-H extension fallback | `pg shared/extension/global.rs::extend_via_global_homography` | candidates + global H → attached | Manifold-fit fallback when local fails. | 📚 |
 | Recovery schedule | `pg shared/recovery_schedule.rs::run_schedule` | labelled + params → recovered (fixed point) | Iterate extend→fill→validate→drop until stable. Opt-in via `RecoverySchedule`. | 📚 |
 
 ## 8. Validation & wrong-label filters
@@ -140,16 +137,16 @@ relabelled), upholding the "no false positives" contract.
 | Per-corner local-H residual | `pg shared/validate/local_h.rs::local_h_residual` | labelled → rejected idx | Fit local H from K nearest, reject high relative residual. | ✅ |
 | Wrong-label edge drops | `pg shared/validate/wrong_label_filters.rs::topological_wrong_label_drops` | labelled + params → dropped | Drop overlong / off-axis / duplicate-pixel edges. | ✅ |
 | Lattice-orientation parity | `pg shared/validate/wrong_label_filters.rs::lattice_orientation_drops` | labelled → dropped | `sign(e_u × e_v)` is constant under a homography; drop minority-sign labels. Invariant, no tolerance. | ✅ |
-| Frontier-kink smoothness | `pg shared/validate/wrong_label_filters.rs` (frontier filter) | labelled + lines → dropped | Second-order line-spacing kink past the true boundary (Gap-15 fix). | ✅ |
+| Frontier-kink smoothness | `pg shared/validate/wrong_label_filters.rs::frontier_curvature_drops` | labelled + lines → dropped | Second-order line-spacing kink past the true boundary. | ✅ |
 | Largest-component filter | `pg shared/validate/wrong_label_filters.rs::largest_component_filter` | labelled → subset | Keep only the largest cardinally-connected component. | ✅ |
 | Chessboard geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | labelled → validated | Sequence the pg validators on the chess output. | ✅ |
-| Output normalize / rebase | `chess pipeline/output.rs::build_detection` + `pg result.rs::LabelledGrid::normalize` | labelled → `ChessboardDetection` | Rebase to non-negative, canonicalise image-axis orientation. | ✅ |
+| Output normalize / rebase | `chess pipeline/output.rs::build_detection` + `pg expert.rs::lattice::normalize_square_entries` | labelled → `ChessboardDetection` | Rebase to non-negative, canonicalise image-axis orientation. | ✅ |
 | Post-build consistency check | `pg check/mod.rs::check_consistency` | solution → report | Standalone post-detection validation (public task). | 📚 |
 
 ## 9. Marker decode (ArUco)
 
 The codec layer: no quad/grid detection of its own — it decodes within a grid it is
-handed. `aruco/src/scan.rs` (969 LOC) is one cohesive scanner.
+handed. `aruco/src/scan.rs` is one cohesive scanner.
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
@@ -191,7 +188,7 @@ Grid delegated to `chess`; everything below is local. Master pattern is 501×501
 | CRT master row/col | `puzzle detector/decode/mod.rs::crt_master_row` / `crt_master_col` | cyclic residues (mod 3, mod 167) → master coord [0,501) | Chinese-Remainder recovery of absolute master index. | ✅ |
 | Hard-weighted decode | `puzzle detector/decode/hard.rs::decode` | observed edges + max-BER → outcome | Precompute H/V contribution tables, scan master origins, rank by (matched, weighted score). | ✅ |
 | Soft-LL decode | `puzzle detector/decode/soft.rs::decode_soft` | edges + soft config → outcome | Per-bit log-likelihood scan with best-vs-runner-up margin gate. | ✅ |
-| Master-origin scan (CRT collapse) | `puzzle detector/decode/hard.rs` | contribution tables → best origin | Optimised O(8·501) origin walk (was O(8·501²)) via CRT collapse. | ✅ |
+| Master-origin scan (CRT collapse) | `puzzle detector/decode/hard.rs` | contribution tables → best origin | O(8·501) origin walk via CRT collapse. | ✅ |
 | Master-ID encode + wrap | `puzzle detector/pipeline.rs::master_ij_to_id` / `wrap_master` | (i,j)+transform+origin → flat id | Flat id = `j·501+i`; preserves `target_position` invariant. | ✅ |
 | Component decode ranking | `puzzle detector/pipeline.rs::is_better_component_decode` | two decodes → better | Lexicographic: edges matched, BER, then margin/confidence. | ✅ |
 
@@ -219,7 +216,7 @@ Grid delegated to `chess`; circles are the pose anchor, not decoded markers.
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Circle scoring | `marker circle_score.rs::score_circle_in_square` | warped cell + params → (center, contrast, polarity, squareness) | Disk-vs-ring level contrast, then a shape gate: the 4-theta harmonic of a probe ladder, minus the 2-theta one an ellipse would explain, must stay near zero. | ✅ |
+| Circle scoring | `marker circle_score.rs::DiskProbe::score` | warped cell + params → (center, contrast, polarity, squareness) | Disk-vs-ring level contrast, then a shape gate: the 4-theta harmonic of a probe ladder, minus the 2-theta one an ellipse would explain, must stay near zero. | ✅ |
 | Circle detection via warp | `marker detect.rs::detect_circles_via_square_warp` | image + corner map → candidates | Warp each cell, score circles, rank by polarity. | ✅ |
 | Board-frame resolution | `marker match_circles.rs::resolve_board_frame` | expected + candidates → alignment + matches | Hypothesis-and-verify over `C4`: enumerate every seeded `(rotation, translation)`, score by circles explained exactly, accept only a unique full-layout frame. | ✅ |
 
@@ -243,7 +240,7 @@ path; `○` = available to it but not default; blank = unused by it.
 | Component merge — geometric (§6) | ● | ●² | ●² | ●² | ●² | ● |
 | Component merge — shared-index (§6) | ● | ●² | ●² | ●² | ●² | |
 | Grow + interior fill (§7) | ● | ●² | ●² | ●² | ●² | ● |
-| Local/global-H extension + recovery schedule (§7) | | | | | | ● 📚 |
+| Local-H extension + recovery schedule (§7) | | | | | | ● 📚 |
 | Validation + wrong-label drops (§8) | ● | ●² | ●² | ●² | ●² | ● |
 | ArUco decode (§9) | | ● | | | | |
 | ChArUco board-level matcher (§10) | | ● | | | | |
@@ -255,7 +252,7 @@ path; `○` = available to it but not default; blank = unused by it.
 ¹ Puzzle and Pole reach §1 only transitively through their embedded chess
 detector.
 ² ChArUco / Puzzle / Pole / Marker reach §2–§8 **through** their embedded `chess`
-detector, not by calling `pg` directly — `chess` is the only in-workspace crate
+detector, not by calling `pg` directly — `chess` is the only detector crate
 that depends on `projective-grid` (see [`dependency-and-layering.md`](dependency-and-layering.md)).
 ³ The pole shares §11's edge sampling and period-3 consensus, but not its origin
 recovery: the CRT collapse needs coprime row moduli and a pole's are 3 and `p`
@@ -266,8 +263,8 @@ with `3 | p`, so it enumerates a ring instead (§12).
 Every shipping detector funnels through **one** grid path: ChESS corners →
 axis-cluster → **topological square** assembly → geometric merge → grow/fill →
 validate. The marker family (`charuco`, `puzzle`, `pole`, `marker`) then bolts a *decode*
-stage on top, and those decode stages (§9–§13) are clean, cohesive, and share
-nothing they shouldn't — the pole being the one that deliberately *does* share,
-reusing §11 wholesale and replacing only where the code lives. The breadth lives entirely in `pg`'s `📚` rows (hex,
-orientation-free, recovery schedule) — intended library surface, exercised by no
-detector here.
+stage on top (§9–§13); the pole reuses §11 wholesale and replaces only the origin
+recovery. The surrounding per-family detection skeleton is copied rather than
+shared ([backlog B-13](../development/backlog.md#b-13)). The breadth lives in
+`pg`'s `📚` rows (hex, orientation-free, recovery schedule) — intended library
+surface, exercised by no detector here.

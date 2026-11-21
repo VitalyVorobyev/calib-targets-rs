@@ -3,8 +3,8 @@
 `calib-targets-ffi` exposes the detector stack of the `calib-targets` facade
 crate through a stable C ABI, with a thin header-only C++17 RAII wrapper on top.
 For the shortest working CMake integration see the
-[CMake consumer quickstart](./cmake-consumer-quickstart.md); for the design
-rationale see the [decision record](./decision-record.md).
+[CMake consumer quickstart](./cmake-consumer-quickstart.md); the design
+rationale is at the end of this guide.
 
 | What | Where |
 |---|---|
@@ -67,7 +67,7 @@ detection's localization-quality summary. Each `ct_optional_f32_t` member has
 
 | Field | Meaning |
 |---|---|
-| `noise_sigma` | Image noise (gray levels) the covariances used; unset under `CT_UNCERTAINTY_OFF`, for `*_with_corners` calls, or when the estimate declined. |
+| `noise_sigma` | Image noise (gray levels) the covariances used; unset under `CT_UNCERTAINTY_OFF` or when the estimate declined. |
 | `covariance_coverage` | Fraction of delivered corners carrying a covariance. |
 | `median_sigma_px`, `p95_sigma_px` | Median / 95th-percentile per-corner σ (least certain direction), px. |
 | `local_residual_count`, `local_residual_rms_px` | Corners with ≥ 6 of 8 grid neighbours; RMS of their leave-one-out residual (corner predicted from its neighbours alone), px. |
@@ -223,3 +223,22 @@ cargo test -p calib-targets-ffi --test release_archive_smoke -- --ignored --noca
 
 The header check fails when `calib_targets_ffi.h` is stale; regenerate it by
 running the same command without `--check`.
+
+## Design rationale
+
+- The FFI is a dedicated crate layered on the `calib-targets` facade, the
+  end-to-end Rust boundary for foreign integrations. The ABI is C-only
+  (`extern "C"`, `#[repr(C)]`, a cbindgen-generated header); the C++ wrapper is
+  header-only and adds no exported symbols. The shipped artifact is a `cdylib`.
+- Configs and results are fixed C structs plus caller-owned arrays, never JSON,
+  so C/C++ callers get a typed API. Every caller-facing config/result type
+  therefore needs a stable `#[repr(C)]` mirror, and any layout change is a major
+  ABI bump.
+- The full config surface is exposed, including the ChESS front-end, so advanced
+  users are not boxed in.
+- Diagnostics are the one JSON channel: they are inspection data whose shape
+  changes with the algorithms, so serializing them keeps that churn out of
+  struct layouts. Anything a caller needs in production must be a typed field,
+  never read from the JSON.
+- Marker dictionaries are the built-in ids only, which keeps the ABI small;
+  custom dictionaries are not exposed.

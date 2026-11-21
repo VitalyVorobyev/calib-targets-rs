@@ -99,9 +99,7 @@ it injects noise into edge classification instead of evidence. Coupling the
 two means loosening the cell test loosens admission by exactly the same
 amount, and there is nothing separate to tune. Note the builder's internal
 `max_axis_sigma_rad` (0.6 rad) is a distinct, much looser backstop — it is not
-an admission gate. Before 0.11.0 this half of the prefilter was a
-fit-residual ratio (`fit_rms <= max_fit_rms_ratio * contrast`), which
-chess-corners 1.0 made inexpressible by removing both scalars.
+an admission gate.
 
 Separately,
 `calib-targets-chessboard/src/pipeline/recover.rs::clustered_augs` runs
@@ -340,10 +338,9 @@ grid.
 
 ### Chessboard recovery (chessboard-specific)
 
-`calib_targets_chessboard::topological::recovery` and
-`pipeline::geometry_check` / `pipeline::output`, driven by
-`detect_all_topological` in
-`calib_targets_chessboard::topological`
+`pipeline::recover`, `pipeline::geometry_check` and `pipeline::output`,
+driven by `detect_all_topological` in
+`crates/calib-targets-chessboard/src/pipeline/mod.rs`
 
 The shared topology branch stops at merged labelled components. The chessboard
 wrapper then:
@@ -354,7 +351,7 @@ wrapper then:
    (`(i + j) % 2`) — the chessboard-specific discipline the generic
    classifier deliberately omits.
 2. Marks the component and runs the **recall boosters**
-   (`calib_targets_chessboard::boosters::apply_boosters_with_directional_edge_scale`)
+   (`pipeline::boosters::apply_boosters_with_directional_edge_scale`)
    — interior gap fill and line extrapolation — under the same axis /
    parity / edge gates the topological walk uses. Boosters use the larger
    directional median as their edge scale, while the final reported
@@ -419,12 +416,10 @@ digest, and every named pipeline span.
 
 - C. Shu, A. Brunton, M. Fiala. *A topological approach to finding grids
   in calibration patterns.* Machine Vision and Applications 21(6), 2010.
-  (Cited as "Shu/Brunton/Fiala 2009" in parts of the codebase; same work.)
   The original uses an image-color cell test; this implementation replaces
   it with the axis-alignment test described above so the core stays
   image-free.
-- `projective-grid` crate documentation — see the "Topological grid
-  finder" section of the book chapter
+- "The square algorithm: Topological" section of the book chapter
   [`book/src/projective_grid.md`](../../book/src/projective_grid.md).
 - Generic core source:
   `crates/projective-grid/src/topological/`.

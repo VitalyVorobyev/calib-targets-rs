@@ -5,8 +5,7 @@
 > ([decode](../../book/src/algo_puzzleboard_decode.md),
 > [code maps and registration](../../book/src/algo_puzzleboard_code_maps.md));
 > this file is the internal contract: entry points, invariants, constants and
-> their justifications. An appendix records a design that was considered and not
-> built.
+> their justifications.
 
 ## Scope
 
@@ -107,7 +106,7 @@ Parameter-free. The runner-up is the highest matched count of any *distinct*
 origin **across all eight transforms** — a fragment too small to break D4
 symmetry must not be allowed to invent an orientation. Applied to both scorers:
 the soft path's `alignment_min_margin` gates the score gap, which does not
-enforce origin uniqueness and was measured to false-accept at every window size.
+enforce origin uniqueness.
 
 ### 6 — Component selection
 
@@ -137,7 +136,7 @@ target_position.y == (id / 501) · cell_size
 | `min_bit_confidence` | 0.15 | Below this the dot read carries no usable evidence; dropping beats guessing because the scorers weight by confidence. |
 | `max_bit_error_rate` | 0.30 | Applied to the **voted** bits, which is the domain the paper's figure is quoted in ("up to 401/1002 ≈ 40 % … *after* averaging over all repetitions"). 0.30 is the shipped default, with 0.40 available in the sweep preset. |
 | `sample_radius_rel` | 1/6 | Dot radius as a fraction of edge length — large enough to average sensor noise, small enough to stay inside the dot under foreshortening. |
-| `SEPARATION_PRODUCT_CAP` | 1024 | Guards the CRT separation against degenerate all-tied inputs; above it the transform falls back to a direct table scan, so worst-case cost never exceeds the pre-CRT version. |
+| `SEPARATION_PRODUCT_CAP` | 1024 | Guards the CRT separation against degenerate all-tied inputs; above it the transform falls back to a direct table scan. |
 
 ### The `min_window` measurement
 
@@ -184,22 +183,3 @@ cargo test --release -p calib-targets-puzzleboard --lib -- \
 # per-stage timing on a public fixture
 cargo run --release -p calib-targets-bench --bin puzzleboard_stage_timing
 ```
-
----
-
-## Appendix — considered, not implemented
-
-An earlier design proposed **anchor-based hypothesis generation**: decode small
-reliable neighbourhoods first, use them to propose a shortlist of board
-positions, then score only that shortlist against the full observed graph.
-
-It was not built, and the reason is that the premise it optimises away turned
-out not to be the cost. The cyclic structure of the code already reduces the
-full hypothesis space to two 501-entry tables, after which scoring *every*
-origin is cheaper than proposing a shortlist would be. An anchor stage would
-also weaken the uniqueness gate, which depends on knowing the best competing
-origin over the whole space — a shortlist cannot certify that.
-
-The parts of that design that *were* worth having landed differently: soft
-per-bit evidence became `SoftLogLikelihood`, and "reject ambiguity rather than
-guess" became the parameter-free uniqueness gate.

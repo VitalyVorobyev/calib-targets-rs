@@ -6,31 +6,33 @@ Orientation is an **optional input cue**: missing families can be estimated
 from neighbour chords before classification. This synthesis is itself an
 assumption about local point-cloud structure, not equivalent evidence. The
 *universal* cue is the grid structure itself: rows are lines, columns are
-lines, and local homographies are consistent. That structural cue already
-drives the shared `validate` stage and needs zero orientation.
+lines, and local homographies are consistent. That structural cue drives the
+shared `validate` stage and needs zero orientation.
 
-This document records **exactly where** the topological strategy and its shared
+This document records **where** the topological strategy and its shared
 recovery engine consume per-corner orientation, and **how the orientation-free /
-single-axis inputs are supported**. Every claim below is grounded in the current
-code; line numbers drift, so treat the named functions as the anchors.
+single-axis inputs run**. Named functions are the anchors; line numbers drift.
 
-## How it is implemented today: synthesize up front
+Only `(Square, Oriented2)` has real-image evidence; every other evidence kind
+is experimental (Gap 21 in
+[`docs/algorithms/algorithmic_gaps.md`](../../../docs/algorithms/algorithmic_gaps.md)).
 
-All three square evidence kinds are supported, and the implementation took the
-**simplest** route — rather than rewriting the strategy to run without axes, the
-facade **synthesizes the missing axes from neighbour geometry up front** and then
-runs the existing two-axis topological strategy unchanged:
+## Synthesize up front
 
-- `Evidence::Positions` → `orient::synthesize_oriented2` recovers **both** local
-  grid directions per point (square); `orient::synthesize_oriented3` recovers
-  **all three** hex axis families.
-- `Evidence::Oriented1` → square uses
-  `orient::synthesize_oriented2_from_oriented1`; hex uses the internal
-  three-family counterpart. Both preserve the supplied angle and sigma as one
-  anchored physical family and estimate only the missing family/families.
+The facade (`detect.rs`) does not run the strategy without axes. It
+**synthesizes the missing axes from neighbour geometry** (`orient.rs`, public as
+`expert::orientation::synthesize_*`) and then runs the same topological
+strategy it runs on native axes:
+
+- `Evidence::Positions` → `synthesize_oriented2` recovers **both** local grid
+  directions per point (square); `synthesize_oriented3` recovers **all three**
+  hex axis families.
+- `Evidence::Oriented1` → square uses `synthesize_oriented2_from_oriented1`;
+  hex uses the internal three-family counterpart. Both preserve the supplied
+  angle and sigma as one anchored physical family and estimate only the
+  missing family/families.
 - `Evidence::Oriented2` → used directly (square).
-- `Evidence::Oriented3` → used directly (hex). Three axis families, consumed by
-  the hex topological path.
+- `Evidence::Oriented3` → used directly (hex).
 
 The synthesis folds neighbour-chord angles modulo π (collinear `±u` neighbours
 are antipodal, so they collapse to one direction) and runs a per-corner undirected
@@ -42,43 +44,35 @@ families. Nearest-neighbour selection is not projectively invariant, and
 clutter or severe perspective can corrupt the modes. Downstream gates reduce
 that risk but do not prove that every surviving label is correct.
 
-> Readiness: `(Square, Oriented2)` is mature and covered by real-image
-> detector campaigns. Square `Positions` / `Oriented1` remain
-> evidence-limited. Hex `Positions` / `Oriented1` / `Oriented3` are
-> experimental until a real-image campaign measures both wrong labels and
-> recall. The synthetic fixtures are regression evidence, not a production
-> readiness claim.
+On synthesized square evidence the facade then runs the geometry-only recovery
+schedule (below), in which the synthesized axes are only a *soft* cue and the
+geometry is the gate.
 
-The up-front synthesis above is the **entry seam** (it lets the topological
-strategy run unchanged on synthesized axes). On top of it, the recovery engine
-realizes the "run truly without axes" design below as the shipped
-`PositionsAttachPolicy`, where the synthesized axes are only a *soft* cue and
-the geometry is the gate.
+## The shared grid-growth engine
 
-## The shared grid-growth engine — almost orientation-free already
+The pattern-agnostic grid-growth primitives — boundary extension, interior
+fill, and the recovery schedule under `shared/` — are what the topological
+synthesized-axis path runs (and the chessboard crate composes the grow / fill
+primitives for its own recovery). The BFS grow core (`shared/grow/`) is
+**axis-agnostic**: it manages the labelled map, the boundary queue, kd-tree
+candidate search, prediction averaging, ambiguity resolution, and the origin
+rebase — all from positions alone. Every orientation-dependent decision is
+delegated to a caller-supplied **`SquareAttachPolicy`**
+(`expert::attachment::SquareAttachPolicy`). The chessboard policy
+(`calib-targets-chessboard/src/pipeline/boosters.rs`) uses it like this:
 
-The pattern-agnostic grid-growth primitives — the boundary-extension, interior-
-fill, and recovery engine under `shared/` — are what the topological strategy's
-synthesized-axis path runs (and what the chessboard crate composes for its own
-recovery). The BFS grow core (`shared::grow`) is **fully axis-agnostic**: it
-manages the labelled map, the boundary queue, KD-tree candidate search,
-prediction averaging, ambiguity resolution, and the origin rebase — all from
-positions alone. Every orientation-dependent decision is delegated to a
-caller-supplied **`SquareAttachPolicy`** (`shared::grow::SquareAttachPolicy`):
+- `accept_candidate` — checks the candidate's two axes against the two global
+  cluster centres (`axes_match_centers`).
+- `edge_ok` — enforces the **axis-slot-swap** parity invariant (the edge must
+  align with opposite axis slots at its two endpoints) *plus* an axis-free
+  edge-length band.
 
-- `accept_candidate` — the chessboard policy checks the candidate's two axes
-  against the two global cluster centres (`axes_match_centers`).
-- `edge_ok` — the chessboard policy enforces the **axis-slot-swap** parity
-  invariant (the edge must align with opposite axis slots at its two endpoints)
-  *plus* an axis-free edge-length band.
+The trait's defaults are axis-free (`edge_ok` defaults to "accept").
 
-The trait's defaults are axis-free (`edge_ok` defaults to "accept"), and a
-position-only attach policy already works in the crate's own tests.
+### Orientation-free growth: `PositionsAttachPolicy`
 
-### Orientation-free growth (shipped: `PositionsAttachPolicy`)
-
-The shipped orientation-free attach policy is the crate-private
-`shared::positions_policy::PositionsAttachPolicy`:
+The orientation-free attach policy is the crate-private
+`shared/positions_policy.rs::PositionsAttachPolicy`:
 
 1. **Policy.** Eligibility is all corners; `required_label_at` / `label_of`
    return `None` (no parity — a dot grid has no two-colour alternation);
@@ -87,80 +81,56 @@ The shipped orientation-free attach policy is the crate-private
    tolerance (`soft_axis_tol_rad`) — a noisy synthesized axis can never block a
    geometrically-coherent attach, so a wrong axis costs a *missing* corner, not
    a mislabel.
-2. **Recovery.** The geometry-only recovery schedule (`shared::recovery`:
-   extension → fill → revalidate → drop filters) wraps the policy and can
-   recover labels missed by the synthesized-axis front-half.
+2. **Recovery.** The geometry-only recovery schedule
+   (`shared/recovery_schedule.rs`: local-H + cardinal-BFS boundary extension →
+   interior fill → revalidate → wrong-label and largest-component drop filters,
+   repeated to a fixed point) wraps the policy and recovers labels missed by
+   the synthesized-axis front-half. `RecoverySchedule::Auto` (the default)
+   enables it for `Positions` / `Oriented1` square evidence and leaves it off
+   for native `Oriented2`; hex has no recovery schedule.
 
-Validate and the shared back-half are untouched. A fully axis-free chord
-fallback (geometric nearest + most-orthogonal chord) remains a possible future
-option for inputs with *no* reliable synthesized axes, but is not the shipped
-path.
+Validate and the shared back-half are untouched.
 
-## Topological — needs a geometric edge classifier
+## Topological — where axes are read
 
-Topological reads axes in three places, all in generic code:
+Topological reads axes in three places (`topological/square_detector.rs`,
+`topological/classify.rs`):
 
 1. **Pre-filter** (`build_usable_mask`) — drops corners whose **both** axes are
-   uninformative. This is a *quality gate*, not a geometric necessity; with no
-   axes it becomes "keep all".
-2. **Cluster-prior gate** — opt-in, `None` by default; not load-bearing for the
-   standalone crate.
+   uninformative. This is a *quality gate*, not a geometric necessity.
+2. **Cluster-prior gate** — opt-in (`TopologicalParams::axis_cluster_centers`,
+   `None` by default); not load-bearing for the standalone crate.
 3. **Edge classification** (`topological/classify.rs`) — the load-bearing use,
-   and the part that replaced the original Shu/Brunton/Fiala image-colour test:
+   in place of the image-colour test of Shu/Brunton/Fiala:
    - An edge `a→b` is a **Grid** edge iff *both* endpoints see the chord within
-     a tolerance (~15°) of one of their own axes.
+     `axis_align_tol_rad` (default 15°) of one of their own axes.
    - A triangle's third edge is promoted to **Diagonal** when its two grid
      edges meet at a vertex using **different axis slots** — i.e. the two grid
      sides there are orthogonal.
 
 Everything downstream of classification (cell merge, label walk, the
-degree/parallelogram/edge-band filters, fit) is already axis-free.
-
-### A fully geometric classifier (design option, not shipped)
-
-The current `Positions` path still synthesizes axes. A future classifier could,
-per Delaunay triangle, split the three edges into
-{two grid sides, one diagonal}. On a regular grid each cell's two triangles
-share the cell **diagonal**, which is the **longest** edge (≈ √2 · cell vs
-1 · cell), and the two grid sides are the two shorter, near-orthogonal edges.
-So a purely **geometric** classifier could substitute for the axis test:
-
-- Per triangle, mark the longest edge `Diagonal` and the other two `Grid`,
-  gated by: the two short edges' length ratio ≈ 1, the long/short ratio ≈ √2,
-  and the angle between the two short edges ≈ 90° (the cell-corner right angle
-  — the geometric statement of the current "different axis slots" test).
-- Reuse the existing buddy-consistency (the diagonal's neighbour triangle must
-  agree), quad-mesh degree (> 4 illegal), and parallelogram filters unchanged.
-
-This needs only the `positions` already passed to the classifier. It is clean
-for dot grids (the cloud *is* the lattice — no within-cell features) but **more
-fragile on marker boards**: with no axis signal, small marker-internal
-triangles whose geometry happens to look cell-like can no longer be rejected by
-orientation. That is precisely why the orientation-free topological path is
-targeted at **dot grids**, not marker boards. On marker boards the **oriented**
-topological path runs instead, and ChArUco additionally cuts the weak marker-bit
-corners with a `min_corner_strength` floor before the grid grows (see
-`crates/calib-targets-charuco/docs/PIPELINE.md`), so the marker-internal
-triangles never reach the classifier.
+degree/parallelogram/edge-band filters, fit) is axis-free. Without native
+orientation the classifier runs on synthesized axes; a classifier that needs no
+axes at all is Gap 1 in
+[`docs/algorithms/algorithmic_gaps.md`](../../../docs/algorithms/algorithmic_gaps.md).
 
 ## Axis clustering is shared math; parity semantics live in the consumer
 
-The orientation histogram + double-angle 2-means that recovers the two global
-grid-direction centres is **shared math** in this crate
-(`projective_grid::cluster`, re-exported as `cluster_axes` with
-`AxisClusterCenters` / `AxisAssignment`). What stays **chessboard-crate code**
-is the *parity semantics* on top of those centres — mapping the
-canonical/swapped axis assignment onto the two-colour `(i, j)` parity.
-A dot grid has no parity, so the consumer simply skips the parity mapping and
-uses the cluster centres (if any) as a soft prior — there is nothing
-parity-specific in this crate to remove.
+The double-angle 2-means that recovers the two global grid-direction centres is
+**shared math** in this crate (`cluster/`, public as
+`expert::orientation::{cluster_axes, AxisClusterCenters, AxisAssignment}`).
+What stays **chessboard-crate code** is the *parity semantics* on top of those
+centres — mapping the canonical/swapped axis assignment onto the two-colour
+`(i, j)` parity. A dot grid has no parity, so the consumer skips the parity
+mapping and uses the cluster centres (if any) as a soft prior — there is
+nothing parity-specific in this crate.
 
 ## Summary
 
-| Stage | Reads orientation? | Orientation-free substitute |
+| Stage | Reads orientation? | Without native orientation |
 |---|---|---|
-| Topological pre-filter | yes (quality gate) | keep all |
-| Topological classify | yes (load-bearing) | per-triangle longest-edge + √2 + right-angle |
+| Topological pre-filter | yes (quality gate) | runs on synthesized axes |
+| Topological classify | yes (load-bearing) | runs on synthesized axes |
 | Topological merge / walk / fit | no | unchanged |
 | shared grow core | no (policy only) | `PositionsAttachPolicy` (length band, soft axis cue, no parity) |
 | shared recovery (extension / fill) | no | unchanged (geometry-only) |

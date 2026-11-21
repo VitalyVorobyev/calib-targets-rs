@@ -17,7 +17,7 @@ produces four complementary views, each measuring a different thing:
 | View | Tool | What it isolates |
 |---|---|---|
 | End-to-end latency | `bench run` | Whole chessboard pipeline per frame (p50/p95/max). |
-| Per-stage breakdown | `topo_stage_timing` | 14 tracing-span stages, corner-detect → ordering. |
+| Per-stage breakdown | `topo_stage_timing` | Tracing-span stages, corner-detect → output assembly ([`profiling.md`](profiling.md)). |
 | Micro-benches | `cargo bench` | Grid build (synthetic), and the corners/chessboard/decode split per target. |
 | Flamegraphs | samply | Where self-time concentrates inside the hot binary. |
 
@@ -56,72 +56,38 @@ into the harness:
 
 ## Where the time goes
 
-Three tiers. The external ChESS corner detector dominates the plain-chessboard
-and large ChArUco frames; on the small, marker-dense ChArUco frame the three
-stages are close; on the PuzzleBoard frame the owned grid build leads. The
-largest *owned* costs are the dense-board grid build and, on marker-dense
-boards, decode.
+Cost is regime-dependent. The external ChESS corner detector dominates
+plain-chessboard and large ChArUco frames; on small, marker-dense ChArUco frames
+the corner, grid and decode stages are comparable; on dense, oblique PuzzleBoard
+frames the owned grid build leads. The largest *owned* costs are the dense-board
+grid build and, on marker-dense boards, decode. Absolute per-frame numbers
+depend on the `chess-corners` version and the machine, so they are produced by
+the campaign (`full_stage_timing`, the published report) rather than recorded
+here.
 
-Per-stage p50 (ms) on the four public report frames (`full_stage_timing`, M4
-Pro, 200 reps, `chess-corners` 1.6 with the covariance on — the 1.6 default;
-from 0.16 / `chess-corners` 2.0 the default is `Off`, see below):
+**Covariance and quality cost.** The corner covariance is off by default
+(`Uncertainty::Off`); enabling it (`Uncertainty::Propagated`) adds a per-frame
+noise estimate plus a per-corner Jacobian, paid for every raw corner, including
+those the grid builder later discards. Measuring the per-detection
+`DetectionQuality` (covariance statistics plus the leave-one-out local check) is
+under 0.5 % of end-to-end. The per-corner local check uses the
+opposite-neighbour line intersection rather than an explicit 8-parameter
+homography fit, which is an order of magnitude costlier.
 
-| Frame | px | corner detect | grid build | decode | end-to-end |
-|---|---|---:|---:|---:|---:|
-| `mid.png` (chessboard) | 1024×576 | **1.09** | 0.35 | — | 1.45 |
-| `small.png` (ChArUco) | 720×540 | 1.28 | 0.83 | **1.21** | 3.32 |
-| `oblique.png` (PuzzleBoard) | 640×480 | 1.01 | **1.70** | 0.92 | 3.62 |
-| `large.png` (ChArUco) | 2048×1536 | **5.37** | 3.69 | 2.43 | 11.50 |
-
-The published report (`.github/pages/performance/`) still shows the pre-1.6
-run until `scripts/gen-perf-data.sh` is re-run.
-
-**Covariance and quality cost.** Corner detection with the covariance on
-(`Uncertainty::Propagated`, opt-in since 0.16) against `Off` (the default),
-median of 100 runs on `chess-corners` 1.6:
-`mid.png` 1.09 vs 0.96 ms, `small.png` 1.28 vs 0.92, `oblique.png` 0.99 vs 0.72,
-`large.png` 5.27 vs 4.70 — a per-frame noise estimate plus a per-corner
-Jacobian, paid for every raw corner, including the ones the grid builder later
-discards ([backlog B-4](backlog.md#b-4), resolved by making it opt-in). Measuring the per-detection
-`DetectionQuality` (covariance statistics plus the leave-one-out local check)
-costs 3–19 µs per frame on the same images (≈ 0.02–0.05 µs per labelled
-corner) — under 0.5 % of end-to-end even where a compound detector measures
-both its chessboard stage and its final corner set. An explicit 8-parameter
-homography fit per corner, the first implementation, cost ≈ 2 µs per corner
-(up to 10 % of a PuzzleBoard frame) and was replaced by the equivalent
-opposite-neighbour line intersection.
-
-The oblique, corner-dense PuzzleBoard frame drives an outsized grid build for
-its size (Tier 3). The `small.png` grid-build and decode figures include the
-chessboard wrong-label geometry check, which ChArUco keeps enabled — a
-correctness cost, not a regression to recover.
+The `small.png` grid-build and decode figures include the chessboard wrong-label
+geometry check, which ChArUco keeps enabled — a correctness cost, not a
+regression to recover.
 
 ### Tier 1 — ChESS corner detection (external `chess-corners`)
 
-The largest stage on the plain chessboard (~72 % of its end-to-end) and the
-large ChArUco frame. It scales with image area (`large.png`, 3 MP, ≈4.5 ms; the
-~0.4–1 MP frames ≈0.7–0.9 ms). The `disk-fit` orientation method roughly
-**doubles** its cost vs `ring-fit` — the standing reason `RingFit` is the
-default. We do not own the implementation, so the levers are configuration
-(resolution, ROI, orientation method), not code.
+The largest stage on the plain chessboard and the large ChArUco frame; it scales
+with image area. We do not own the implementation, so the levers are
+configuration (resolution, ROI, orientation method), not code.
 
 ### Tier 2 — marker decode (our code)
 
-- **PuzzleBoard decode.** All four paths share one cyclic class precompute
-  (`decode/tables.rs`), `O(501 · N)` per *searched* transform — the four 90°
-  rotations by default (`PuzzleBoardSymmetryMode::Rotations`), or all eight
-  dihedral transforms under `RotationsAndReflections` (for a
-  handedness-flipping optical path: mirror, beam splitter). With `T` searched
-  transforms:
-  - `Full × Hard` collapses the 501² origin argmax to `O(501)` by crossed-CRT
-    separation → `O(T · 501 · N)`.
-  - `Full × Soft` keeps the 501² walk (an `f32` key breaks the separation's
-    strictly-below-the-max step), stripped to two table reads and a compare →
-    `O(T · (501 · N + 501²))`.
-  - `FixedBoard` (either scorer) restricts the search to the declared board's
-    origin rectangle and the residue classes it reaches →
-    `O(T · (reachable · N + L_r · L_c))`, below the full search until the board
-    spans the maps' 167-long period.
+- **PuzzleBoard decode.** Complexity per search mode and transform set is
+  specified in [`puzzle_detection_spec.md`](../algorithms/puzzle_detection_spec.md).
 
   Measure with `decode::tests::decode_scaling_report` (decode only) and
   `puzzleboard_stage_timing` (per-stage, public fixture). The share depends on
@@ -155,10 +121,9 @@ default. We do not own the implementation, so the levers are configuration
     ≈0.06 ms (2 % of `detect`) for a refactor threading two observation sets
     through the hard, soft and fixed-board scans and the uniqueness fold.
 - **ChArUco board match.** A per-cell bit-log-likelihood table keeps
-  `log_sigmoid` out of the hypothesis-scoring inner loop. Decode is 0.95 ms on
-  `small.png` (narrowly the largest stage on that marker-dense board — the
-  expected shape at that size) and 2.23 ms on `large.png` (the smallest stage).
-  Not a current optimization target.
+  `log_sigmoid` out of the hypothesis-scoring inner loop. Decode is
+  the largest or near-largest stage only on marker-dense boards. Not a current
+  optimization target.
 
 ### Tier 3 — topological grid build (our code)
 

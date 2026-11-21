@@ -18,9 +18,10 @@ ChESS corners ──▶ prefilter ──▶ axis-cluster ──▶ topological s
                                                 warped cells, assign IDs                          master pattern (or the pole's cyclic stripe)
 ```
 
-Only `calib-targets-chessboard` owns that spine (it is the sole in-workspace
-consumer of `projective-grid`); ChArUco, PuzzleBoard / PuzzlePole and the marker
-board get it by embedding the chessboard detector. All delegation points down
+Only `calib-targets-chessboard` owns that spine (it is the only detector crate
+that depends on `projective-grid`; `calib-targets-core` and the bench harness
+depend on it too); ChArUco, PuzzleBoard / PuzzlePole and the marker board get it
+by embedding the chessboard detector. All delegation points down
 (`charuco / puzzle / marker → chessboard → projective-grid / core`).
 
 | Detector | Stage map |

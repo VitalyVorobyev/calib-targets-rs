@@ -35,7 +35,7 @@ public surface can express is rejected today (`ChessboardParamsError` is
 a reserved, uninhabited seam); the fallible signature is retained so a
 future validation can be added without a breaking change.
 
-**Two surviving knob layers.** Only three stable top-level
+**Two knob layers.** Only three stable top-level
 `ChessboardParams` fields (`min_labeled_corners`, `max_components`,
 `min_corner_strength`) are part of the public config
 contract. All per-stage knobs live behind the opt-in, **non-semver**
@@ -94,10 +94,13 @@ mathematical guarantee for arbitrary imagery:
 `ChessboardDetector::detect_all` is the multi-component entry point: it can return
 several `ChessboardDetection`s (up to `params.max_components`) when one
 image contains physically distinct grids. Within a single image, the
-topological facade already produces and merges connected components, so a
-single physical board that the grid split into disjoint sub-grids
-(e.g. ChArUco rows separated by markers) is reunited in label space by
-the Stage-4 `merge_components_local`. The chessboard precision contract
+topological builder (Stage 3) already merges connected components with the
+generic `merge_components_local`. After the boosters, Stage 4 merges again:
+first by shared corner identity (`merge_components_with_shared_corners`, a D4
+transform + offset aligned on shared source indices), then with a second
+`merge_components_local`. A single physical board that the grid split into
+disjoint sub-grids (e.g. ChArUco rows separated by markers) is reunited in
+label space by these merges. The chessboard precision contract
 is preserved per emitted component.
 
 ---
@@ -127,8 +130,8 @@ crate keeps the ChESS glue and slot-parity semantics.
   themselves live in `shared::validate`; the chessboard sequences them),
   the output adapter (`output.rs`) that maps the normalized lattice
   canonical `Coord{u,v}` into the workspace result — the rebase +
-  canonicalise + sort *algorithm* itself now lives in
-  `projective-grid` — and the multi-component dispatch.
+  canonicalise + sort *algorithm* itself lives in `projective-grid`
+  (`normalize_square_entries`) — and the multi-component dispatch.
 - Off the detection path but public: `rectified_view.rs`
   (`rectify_from_chessboard_result`) and `mesh_warp.rs`
   (`rectify_mesh_from_grid`) build rectified views of a detection.

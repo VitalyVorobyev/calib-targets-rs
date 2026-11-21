@@ -34,19 +34,9 @@ ChArUco.
 
 ## Complexity
 
-With `N` filtered edges and `L_r × L_c` the shift rectangle a declared board
-admits:
-
-| path | cost |
-|---|---|
-| Full × Hard | `O(8 · 501 · N)` |
-| Full × Soft | `O(8 · (501 · N + 501²))` |
-| FixedBoard (either scorer) | `O(8 · (reachable classes · N + L_r · L_c))` |
-
-`reachable classes ≤ 501`, with equality only when the declared board spans the
-maps' 167-long period — so declaring a board is cheaper than not declaring one
-at every board size below the master's own. `decode::tests::decode_scaling_report`
-measures it.
+Decode cost per path (and why declaring a board is cheaper than not) is tabulated in
+[`docs/algorithms/puzzle_detection_spec.md`](../../../docs/algorithms/puzzle_detection_spec.md#4--origin-decode);
+`decode::tests::decode_scaling_report` measures it.
 
 ## Diagnose dump
 
@@ -83,8 +73,8 @@ master position; the pole is therefore decoded against its own `p`-periodic
 code stripe (`pole/code.rs::PoleCode`) through the **fixed**-board decoder
 (`decode_fixed_hard` / `decode_fixed_soft` over the pole's board rectangle).
 `hard.rs` / `soft.rs` cannot be used: they collapse the row axis by CRT,
-which needs `gcd(3, 167) = 1`, while a pole's row moduli are 3 and `p` with
-`3 | p`. After the decode, `pole/pipeline.rs` applies a rectangular
+which a pole's row moduli (3 and `p`, `3 | p`) do not admit (see
+`docs/algorithms/puzzlepole_construction.md`). After the decode, `pole/pipeline.rs` applies a rectangular
 window-span floor (deliberately post-decode — before it, a 5×8 fragment
 lying one way cannot be told from the same fragment lying the other, and
 only one of the two decodes) and a repeated-id injectivity guard.

@@ -90,7 +90,7 @@ maps span name → report field; update both when adding or renaming a span):
 | `calib-targets` | `detect_corners` | info |
 | `calib-targets-chessboard` | `detect_all_topological` (grid total), `trace_topological` | info |
 | `calib-targets-chessboard` | `topological_inputs`, `topological_clustered_augs`, `recover_topological_components`, `topological_post_recovery_component_merge`, `chessboard_geometry_only_recovery`, `chessboard_final_geometry_gate`, `build_topological_detections` | debug |
-| `projective-grid` | `merge_components_local` (`num_components`), `validate` (`num_labelled`, `cell_size`), `extend_from_labelled`, `extend_via_local_homography`, `extend_via_global_homography` | info |
+| `projective-grid` | `merge_components_local` (`num_components`), `validate` (`num_labelled`, `cell_size`), `extend_from_labelled`, `extend_via_local_homography` | info |
 | `projective-grid` | `topological/square_detector.rs`: `usable_mask`, `topological_component_merge`, `topological_validation`, `topological_projective_fit`, `topological_assembly` | debug |
 | `projective-grid` | `delaunay_triangulate`, `classify_all_edges`, `merge_triangle_pairs`, `label_components` (`walk.rs`) | debug |
 | `projective-grid` | `topological/filter.rs::filter_quads`: `topological_quad_filter`, `geometry_quad_filter`, `cell_size_quad_filter` | debug |

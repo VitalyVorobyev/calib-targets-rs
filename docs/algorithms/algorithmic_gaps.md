@@ -8,7 +8,7 @@ This file is the workspace-wide ledger of **open algorithmic gaps**
 across `projective-grid` and `calib-targets-chessboard`. It is not a
 pipeline reference — those live with the code that owns them:
 
-- **`docs/algorithms/topological-grid-detection.md`** (repo root) — canonical
+- **`docs/algorithms/topological-grid-detection.md`** — canonical
   stage map for the `projective_grid::topological` grid finder.
 - **`crates/calib-targets-chessboard/docs/PIPELINE.md`** — canonical
   stage map for the chessboard topological pipeline,
@@ -18,10 +18,6 @@ pipeline reference — those live with the code that owns them:
 Read those first for any pipeline question. The remainder of this
 file lists what is known to be missing or suboptimal, with a
 proposed fix per gap.
-
-> No upstream orientation defect is open: the `DiskFit` axis-slot inversion once
-> recorded here does not reproduce on `chess-corners` 1.3 or 1.6 (slot labels
-> alternate with grid parity on every labelled corner of the public testdata).
 
 ---
 
@@ -42,29 +38,19 @@ wrong `(i, j)` poisons calibration; a missing `(i, j)` does not.
 Every algorithm in the crate is biased toward dropping rather than
 mislabelling.
 
-The sole labelling pipeline is:
-
-- **`Topological`** — Shu/Brunton/Fiala 2009 grid finder
-  (`topological/square_detector.rs::detect_square_oriented2_all`) with an
-  axis-driven cell test that replaces the paper's image-color sampling
-  so `projective-grid` stays standalone. Used for all four target
-  families.
-
-The topological facade runs the shared **component-merge** pass
-(`projective_grid::shared::merge::merge_components_local`) — local
-geometry only, no global homography (see Gap 9). The chessboard adapter
-keeps a *distinct* post-booster corner-identity merge in its recovery
-layer, not a second copy of this initial merge.
+The sole grid builder is **`Topological`** — the Shu/Brunton/Fiala grid
+finder [2] with an axis-driven cell test in place of the paper's image-colour
+sampling, so `projective-grid` stays standalone. Every target family uses it
+(chessboard, ChArUco, marker board, PuzzleBoard, PuzzlePole); a hex variant
+shares the front half. The stage maps above own the description of the
+stages, the component merge and the chessboard recovery layer.
 
 ---
 
 ## Gaps and follow-ups
 
-The pipeline ships zero wrong labels on the workspace's regression
-datasets and on every condition of the synthetic ground-truth suite. Every gap
-below is **open**. A gap that gets closed is
-deleted from this file — what the pipeline *does* belongs in the stage
-maps above, and what changed belongs in the changelog.
+Every gap below is **open**. The two known wrong-label witnesses on public
+images are Gap 11 and Gap 27.
 
 ### Gap 1 — Fully axis-free lattice finder
 
@@ -76,8 +62,8 @@ synthesized at all.
 
 ### Gap 4 — Hex post-fit recovery schedule
 
-Hex **topological** detection ships: `(Hex, Positions)` and `(Hex, Oriented3)`
-run the axis-driven path (`topological/hex.rs` — triangle-as-cell classify +
+Hex **topological** detection ships: `(Hex, Positions)`, `(Hex, Oriented1)`
+and `(Hex, Oriented3)` run the axis-driven path (`topological/hex.rs` — triangle-as-cell classify +
 axial `(q, r)` parallelogram-completion walk, D6 component merge, projective
 fit). The hex topological path has **no post-fit recovery schedule** (boundary
 extension / interior fill / rescue) — that machinery is ChESS-axis-coupled and
@@ -89,7 +75,8 @@ predicting from the axial lattice step rather than from ChESS axes.
 
 ### Gap 9 — Component merge handles only overlapping label sets
 
-`projective_grid::shared::merge::merge_components_local` requires `min_overlap`
+`merge_components_local` (`projective-grid` `shared/merge.rs`, public as
+`expert::component::merge_components_local`) requires `min_overlap`
 shared labels between two components (default `2`). This handles the majority
 case — gap-induced splits where a few edge corners straddle both components —
 but disjoint patches separated by a missing row never satisfy the overlap test
@@ -146,70 +133,38 @@ crate should not be called 1.0 while that is true.
 **Fix.** An API-surface pass over `expert` specifically: what is genuinely a
 building block, what leaked out of a refactor, and what should be `#[doc(hidden)]`.
 
-### Gap 23 — The global projective fit is a diagnostic approximation — **narrowed**
+### Gap 23 — No global residual; the local factor has known biases
 
-Under strong lens distortion no single homography represents the board, so the
-global projective fit is an approximation and its residual is a diagnostic
-signal rather than a gate. The chessboard's final geometry check is deliberately
-local for that reason and does not produce a second global-fit residual.
+Under strong lens distortion no single homography represents the board, so
+there is no global-fit residual, by design. The frame-comparable number is
+`DetectionQuality::{local_residual_rms_px, variance_factor}`
+(`calib-targets-core/src/quality.rs`): local, leave-one-out, report-only.
+Its limits, all measured by `bench accuracy`:
 
-**What exists now.** Every detection carries a frame-comparable number that is
-*not* a global residual: `DetectionQuality::{local_residual_rms_px,
-variance_factor}` (`calib-targets-core/src/quality.rs`). Each corner with at
-least six of its eight grid neighbours is predicted, leave-one-out, as the
-intersection of the lines through its opposite neighbours (exact under any
-homography), and the residual is whitened by the corner's and the prediction's
-covariance. It is report-only — nothing gates on it — and it is local by
-construction, so lens-model, target and other view-shared errors cancel instead
-of being charged to the corners.
+- The local predictor bends with the grid only to first order: at k₁ = 0.15
+  (synthetic, 16 px cells) the residual has a ≈ 0.035 px RMS floor from the
+  lines' curvature (local RMS 0.041 px against a true 0.019 px with
+  SaddlePoint), so for very precise corners the local factor reads high
+  (0.28 vs a true 0.07).
+- A localizer bias that is smooth across the board is partly absorbed by the
+  neighbours, so the local factor reads low (CenterOfMass on the synthetic
+  chessboards: median 0.16 vs a true 0.27).
+- Non-planar targets (PuzzlePole) skip the local check; a cylinder-aware
+  predictor would close that.
 
-**What stays open.** (i) There is still no *global* residual, by design; the
-local factor does not replace one where a global model is wanted (a calibration
-does that). (ii) The local predictor bends with the grid only to first order:
-at k₁ = 0.15 (synthetic, 16 px cells) the residual has a ≈ 0.035 px RMS floor
-from the lines' curvature (local RMS 0.041 px against a true 0.019 px with
-SaddlePoint), so for very precise corners the local factor reads high (0.28 vs
-a true 0.07). (iii) A localizer bias that is smooth across the
-board is partly absorbed by the neighbours, so the local factor reads low
-against the truth (CenterOfMass on the synthetic chessboards: median 0.16 vs a
-true 0.27). Both are measured by `bench accuracy`. (iv) Non-planar targets
-(PuzzlePole) skip the local check; a cylinder-aware predictor would close that.
+### Gap 24 — Straight-line validation on a curved target — **does not fire in the shipped range**
 
-### Gap 24 — Straight-line validation on a curved target — **measured, not observed**
+`shared/validate/lines.rs` fits a *straight* line to every grid row and
+column; on a cylinder the circumferential rows project to conics.
+`puzzlepole_synthetic::the_grid_builder_survives_a_cylinder` measures it: at
+every geometry where corners are plentiful the grid builds in one component
+and labels essentially all of them (the tolerance is relative to the local
+cell size, which foreshortens with the residual it bounds).
 
-**The hypothesis.** `shared/validate/lines.rs` fits a total-least-squares
-*straight* line to every grid row and column and flags members beyond
-`line_tol_rel × scale`. On a cylinder the axial grid lines are generatrices and
-project to straight lines, but the circumferential ones lie on circles and
-project to **conics**. A sagitta estimate suggested the check would start
-flagging once the pole's axis tilted more than a few degrees out of the image
-plane, which would drop genuine corners — and `run_geometry_check` is mandatory
-on the chessboard path, so there is no opting out.
-
-**The measurement.** `calib-targets-puzzleboard`'s
-`puzzlepole_synthetic::the_grid_builder_survives_a_cylinder` renders analytic
-cylinders and runs the real grid builder over them, sweeping the two parameters
-that strain a straight-line prior: axis tilt, and circumference (a row's sagitta
-in *cell* units goes as the radius in cells, `p / 2π`, so `p = 48` bows twice as
-hard per visible arc as `p = 24`).
-
-At every geometry where corners are plentiful the grid builds in a **single
-component** and labels essentially all of them — 77/77, 53/55, 30/31 at `p = 48`
-across tilts of 0°, 15° and 30°, and at or above the detected count at
-`p = 24`. The only row that yields nothing is `p = 48` at 45°, where **three**
-corners are visible at all: a visibility limit, not a validator failure.
-
-**So the gap does not fire, and the sagitta estimate was pessimistic.** The
-likely reason is that the tolerance is relative to the *local* cell size, which
-foreshortens along with the residual it is bounding, so the two move together.
-
-**Left open rather than closed**, because the measurement covers what the crate
-ships and not more. Re-check if any of these change: a visible sector wider than
-about ±60° (the fairness line the test uses), a tighter `line_tol_rel`, or a
-circumference beyond 48. The structural fix, if it is ever needed, is stated
-above: a straight line is the degenerate conic, so the general predicate is
-curvature continuity along the grid line, which subsumes the planar case rather
-than special-casing the cylinder.
+Re-check if any of these change: a visible sector wider than about ±60°, a
+tighter `line_tol_rel`, or a circumference beyond 48. The structural fix, if
+needed: a straight line is the degenerate conic, so the general predicate is
+curvature continuity along the grid line.
 
 ### Gap 25 — Telling one PuzzlePole from another — **open, unmeasured**
 
@@ -252,16 +207,15 @@ T-junction on the board's top edge at `(724.4, 63.1)`, where a black and a white
 outer square meet the margin. It is not an X-junction. Trace
 (`trace_topological_detection`): ChESS strength 44.8, axis σ 0.23 / 0.22 rad
 (inside the 15° admission), touches no Delaunay quad, and is attached by the
-**axis-aware recovery booster** (`recovery_additions`, not geometry-only) at
+**axis-aware recovery booster** (`axis_aware_recovery_additions`, not geometry-only) at
 the lattice row one past the board. It lies 2.6 px (0.06 of the 43 px step)
 off the quadratic extrapolation of its column — on the lattice, but not an
 inner corner, and localised by a T-junction response.
 
 Effect: a plain chessboard detection carries one extra row-end point; an
-absolute-label detector maps it outside the board. The marker board now drops
-every corner outside its `rows` × `cols` extent, which is where this surfaced
-(it shipped as `(8, -1)`); ChArUco and PuzzleBoard have not been checked for
-the same corner.
+absolute-label detector maps it outside the board. The marker board drops
+every corner outside its `rows` × `cols` extent; ChArUco and PuzzleBoard have
+not been checked for the same corner.
 
 **Fix.** The booster attaches a corner on position and axes alone, and both
 are consistent here. What separates the two is structural: an X-junction has
@@ -269,26 +223,6 @@ opposite sectors of equal colour, a T-junction has one side uniform. A recovery
 predicate on that sector symmetry — not on a strength ratio, which would be a
 threshold fitted to this frame — closes the gap; it needs the image, or a
 symmetry descriptor from the corner detector.
-
-### Gap 28 — Clutter inside cells disconnects a board — **resolved**
-
-`testdata/puzzleboard_reference/example5.png` (a dense PuzzleBoard photo with a
-hole in the visible board) labelled 2270 corners only because the per-axis
-admission gate happened to keep most of the in-cell clutter out. With the
-axis-fit scores of `chess-corners` 2.0 — about 15% smaller at the median,
-positions and angles bit-identical — 470 more clutter features passed the
-gate. None of them is a lattice corner, yet each one inside a cell split that
-cell's triangle pair into a fan; along the thin bridges around the hole that
-cost 108 corners and the board fell apart into 1368 + 814. The score does not
-separate clutter from corners at any threshold (3880 clutter features already
-passed before), so tightening the gate would only have fitted it to the frame.
-
-**Fix.** Structural: a feature with no Grid edge belongs to no cell, so the
-builder prunes such features and triangulates again
-([topological-grid-detection.md](topological-grid-detection.md#step-1--delaunay-triangulation-generic)).
-The frame now labels 2514 corners in one component under either score scale,
-with the same label frame and no corner off its row or column by more than
-the pre-existing localisation outliers.
 
 ### Gap 29 — ChArUco validation measures a corner against a global homography at a nominal scale — **open, measured**
 
@@ -306,8 +240,8 @@ real blurred, oblique images some delivered corners sit several pixels off the
 position a local homography of their own neighbours predicts. They pass
 because the global prediction is off by about as much.
 
-Re-detected corners have to pass the same test since 0.16. The remaining
-cases are front-end corners that validation keeps.
+Re-detected corners pass the same test; the remaining cases are front-end
+corners that validation keeps.
 
 **Fix.**
 - Validate against a *local* prediction: the neighbours' homography, or the
@@ -341,6 +275,46 @@ its blur: stop it at the marker border or the nearest strong non-corner
 edge. Then re-measure on the same held-out harness. It belongs upstream, in
 `chess-corners`.
 
+### Gap 31 — Corners carry no blur estimate — **open, unmeasured**
+
+No detector reports how blurred a corner is. On a tilted-focus
+(Scheimpflug) camera the blur per feature is a calibration observation:
+calibration-rs fits the plane of sharp focus, the tilt direction and the
+depth of field from it (its `docs/notes/tilt-from-focus.md` and
+`docs/notes/scheimpflug-literature.md`), today only from ring-grid targets.
+A PuzzleBoard or chessboard corner with its own blur gives a second target
+family on the same rig — the check of whether the ring-grid σ carries a
+target-specific scale. Published precedent: Kumar & Ahuja (ICPR 2014) fit a
+thin-lens Gaussian blur to checkerboard corner patches.
+
+**Definition.** σ is the Gaussian-equivalent *total* edge blur in image
+pixels: lens PSF and pixel aperture together, as ring grids report it (the
+focus model absorbs the constant part in quadrature). Against the accuracy
+suite's renderer, whose PSF is the pixel box convolved with a Gaussian of
+`blur_sigma_px`, the truth is therefore `√(blur_sigma_px² + 1/12)`.
+
+**Fix direction.** Per labelled corner, one σ (px) with its standard error,
+fitted as an error-function profile shared by the half-edges to the corner's
+grid neighbours:
+
+- samples are raw pixel centres at their signed distance from the edge line;
+  resampling would add blur of its own;
+- the band along each edge starts ≥ 3σ from the corner (clear of the crossing
+  edge) and stops at the target's own structure — the ChArUco marker border
+  on the white side, the PuzzleBoard dot, the marker-board circle (the
+  windowing of Gap 30 applies);
+- a corner whose band cannot hold the whole profile gets no σ. Small cells
+  under strong blur are out of range by construction, not by threshold.
+
+Optional and additive on the corner type, with the bindings.
+
+**Gate.** Measure before shipping the field: on the accuracy suite, bias and
+scatter of σ against the truth above for rendered blur 0.5–4 px, the fraction
+of corners that get a σ per family and cell size, and the stated standard
+error against the scatter. On real images, quadrature additivity under a
+known added Gaussian blur. Two edge directions cannot give the PSF's
+anisotropy; rings do.
+
 ---
 
 ## Architectural-direction summary
@@ -363,59 +337,7 @@ item; the hex recovery schedule (Gap 4) is a smaller incremental one.
     produces the X-junction corners and axis estimates feeding this
     crate.
 
-[2] K. V. Mardia, P. E. Jupp. *Directional Statistics.* Wiley, 2000.
-    Chapter 9 covers axial-data circular means and the double-angle
-    transformation.
-
-[3] M. Stephens. "Tests for randomness of directions against two
-    circular alternatives." *J. Amer. Statist. Assoc.* 64 (1969).
-    Foundational paper on bimodal-direction testing.
-
-[4] N. I. Fisher. *Statistical Analysis of Circular Data.* Cambridge,
-    1993. Standard textbook on circular statistics.
-
-[5] A. Geiger, F. Moosmann, Ö. Car, B. Schuster. "Automatic Camera
-    and Range Sensor Calibration Using a Single Shot." *ICRA* 2012.
-    The reference single-shot chessboard pipeline; introduces the
-    grow-from-seed strategy this crate follows.
-
-[6] Y. Cheng. "Mean Shift, Mode Seeking, and Clustering."
-    *IEEE TPAMI* 17(8), 1995. Foundational mean-shift paper.
-
-[7] D. Comaniciu, P. Meer. "Mean shift: a robust approach toward
-    feature space analysis." *IEEE TPAMI* 24(5), 2002.
-
-[8] L. Lucchese, S. K. Mitra. "Using Saddle Points for Subpixel
-    Feature Detection in Camera Calibration Targets." *Asia-Pacific
-    Conf. on Circuits and Systems*, 2002. The "co-linear triple" line
-    test echoes through `square::validate`'s collinearity pass.
-
-[10] J.-P. Place, P. Sturm, R. Horaud. "Camera Calibration from
-     Reflective Spheres." *CVPR* 2005. Earlier predictive-grow style
-     for non-chessboard targets.
-
-[11] S. Placht, P. Fürsattel, E. Assoumou Mengue, H. Hofmann,
-     C. Schaller, M. Balda, E. Angelopoulou. "ROCHADE: Robust Checker-
-     board Advanced Detection for Camera Calibration." *ECCV* 2014.
-     Saddle-point sub-pixel refinement; the natural follow-up layer
-     to this crate's labelled grid output.
-
-[12] J. Zaragoza, T. Chin, M. S. Brown, D. Suter. "As-Projective-As-
-     Possible Image Stitching with Moving DLT." *IEEE TPAMI* 36(7),
-     2014. Per-cell local homographies; what the
-     chessboard mesh rectification (`rectify_mesh_from_grid`) does.
-
-[13] R. Hartley, A. Zisserman. *Multiple View Geometry in Computer
-     Vision*, 2nd ed. Cambridge, 2003. Chapter 4 covers normalised
-     DLT for homography estimation.
-
-[14] C. Shu, A. Brunton, M. Fiala. "A topological approach to finding
-     grids in calibration patterns." *Machine Vision and Applications*
-     21(6), 2010. The Delaunay-+-color-test grid finder that
-     `topological::build_grid_topological` re-implements with an
-     axis-driven cell test.
-
-[15] D. F. Watson. "Computing the n-dimensional Delaunay tessellation
-     with application to Voronoi polytopes." *Computer J.* 24(2),
-     1981. The Delaunay algorithm underlying the `delaunator` crate
-     used in `topological::delaunay`.
+[2] C. Shu, A. Brunton, M. Fiala. "A topological approach to finding
+    grids in calibration patterns." *Machine Vision and Applications*
+    21(6), 2010. The Delaunay + colour-test grid finder that the
+    topological builder re-implements with an axis-driven cell test.
