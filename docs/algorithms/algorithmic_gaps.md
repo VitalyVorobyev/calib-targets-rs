@@ -366,6 +366,19 @@ the bindings, once raw-frame additivity holds within the synthetic suite's
 band, or the documented guarantee is restated as an edge-core width. Two
 edge directions cannot give the PSF's anisotropy; rings do.
 
+### Gap 32 — Wrong ChArUco labels under strong blur on the synthetic suite — **open, not yet localized**
+
+`bench accuracy` (full grid) delivers 5 wrong labels on one ChArUco
+condition: 32 px cells, no rotation or tilt, rendered blur 4 px, noise 4 gray
+levels, center-of-mass localizer. Every other condition of the grid is
+clean. A 4 px blur on a 32 px cell leaves marker cells of 4 px per bit, so
+the marker decode is the first suspect, but which stage admits the labels
+has not been measured.
+
+**Fix.** Localize it with the debugging protocol (which corners, wrong grid
+label or wrong id, which stage) before proposing a predicate; a wrong label
+is a contract violation, not a tuning matter.
+
 ---
 
 ## Architectural-direction summary
