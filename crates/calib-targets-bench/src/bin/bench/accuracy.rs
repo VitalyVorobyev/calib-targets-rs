@@ -5,6 +5,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
+use calib_targets_bench::accuracy::blur::{blur_conditions, summarize_blur};
 use calib_targets_bench::accuracy::families::Family;
 use calib_targets_bench::accuracy::{
     full_conditions, markdown, quick_conditions, run, summarize, Refiner, Report, SUPERSAMPLE,
@@ -25,27 +26,34 @@ pub(crate) fn cmd_accuracy(args: AccuracyArgs) -> ExitCode {
     } else {
         args.refiner.iter().map(|&r| r.into()).collect()
     };
-    let conditions = if args.quick {
+    let conditions = if args.only_blur {
+        Vec::new()
+    } else if args.quick {
         quick_conditions(&families)
     } else {
         full_conditions(&families)
     };
+    let blur_grid = blur_conditions(&families, args.quick);
     let threads = args.threads.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
     });
     println!(
-        "accuracy: {} conditions × {} refiner(s) on {threads} thread(s)",
+        "accuracy: {} + {} blur-study conditions × {} refiner(s) on {threads} thread(s)",
         conditions.len(),
+        blur_grid.len(),
         refiners.len()
     );
     let started = Instant::now();
     let rows = run(&conditions, &refiners, threads);
+    let blur_rows = run(&blur_grid, &refiners, threads);
     let elapsed = started.elapsed().as_secs_f64();
     let report = Report {
         grid: if args.quick { "quick" } else { "full" }.to_string(),
         supersample: SUPERSAMPLE,
         summary: summarize(&rows),
         rows,
+        blur_summary: summarize_blur(&blur_rows),
+        blur_rows,
     };
     let md = markdown(&report);
     // The summary table is the first section.
@@ -82,7 +90,11 @@ pub(crate) fn cmd_accuracy(args: AccuracyArgs) -> ExitCode {
         println!("wrote {}", path.display());
     }
 
-    let wrong: usize = report.summary.iter().map(|s| s.wrong_labels).sum();
+    let wrong: usize = report.summary.iter().map(|s| s.wrong_labels).sum::<usize>()
+        + summarize(&report.blur_rows)
+            .iter()
+            .map(|s| s.wrong_labels)
+            .sum::<usize>();
     if wrong > 0 {
         eprintln!(
             "PRECISION CONTRACT VIOLATED: {wrong} wrong label(s) — see the per-condition table"

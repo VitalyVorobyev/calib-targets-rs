@@ -52,6 +52,9 @@ pub(crate) struct AccuracyArgs {
     /// Run the small subset the integration test runs instead of the full grid.
     #[arg(long)]
     pub(crate) quick: bool,
+    /// Run only the edge-blur study's grid, not the accuracy grid.
+    #[arg(long)]
+    pub(crate) only_blur: bool,
     /// Refiner(s) to score (comma-separated or repeated). Default: both.
     #[arg(long, value_enum, value_delimiter = ',')]
     pub(crate) refiner: Vec<RefinerArg>,
