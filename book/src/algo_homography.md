@@ -73,5 +73,5 @@ distortion-tolerant precision checks are what protect the labels.
   both the 4-point local-H predictions and the final fit.
 - [The Grid Model](projective_grid.md) — `GridDetection::fit()` and the
   `LatticeFit` / `ResidualSummary` output shapes.
-- [calib-targets-core](core.md) — the core `Homography` /
-  `RectifiedView` rectification helpers built on the same DLT.
+- [calib-targets-core](core.md) — the core `Homography` and
+  `warp_perspective_gray` rectification helpers built on the same DLT.

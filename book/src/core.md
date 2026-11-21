@@ -39,11 +39,6 @@ axes) is not part of core: it lives in `projective-grid`
 - `homography_from_4pt`: direct 4-point estimation.
 - `warp_perspective_gray`: warp a grayscale image using a homography.
 
-For mapping rectified pixels back to the original image, core defines:
-
-- `RectifiedView`: a rectified grayscale image and its mapping info.
-- `RectToImgMapper`: either a single global homography or a per-cell mesh map.
-
 Higher-level crates (notably chessboard) wrap these utilities for global or mesh rectification.
 
 ## Image utilities

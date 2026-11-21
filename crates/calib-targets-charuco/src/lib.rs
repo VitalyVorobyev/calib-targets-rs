@@ -41,13 +41,6 @@ mod alignment;
 mod board;
 mod detector;
 
-// Opt-in marker↔corner linkage validation, gated behind the `link-check`
-// feature (default off). It has no in-tree consumers, but is intentional,
-// documented validation logic, so it is preserved behind a gate rather than
-// removed — mirroring the `diagnostics` feature pattern.
-#[cfg(feature = "link-check")]
-pub mod link_check;
-
 // Opt-in introspection surface, gated behind the `diagnostics` feature (default
 // off), consistent with `calib-targets-chessboard`.
 #[cfg(feature = "diagnostics")]
@@ -60,11 +53,6 @@ pub use board::{
 pub use detector::{
     CharucoAdvancedTuning, CharucoCorner, CharucoDetectError, CharucoDetection, CharucoDetector,
     CharucoParams,
-};
-#[cfg(feature = "link-check")]
-pub use link_check::{
-    validate_marker_corner_links, CharucoMarkerCornerLinks, LinkCheckMode, LinkViolation,
-    LinkViolationKind, MarkerCornerLink,
 };
 
 // A consumer of this crate alone must be able to name every foreign type our

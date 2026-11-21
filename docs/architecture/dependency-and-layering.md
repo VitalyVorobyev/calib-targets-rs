@@ -15,7 +15,7 @@ upstream ChESS corner detector; every detector depends on it. Internal edges onl
         ▲                ▲
  L2  aruco → core        chessboard → core, projective-grid      (the only DETECTOR on pg)
                 ▲              ▲           ▲
- L3       charuco ────────────┘           │     → core, chessboard, aruco
+ L3       charuco ────────────┘           │     → core, chessboard, aruco, projective-grid
           puzzleboard ────────────────────┤     → core, chessboard
           marker ─────────────────────────┘     → core, chessboard
                 ▲
@@ -36,7 +36,7 @@ implementation.
 | `calib-targets-core` | L1 | projective-grid | Shared detector/image types, image-aware homography utilities, and curated re-exports of canonical grid algebra. |
 | `calib-targets-aruco` | L2 | core | ArUco/AprilTag dictionaries + decode codec. |
 | `calib-targets-chessboard` | L2 | core, projective-grid | The base detector; **the only in-workspace detector that drives `projective-grid`**. |
-| `calib-targets-charuco` | L3 | core, chessboard, aruco | ChArUco fusion. |
+| `calib-targets-charuco` | L3 | core, chessboard, aruco, projective-grid | ChArUco fusion. |
 | `calib-targets-puzzleboard` | L3 | core, chessboard | Self-identifying chessboard. |
 | `calib-targets-marker` | L3 | core, chessboard | Checkerboard + 3-circle board. |
 | `calib-targets-print` | L4 | core, aruco, charuco, marker, puzzleboard | Printable-target generation (not a detector). |
@@ -53,17 +53,21 @@ none of its own, so it is documented here (this table) and not atlased.
 
 ## Who drives `projective-grid`
 
-Inside the workspace `projective-grid` has two production consumers:
+Inside the workspace `projective-grid` has three production consumers:
 
 - **`calib-targets-core`** consumes its *type model* (`Coord`, `GridTransform`,
-  the D4 table, the homography estimators, the grid-position predictor) and
-  re-exports or wraps it with image-domain extras.
+  the D4 table, the homography estimators) and re-exports or wraps it with
+  image-domain extras.
 - **`calib-targets-chessboard`** consumes its *engine*, through the crate root
   and the curated `expert` namespace: the topological assembler seam, local
   merge, grow / fill, and validation.
 
-`charuco`, `puzzleboard`, and `marker` list `projective-grid` only as a
-*dev*-dependency (tests) and reach the grid through their embedded `chessboard`
+- **`calib-targets-charuco`** calls one piece of its lattice algebra — the
+  grid-position predictor — in its corner-smoothness pre-filter. It drives no
+  part of the engine.
+
+`puzzleboard` and `marker` list `projective-grid` only as a *dev*-dependency
+(tests), and all three reach the grid through their embedded `chessboard`
 detector, so exactly **one detector drives the engine**. `bench` also depends on
 it directly, for stage timing and the standalone-grid engine.
 

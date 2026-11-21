@@ -20,11 +20,9 @@ default = []
 # Opt-in introspection surface: `trace_topological`, the topological grid
 # builder's compact serializable trace of the final labelled components. OFF
 # by default, consistent with `calib-targets-charuco` / `-puzzleboard` /
-# `-marker`. The rich per-stage `DebugFrame` surface was retired with the
-# seed-and-grow builder; `trace_topological` is the topological builder's
-# sole diagnostic entry point.
+# `-marker`. `trace_topological` is the detector's sole diagnostic entry
+# point.
 diagnostics = ["projective-grid/diagnostics"]
-dataset = ["dep:serde_json", "diagnostics"]
 tracing = ["calib-targets-core/tracing", "projective-grid/tracing", "dep:tracing"]
 
 [dependencies]
@@ -35,7 +33,6 @@ chess-corners = { workspace = true, features = ["rayon"] }
 nalgebra.workspace = true
 log.workspace = true
 serde = { workspace = true, features = ["derive"] }
-serde_json = { workspace = true, optional = true }
 thiserror.workspace = true
 tracing = { workspace = true, optional = true }
 

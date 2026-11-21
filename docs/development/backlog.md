@@ -140,19 +140,14 @@ here.
 ## <a id="b-14"></a>B-14 · `projective-grid` helper duplication
 **Sev P3 · Effort M · API internal-safe**
 
-- Rebase-to-`(0, 0)` written 5×; bounding-box loops ~8× (one in core, two in
-  the chessboard rectifiers).
-- Edge-length / step statistics ~8×; `square_detector::estimate_cell_size`
-  is the one that summed in hash order.
-- The reordered D4 table 3× (core, `shared/merge.rs`, bench); the chessboard
-  `recover.rs` comment that keeps its merge local because pg lacks the table is
-  stale.
+- Bounding-box loops ~8× (one in core, two in the chessboard rectifiers).
+- Step-vector statistics outside `shared/cell_size.rs`: the chessboard
+  `estimate_grid_steps` and the booster's directional medians.
 - `orient.rs` re-implements the K = 2 cases of `cluster::circular`
   (`global_two_modes`, `refine_axes`, `smooth_circular`, `UndirectedMean`).
 - Hex vs square: component split, residual-drop fit (hex swallows errors with
   `.ok()`), solution assembly.
-- **Fix.** One `rebase_to_origin`, `bbox`, per-axis edge-vector helper, one
-  exported D4 table.
+- **Fix.** One `bbox` and one per-axis edge-vector helper.
 
 ## <a id="b-15"></a>B-15 · Print target specs mirror detector board specs
 **Sev P2 · Effort M · API semver**
@@ -170,12 +165,8 @@ here.
 ## <a id="b-16"></a>B-16 · Dead code, dead features, forwarding modules
 **Sev P3 · Effort S · API semver**
 
-- `core::rectify` (`RectifiedView`, `RectToImgMapper`): no users.
 - Chessboard `rectified_view.rs` / `mesh_warp.rs`: re-exported, untested,
   re-implement `CornerMap`, and order cell corners TL, TR, BL, BR.
-- `charuco/src/diagnostics.rs`: `pub use` only.
-- PuzzleBoard depends on `chess-corners` without using it; ChArUco's
-  `link-check` has no consumers.
 - Core exports internal helpers (`log_sigmoid`, `sample_bilinear_fast`,
   `complete_cell_corners`, …) as public API.
 

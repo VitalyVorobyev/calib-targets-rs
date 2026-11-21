@@ -7,6 +7,41 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Breaking
+
+Rarely used public surface with no in-workspace consumers is removed.
+
+- `calib_targets_core::RectifiedView` and `RectToImgMapper` removed. For a
+  rectified view of a detected board use `calib_targets_chessboard`'s
+  `rectify_from_chessboard_result` or `rectify_mesh_from_grid`.
+- `calib_targets_core::square_predict_grid_position` removed; call
+  `projective_grid::expert::lattice::predict_grid_position(grid, idx,
+  LatticeKind::Square)` and read the prediction's `position`.
+- The `link-check` feature of `calib-targets-charuco` is removed, and with it
+  the `link_check` module (`validate_marker_corner_links`,
+  `CharucoMarkerCornerLinks`, `LinkCheckMode`, `LinkViolation`,
+  `LinkViolationKind`, `MarkerCornerLink`).
+- The `dataset` feature of `calib-targets-chessboard` is removed; it enabled
+  nothing.
+
+### Added
+
+- `ChessboardDetection::to_target_detection` and
+  `ChessboardDetection::corner_map`: the detection as the shared
+  `TargetDetection` carrier and as a grid → position `CornerMap`.
+
+### Changed
+
+- `calib_targets_core::GRID_TRANSFORMS_D4` is now `projective-grid`'s
+  alignment-order D4 table, re-exported; its values and order are unchanged.
+- `calib-targets-puzzleboard` no longer depends on `chess-corners` outside its
+  tests.
+- The Python examples `overlay_chessboard.py`, `overlay_chessboard_grid.py` and
+  `overlay_puzzleboard_dataset.py` are removed: they read JSON that no
+  detector produces any more.
+
 ## 0.16.3
 
 A grid-labelling fix and a leaner build. Upgrade from 0.16.2; no API change.
