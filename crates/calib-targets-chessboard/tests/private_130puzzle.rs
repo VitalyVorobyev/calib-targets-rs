@@ -4,8 +4,7 @@
 //! test intentionally stops at chessboard detection. The historical main-branch
 //! contract on this dataset is 119-120 detections across 20 stitched target
 //! images × 6 snaps, after the same 2× upscaling used by the bench harness.
-//! A regression here is blocking even when the experimental topological grid
-//! builder is still opt-in.
+//! A regression here is blocking.
 //!
 //! The dataset is private and lives under `privatedata/130x130_puzzle` in a
 //! local checkout. Fresh public clones skip these tests. Override the location
@@ -47,7 +46,6 @@ const UPSCALE: u32 = 2;
 /// - Phase D2 (per-component cell-size upper bound at 1.8×): 120/120,
 ///   mean labelled steady. Catches the double-cell hop case that
 ///   produced oversized quads at component edges.
-/// - Chessboard-v2 on the same images: 119–120/120 (unchanged).
 ///
 /// Bumping this constant lower is a regression — fix the algorithm,
 /// not the gate.

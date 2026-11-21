@@ -123,6 +123,60 @@ where
     }
 }
 
+/// One timed `detect` call: per-span busy time plus the call's wall time.
+#[derive(Clone, Debug, Default, Serialize)]
+pub struct SpanTimingSample {
+    /// Per-span busy time, keyed by span name (ms).
+    pub spans: HashMap<String, f64>,
+    /// Wall time of the full `detect` call (ms).
+    pub detect_ms: f64,
+}
+
+/// Provenance for a timing report, so a number can be traced to the build and
+/// machine that produced it.
+#[derive(Debug, Serialize)]
+pub struct ReportMetadata {
+    /// Commit the harness was built from, as the caller formats it.
+    pub git_sha: Option<String>,
+    /// `rustc --version`.
+    pub rustc: Option<String>,
+    /// CPU model string ([`cpu_name`]).
+    pub cpu: Option<String>,
+    /// Build profile: `"debug"` or `"release"`.
+    pub profile: &'static str,
+    /// Measured repeats per input.
+    pub repeats: usize,
+    /// Unmeasured warm-up repeats per input.
+    pub warmup: usize,
+    /// How the reported times were measured.
+    pub timing_source: &'static str,
+}
+
+impl ReportMetadata {
+    /// Collect the toolchain, CPU and build-profile provenance around the
+    /// caller's commit id and run shape.
+    pub fn new(
+        git_sha: Option<String>,
+        repeats: usize,
+        warmup: usize,
+        timing_source: &'static str,
+    ) -> Self {
+        Self {
+            git_sha,
+            rustc: command_output("rustc", &["--version"]),
+            cpu: cpu_name(),
+            profile: if cfg!(debug_assertions) {
+                "debug"
+            } else {
+                "release"
+            },
+            repeats,
+            warmup,
+            timing_source,
+        }
+    }
+}
+
 /// Distribution summary of a set of per-repeat timings, in milliseconds.
 #[derive(Clone, Copy, Debug, Default, Serialize)]
 pub struct SummaryStats {

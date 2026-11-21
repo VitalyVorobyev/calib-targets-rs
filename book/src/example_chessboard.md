@@ -43,11 +43,6 @@ additions and final-check drops). They are gated behind the crate's
 off-by-default `diagnostics` feature; see
 [The Chessboard Detector §6](chessboard.md#6-debugging-via-the-topological-trace).
 
-The `crates/calib-targets-py/examples/overlay_chessboard.py` script draws
-labelled corners in gold with their `(i, j)` text, grid edges,
-cluster-direction tangent lines, and the faint grey input-corner cloud as
-context.
-
 ---
 
 ## Direct crate-level usage

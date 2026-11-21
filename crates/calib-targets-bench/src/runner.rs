@@ -123,8 +123,7 @@ pub fn run_snap(
     let started = Instant::now();
     let frame = detect_corner_frame(&gray_view(&upscaled), &chess_cfg);
     // The stable `ChessboardDetection` carries `cell_size`, so the pipeline
-    // baseline reads it straight off the hot `detect()` path — no
-    // `DebugFrame` needed here (overlays still use one separately).
+    // baseline reads it straight off the hot `detect()` path.
     let (baseline_image, quality) = match engine {
         Engine::Pipeline => match run_pipeline_engine(params, &frame.corners) {
             Some((image, quality)) => (

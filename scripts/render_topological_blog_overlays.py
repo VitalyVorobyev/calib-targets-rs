@@ -488,9 +488,9 @@ def draw_final(ax: plt.Axes, payload: dict[str, Any]) -> None:
 
     The chessboard adapter consumes the topological walk labels (Stage
     8 above), runs `merge_components_local` on the per-component
-    output, then runs the same `run_geometry_check` precision gate that
-    seed-and-grow uses (line collinearity / local-H residual / largest
-    cardinally-connected component). Anything that survives is what the
+    output, then runs the `run_geometry_check` precision gate (line
+    collinearity / local-H residual / largest cardinally-connected
+    component). Anything that survives is what the
     public `Detection` carries; that's what's drawn here.
     """
     by_grid = detection_grid_points(payload)

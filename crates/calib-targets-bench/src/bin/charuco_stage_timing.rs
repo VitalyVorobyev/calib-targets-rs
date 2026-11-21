@@ -12,7 +12,6 @@
 //! does not change detection output. The JSON report is a local-only
 //! artifact (written under a gitignored directory).
 
-use std::collections::HashMap;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -22,7 +21,8 @@ use calib_targets::charuco::CharucoDetector;
 use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_bench::charuco_config::CharucoDetectConfig;
 use calib_targets_bench::span_timing::{
-    command_output, cpu_name, span_ms, summarize, SpanTotals, SummaryStats, TimingLayer,
+    command_output, span_ms, summarize, ReportMetadata, SpanTimingSample, SpanTotals, SummaryStats,
+    TimingLayer,
 };
 use clap::Parser;
 use image::ImageReader;
@@ -62,14 +62,6 @@ struct Args {
     out: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
-struct TimingSample {
-    /// Per-span busy time, keyed by span name (ms).
-    spans: HashMap<String, f64>,
-    /// Wall time of the full `detect` call (ms).
-    detect_ms: f64,
-}
-
 #[derive(Debug, Serialize)]
 struct StageReport {
     name: String,
@@ -88,19 +80,8 @@ struct Workload {
 }
 
 #[derive(Debug, Serialize)]
-struct Metadata {
-    git_sha: Option<String>,
-    rustc: Option<String>,
-    cpu: Option<String>,
-    profile: &'static str,
-    repeats: usize,
-    warmup: usize,
-    timing_source: &'static str,
-}
-
-#[derive(Debug, Serialize)]
 struct Report {
-    metadata: Metadata,
+    metadata: ReportMetadata,
     image: String,
     config: String,
     width: u32,
@@ -108,7 +89,7 @@ struct Report {
     workload: Workload,
     detect: SummaryStats,
     stages: Vec<StageReport>,
-    samples: Vec<TimingSample>,
+    samples: Vec<SpanTimingSample>,
 }
 
 /// Run one timed `detect` and capture per-span busy time plus the `detect`
@@ -119,7 +100,7 @@ fn measure_once(
     img: &image::GrayImage,
     corners: &[calib_targets::chessboard::ChessCorner],
     totals: &SpanTotals,
-) -> (TimingSample, usize, usize) {
+) -> (SpanTimingSample, usize, usize) {
     totals.clear();
     let view = gray_view(img);
     let detect_start = Instant::now();
@@ -137,7 +118,7 @@ fn measure_once(
         .map(|&name| (name.to_owned(), span_ms(&spans_raw, name)))
         .collect();
 
-    (TimingSample { spans, detect_ms }, labelled, markers)
+    (SpanTimingSample { spans, detect_ms }, labelled, markers)
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -216,19 +197,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         .collect();
 
     let report = Report {
-        metadata: Metadata {
-            git_sha: command_output("git", &["rev-parse", "--short", "HEAD"]),
-            rustc: command_output("rustc", &["--version"]),
-            cpu: cpu_name(),
-            profile: if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            },
-            repeats: args.repeats,
-            warmup: args.warmup,
-            timing_source: "tracing_spans",
-        },
+        metadata: ReportMetadata::new(
+            command_output("git", &["rev-parse", "--short", "HEAD"]),
+            args.repeats,
+            args.warmup,
+            "tracing_spans",
+        ),
         image: args.image.display().to_string(),
         config: args.config.display().to_string(),
         width,

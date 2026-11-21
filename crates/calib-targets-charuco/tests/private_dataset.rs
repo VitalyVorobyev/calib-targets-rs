@@ -163,10 +163,8 @@ fn run_flagship_sweep() -> Option<(usize, usize, usize)> {
 #[ignore = "full 120-frame flagship sweep; run with --ignored"]
 fn full_flagship_sweep_board_matcher_contract() {
     // THE flagship board-level-matcher contract (the sole matcher), on the
-    // topological builder (the only builder; ChArUco no longer pins
-    // seed-and-grow). The 2026-06-13 head-to-head showed topological decode
-    // precision matches the historical seed-and-grow gold — zero
-    // self-consistency wrong-ids.
+    // topological builder (the only builder): zero self-consistency
+    // wrong-ids.
     //
     // Recall floor is `>= 119`, not `== 120`: a deterministic lexicographic
     // tie-break in the multi-component merge fixed one `HashMap`
@@ -220,15 +218,13 @@ fn smoke_apriltag_image_does_not_panic() {
     // with the default κ=36 slope recovers an alignment even when a hard
     // per-cell decode would return nothing.
     //
-    // RECALL FLOOR re-baselined to the TOPOLOGICAL builder (the workspace
-    // default; ChArUco no longer pins seed-and-grow). On this 68×68
-    // DICT_APRILTAG_36h10 board (1.69 mm cells, 3× upscale) the topological
-    // cell test is defeated by the dense marker-internal bits at tiny cell
-    // sizes — it recovers ≈ 3 markers / 20 corners here, versus seed-and-grow's
-    // ≈ 14 / 76. That recall loss is an accepted consequence of retiring
-    // seed-and-grow (a *miss* is allowed by the asymmetric detection contract;
-    // a false positive is not — and the matcher stays self-consistent,
-    // `wrong_id == 0`). Closing the dense/tiny-cell gap is a deferred
+    // RECALL FLOOR for the topological builder (the only builder). On this
+    // 68×68 DICT_APRILTAG_36h10 board (1.69 mm cells, 3× upscale) the
+    // topological cell test is defeated by the dense marker-internal bits at
+    // tiny cell sizes — it recovers ≈ 3 markers / 20 corners here. That recall
+    // loss is accepted (a *miss* is allowed by the asymmetric detection
+    // contract; a false positive is not — and the matcher stays
+    // self-consistent, `wrong_id == 0`). Closing the dense/tiny-cell gap is a deferred
     // topological-decode improvement, NOT a regression to guard against here;
     // this floor only asserts the decode does not collapse to nothing and stays
     // self-consistent.
@@ -242,13 +238,13 @@ fn smoke_apriltag_image_does_not_panic() {
     assert!(
         result.markers.len() >= 2,
         "board-level matcher should decode ≥ 2 markers on topological, got {} \
-         (measured 3; seed-and-grow reached 14 — dense-board topological gap is deferred)",
+         (measured 3 — dense-board topological gap is deferred)",
         result.markers.len()
     );
     assert!(
         result.corners.len() >= 12,
         "board-level matcher should land ≥ 12 ChArUco corners on topological, got {} \
-         (measured 20; seed-and-grow reached 76 — dense-board topological gap is deferred)",
+         (measured 20 — dense-board topological gap is deferred)",
         result.corners.len()
     );
     assert_eq!(
