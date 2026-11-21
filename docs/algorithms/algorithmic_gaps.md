@@ -275,7 +275,7 @@ its blur: stop it at the marker border or the nearest strong non-corner
 edge. Then re-measure on the same held-out harness. It belongs upstream, in
 `chess-corners`.
 
-### Gap 31 — Corners carry no blur estimate — **open, unmeasured**
+### Gap 31 — Corners carry no blur estimate — **open, measured**
 
 No detector reports how blurred a corner is. On a tilted-focus
 (Scheimpflug) camera the blur per feature is a calibration observation:
@@ -293,27 +293,78 @@ focus model absorbs the constant part in quadrature). Against the accuracy
 suite's renderer, whose PSF is the pixel box convolved with a Gaussian of
 `blur_sigma_px`, the truth is therefore `√(blur_sigma_px² + 1/12)`.
 
-**Fix direction.** Per labelled corner, one σ (px) with its standard error,
-fitted as an error-function profile shared by the half-edges to the corner's
-grid neighbours:
+**Estimator.** `calib_targets_core::edge_blur` (hidden, unstable; no corner
+type carries its result). Per labelled corner, one σ with its standard
+error, fitted as an error-function profile `a_k + b_k·Φ((d − d0_k)/σ)`
+shared by the half-edges to the corner's grid neighbours:
 
-- samples are raw pixel centres at their signed distance from the edge line;
-  resampling would add blur of its own;
-- the band along each edge starts ≥ 3σ from the corner (clear of the crossing
-  edge) and stops at the target's own structure — the ChArUco marker border
-  on the white side, the PuzzleBoard dot, the marker-board circle (the
-  windowing of Gap 30 applies);
-- a corner whose band cannot hold the whole profile gets no σ. Small cells
-  under strong blur are out of range by construction, not by threshold.
+- samples are raw pixel centres at their signed distance from the corner →
+  neighbour line; pixels at 0 or 255 are censored. Fitting each half-edge's
+  line angle as well changed nothing measurable (k₁ = 0.15, 30° tilt), so
+  the angle is fixed;
+- the strip starts 3σ past the crossing grid line and stops at half the
+  edge or 3σ before the target's own structure — the ChArUco marker border
+  on the light side, the PuzzleBoard dot, the marker-board circle. Across,
+  each side spans 6σ (transition plus as much plateau), cut 3σ before the
+  next structure and at half a cell; both sides must hold 3σ and one side
+  all 6σ. The window is iterated with σ;
+- a corner gets no σ when the window cannot hold the profile at σ + 3 SE
+  (an underestimate shrinks its own margins and can admit the next
+  structure's blur while staying self-consistent; its standard error gives
+  it away), when σ falls below the pixel aperture, or when the fit fails.
 
-Optional and additive on the corner type, with the bindings.
+**Synthetic results** (`bench accuracy --only-blur`: four families, cells
+16/24–64 px, rendered blur 0.5–4 px, rotation 0/8/30°, tilt 0/30°, noise 1
+and 4 gray levels, k₁ = 0.15 on the largest cell):
 
-**Gate.** Measure before shipping the field: on the accuracy suite, bias and
-scatter of σ against the truth above for rendered blur 0.5–4 px, the fraction
-of corners that get a σ per family and cell size, and the stated standard
-error against the scatter. On real images, quadrature additivity under a
-known added Gaussian blur. Two edge directions cannot give the PSF's
-anisotropy; rings do.
+- **Range, by construction:** σ up to about a twelfth of a cell on a plain
+  board, a 27th on a PuzzleBoard, a 36th on a marker board, a 48th on a
+  ChArUco board (the marker border an eighth of a cell from the edge). A
+  4 px blur needs a 64 px chessboard cell; a ChArUco board holds 1 px only
+  at 64 px. Coverage is 1.0 well inside the range, 0.6–0.9 near its limit
+  (0.07–0.19 for a 16 px PuzzleBoard even at 0.5 px), 0 beyond it.
+- **Accuracy inside the range:** median bias +0.5–0.8 % at the 0.5 px blur
+  (the pixel box makes the edge less than Gaussian; −0.6 % on the 16 px
+  PuzzleBoard) and within ±0.2 % at every larger blur; robust scatter
+  0.1–0.9 % of σ; the stated standard error matches the scatter (robust
+  spread of (σ̂ − median)/SE 0.74–1.17, 0.4–0.7 on the sparse 16 px
+  PuzzleBoard). Of 33 756 estimates, 21 are off by more than 5 % and the
+  worst by 10 %, all on 16 px cells at 4 gray levels of noise.
+- No estimate from a truncated profile: the conditions just past each
+  family's range return none.
+
+**Real images** (public `testdata/`, quadrature additivity under the
+facade's `preprocess` Gaussian, the added variance measured from its
+kernel's impulse response):
+
+- on a rendered board the ratio (σ(s)² − σ(0)²) / added variance is
+  1.03–1.06;
+- on photographs it is not 1: 0.61–0.89 on `mid.png` (chessboard; an
+  in-camera sharpening halo, measured overshoot on both plateaus), 1.31–1.47
+  on `example2.png` (PuzzleBoard). `large.png` (ChArUco) clips its white
+  squares at 255, so most corners are censored. The estimate is the width of
+  the edge's core, which equals the PSF's second moment only for a
+  near-Gaussian PSF;
+- `small3.png` (ChArUco, bottom rows defocused): σ rises row by row, 0.61 →
+  0.66 px, over the rows the ChArUco window holds; the defocused rows get no
+  σ (their blur exceeds the window).
+
+**Fix direction.**
+
+- Verify on raw (unsharpened, unclipped) machine-vision frames — the
+  Scheimpflug rig's own — whether quadrature additivity holds there. If
+  it does not, the focus model needs the edge-core width, not a variance.
+- Detect the model's misfit per corner (structured residuals from a
+  sharpening halo or a non-Gaussian PSF) and decline, as the window already
+  declines a truncated profile.
+- ChArUco: model the marker border as a second edge sharing σ instead of
+  stopping before it; the light side then holds a quarter cell, not an
+  eighth.
+
+**Gate.** The field ships, optional and additive on the corner type with
+the bindings, once raw-frame additivity holds within the synthetic suite's
+band, or the documented guarantee is restated as an edge-core width. Two
+edge directions cannot give the PSF's anisotropy; rings do.
 
 ---
 
