@@ -12,8 +12,8 @@ use calib_targets_chessboard::{
     ChessboardDetection, ChessboardDetector as ChessDetector, ChessboardParamsError,
 };
 use calib_targets_core::{
-    cell_to_corner_alignment, CornerMap, GrayImageView, GridAlignment, LabeledCorner,
-    TargetDetection, TargetKind,
+    cell_to_corner_alignment, GrayImageView, GridAlignment, LabeledCorner, TargetDetection,
+    TargetKind,
 };
 
 /// Marker board detector: chessboard + three circle markers.
@@ -169,7 +169,7 @@ impl MarkerBoardDetector {
                 MarkerBoardDiagnostics::default(),
             );
         };
-        let corner_map = build_corner_map(&chess);
+        let corner_map = chess.corner_map();
         let roi = self
             .params
             .roi_cells
@@ -239,8 +239,9 @@ impl MarkerBoardDetector {
         frame: FrameSearch,
         alignment: GridAlignment,
     ) -> (MarkerBoardDetection, MarkerBoardDiagnostics) {
-        let (target, inliers) = chessboard_detection_to_target(&chess);
-        let mut detection = relabel_as_marker(target);
+        // The parallel input-index list the diagnostics expose as `inliers`.
+        let inliers: Vec<usize> = chess.corners.iter().map(|c| c.input_index).collect();
+        let mut detection = relabel_as_marker(chess.to_target_detection());
         let inliers = self.apply_board_frame(&mut detection, inliers, alignment);
         (
             MarkerBoardDetection::from_target_detection(detection, Some(alignment)),
@@ -339,29 +340,9 @@ fn corner_frame(alignment: GridAlignment) -> GridAlignment {
     alignment.with_translation([di - 1, dj - 1])
 }
 
-/// Adapt a [`ChessboardDetection`] into the generic [`TargetDetection`]
-/// the marker pipeline operates on, plus the parallel input-index list
-/// the marker diagnostics expose as `inliers`.
-fn chessboard_detection_to_target(chess: &ChessboardDetection) -> (TargetDetection, Vec<usize>) {
-    let mut corners = Vec::with_capacity(chess.corners.len());
-    let mut inliers = Vec::with_capacity(chess.corners.len());
-    for c in &chess.corners {
-        corners.push(c.to_labeled());
-        inliers.push(c.input_index);
-    }
-    (
-        TargetDetection::new(TargetKind::Chessboard, corners),
-        inliers,
-    )
-}
-
 fn relabel_as_marker(mut detection: TargetDetection) -> TargetDetection {
     detection.kind = TargetKind::CheckerboardMarker;
     detection
-}
-
-fn build_corner_map(det: &ChessboardDetection) -> CornerMap {
-    det.corners.iter().map(|c| (c.grid, c.position)).collect()
 }
 
 #[cfg(test)]

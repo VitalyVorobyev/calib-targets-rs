@@ -1,33 +1,16 @@
 //! Marker-cell extraction from labelled chessboard corners.
 //!
-//! Two stages feed the board matcher: [`build_corner_map`] turns the inlier
-//! labelled chessboard corners into a grid `(i, j)` -> image-position map, and
-//! [`build_marker_cells`] walks that map to emit the complete four-corner
-//! square cells (in canonical TL, TR, BR, BL order) the matcher samples. Cells
+//! [`build_marker_cells`] walks the grid `(i, j)` -> image-position map of the
+//! labelled chessboard corners to emit the complete four-corner square cells
+//! (in canonical TL, TR, BR, BL order) the board matcher samples. Cells
 //! missing any of their four corners are skipped, so every emitted
 //! [`MarkerCell`] has full geometry.
 
 use calib_targets_aruco::MarkerCell;
-use calib_targets_core::{
-    complete_cell_corners, corner_map_bounds, Coord, CornerMap, LabeledCorner,
-};
+use calib_targets_core::{complete_cell_corners, corner_map_bounds, Coord, CornerMap};
 
 #[cfg(feature = "tracing")]
 use tracing::instrument;
-
-/// Build a grid -> image map from inlier chessboard corners.
-#[cfg_attr(feature = "tracing", instrument(level = "info", skip(corners, inliers), fields(corners=inliers.len())))]
-pub(crate) fn build_corner_map(corners: &[LabeledCorner], inliers: &[usize]) -> CornerMap {
-    let mut map = CornerMap::new();
-    for &idx in inliers {
-        if let Some(c) = corners.get(idx) {
-            if let Some(g) = c.grid {
-                map.insert(g, c.position);
-            }
-        }
-    }
-    map
-}
 
 /// Enumerate complete square cells (TL, TR, BR, BL) from a corner map.
 ///
@@ -60,20 +43,6 @@ pub(crate) fn build_marker_cells(map: &CornerMap) -> Vec<MarkerCell> {
 mod tests {
     use super::*;
     use nalgebra::Point2;
-
-    #[test]
-    fn build_corner_map_filters_inliers() {
-        let corners = vec![
-            LabeledCorner::new(Point2::new(1.0, 2.0), 0.5).with_grid(Coord::new(0, 0)),
-            LabeledCorner::new(Point2::new(3.0, 4.0), 0.5),
-            LabeledCorner::new(Point2::new(5.0, 6.0), 0.5).with_grid(Coord::new(1, 0)),
-        ];
-
-        let map = build_corner_map(&corners, &[0, 2]);
-        assert_eq!(map.len(), 2);
-        assert_eq!(map.get(&Coord::new(0, 0)), Some(&Point2::new(1.0, 2.0)));
-        assert_eq!(map.get(&Coord::new(1, 0)), Some(&Point2::new(5.0, 6.0)));
-    }
 
     #[test]
     fn build_marker_cells_skips_incomplete_cells() {

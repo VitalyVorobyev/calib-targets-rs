@@ -5,7 +5,10 @@
 //! returned by the mandatory final geometry check. No pipeline logic lives
 //! here — see the sibling stage modules for the stage bodies.
 
-use calib_targets_core::{Coord, DetectionQuality, LabeledCorner, PositionCovariance};
+use calib_targets_core::{
+    Coord, CornerMap, DetectionQuality, LabeledCorner, PositionCovariance, TargetDetection,
+    TargetKind,
+};
 
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -116,6 +119,23 @@ impl ChessboardDetection {
     pub fn with_cell_size(mut self, cell_size: f32) -> Self {
         self.cell_size = Some(cell_size);
         self
+    }
+
+    /// This detection as the shared [`TargetDetection`] carrier
+    /// ([`TargetKind::Chessboard`]): one [`LabeledCorner`] per corner, in
+    /// [`Self::corners`] order (see [`ChessboardCorner::to_labeled`]).
+    pub fn to_target_detection(&self) -> TargetDetection {
+        let corners = self
+            .corners
+            .iter()
+            .map(ChessboardCorner::to_labeled)
+            .collect();
+        TargetDetection::new(TargetKind::Chessboard, corners)
+    }
+
+    /// Grid label → image position of every corner, as a [`CornerMap`].
+    pub fn corner_map(&self) -> CornerMap {
+        self.corners.iter().map(|c| (c.grid, c.position)).collect()
     }
 }
 
