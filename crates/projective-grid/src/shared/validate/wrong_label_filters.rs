@@ -203,11 +203,10 @@ where
 /// Direct local wrong-label edge detector for the topological grid
 /// builder.
 ///
-/// The historical seed-and-grow edge-shape gate could not reach the dominant
-/// topological wrong-label classes — interior skipped-corner edges (its
-/// overlong check is gated behind a collinear triple) and duplicate-pixel
-/// labels — so this targets them directly using only local geometry,
-/// robust to perspective:
+/// An edge-shape gate whose overlong check is gated behind a collinear triple
+/// cannot reach the dominant topological wrong-label classes — interior
+/// skipped-corner edges and duplicate-pixel labels — so this targets them
+/// directly using only local geometry, robust to perspective:
 ///
 /// 1. **Overlong edge.** Each cardinal edge is compared to the median
 ///    length of nearby same-direction edges; an edge ≥ `1.5`× that median
@@ -441,66 +440,6 @@ where
         }
     }
     drop
-}
-
-/// Iterative weak-leaf peel.
-///
-/// Iteratively drops a corner that is BOTH a graph leaf (cardinal degree
-/// ≤ 1 among surviving labels) AND weak in response relative to the frame
-/// (strength below `score_frac` × the labelled-set median). Removing a
-/// leaf can NEVER disconnect the remaining graph, so unlike a blanket
-/// low-support / zero-cell prune this cannot fragment a legitimately
-/// sparse distorted detection. It peels weak appendage chains from their
-/// free end while leaving weak *bridges* intact — a bridge between two
-/// strong regions never becomes a leaf, so it is never peeled.
-///
-/// `already_dropped` carries the indices removed by earlier filters; the
-/// live graph used for the leaf-degree test excludes them. `strength_of`
-/// maps a labelled corner index to its detector response strength. The
-/// returned set is the indices this pass newly peels (a subset disjoint
-/// from `already_dropped`).
-#[cfg(test)]
-fn weak_leaf_peel<F>(
-    labelled: &HashMap<(i32, i32), usize>,
-    strength_of: F,
-    already_dropped: &HashSet<usize>,
-    score_frac: f32,
-) -> HashSet<usize>
-where
-    F: Fn(usize) -> f32,
-{
-    let mut weak_leaf_drop: HashSet<usize> = HashSet::new();
-    let mut all_drop: HashSet<usize> = already_dropped.clone();
-
-    let mut strengths: Vec<f32> = labelled.values().map(|&idx| strength_of(idx)).collect();
-    strengths.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let median = strengths.get(strengths.len() / 2).copied().unwrap_or(0.0);
-    let weak_threshold = score_frac * median;
-    loop {
-        let live: HashMap<(i32, i32), usize> = labelled
-            .iter()
-            .filter(|(_, idx)| !all_drop.contains(idx))
-            .map(|(&k, &v)| (k, v))
-            .collect();
-        let mut progressed = false;
-        for (&(i, j), &idx) in &live {
-            if strength_of(idx) >= weak_threshold {
-                continue;
-            }
-            let degree = [(1, 0), (-1, 0), (0, 1), (0, -1)]
-                .into_iter()
-                .filter(|&(di, dj)| live.contains_key(&(i + di, j + dj)))
-                .count();
-            if degree <= 1 && all_drop.insert(idx) {
-                weak_leaf_drop.insert(idx);
-                progressed = true;
-            }
-        }
-        if !progressed {
-            break;
-        }
-    }
-    weak_leaf_drop
 }
 
 /// Result of the largest-cardinally-connected-component filter.
@@ -846,31 +785,6 @@ mod tests {
             // A wins (min coord (0,0) < (5,5)); B's indices dropped.
             assert_eq!(res.drop, HashSet::from([2, 3]));
         }
-    }
-
-    #[test]
-    fn weak_leaf_peels_weak_dangling_leaf_only() {
-        // A 3-cell strong row plus one weak leaf hanging off the end.
-        let mut labelled = HashMap::new();
-        labelled.insert((0, 0), 0usize);
-        labelled.insert((1, 0), 1);
-        labelled.insert((2, 0), 2);
-        labelled.insert((3, 0), 3); // weak leaf
-        let strength_of = |idx: usize| if idx == 3 { 0.1 } else { 1.0 };
-        let drop = weak_leaf_peel(&labelled, strength_of, &HashSet::new(), 0.55);
-        assert_eq!(drop, HashSet::from([3]));
-    }
-
-    #[test]
-    fn weak_bridge_is_not_peeled() {
-        // Weak corner is a bridge (degree 2), never a leaf → kept.
-        let mut labelled = HashMap::new();
-        labelled.insert((0, 0), 0usize);
-        labelled.insert((1, 0), 1); // weak bridge between (0,0) and (2,0)
-        labelled.insert((2, 0), 2);
-        let strength_of = |idx: usize| if idx == 1 { 0.1 } else { 1.0 };
-        let drop = weak_leaf_peel(&labelled, strength_of, &HashSet::new(), 0.55);
-        assert!(drop.is_empty());
     }
 
     #[test]

@@ -20,14 +20,15 @@
 //! * Input: a slice of [`CornerAug`] whose `axes` field is populated.
 //!   Axes with sigma equal to the no-info sentinel (π) are skipped.
 //! * Output:
-//!   - [`ClusterCenters`] `{ theta0, theta1 }` in `[0, π)` with
+//!   - [`AxisClusterCenters`] `{ theta0, theta1 }` in `[0, π)` with
 //!     `theta0 ≤ theta1`.
 //!   - The per-corner `stage` / `label` fields, mutated in place.
 
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::ChessboardParams;
 use projective_grid::expert::orientation::{
-    self as pg, AxisAssignment, AxisFeature, AxisObservation, ClusterParams,
+    self as pg, AxisAssignment, AxisClusterCenters, AxisClusterDebug, AxisFeature, AxisObservation,
+    ClusterParams,
 };
 
 /// Per-corner assignment produced by [`cluster_axes`]: either a slot
@@ -55,22 +56,6 @@ fn map_assignment(assign: AxisAssignment) -> AxisCluster {
         _ => unreachable!("AxisAssignment is exhaustively handled"),
     }
 }
-
-// The generic undirected-angle helpers live in `projective_grid::cluster`
-// (the single source of truth). Re-export them under their short local names
-// so this module and the sibling `boosters` module keep their
-// `{angular_dist_pi, wrap_pi}` imports.
-pub(crate) use projective_grid::expert::orientation::{angular_dist_pi, wrap_pi};
-
-/// Two grid-direction centres in `[0, π)` with `theta0 ≤ theta1`.
-///
-/// Re-export of the generic projective-grid cluster centres; the
-/// chessboard pipeline keeps the shorter local name.
-pub use projective_grid::expert::orientation::AxisClusterCenters as ClusterCenters;
-
-/// Stage-3 introspection captured during a single `cluster_axes_debug`
-/// run. Re-export of the generic projective-grid cluster diagnostics.
-pub use projective_grid::expert::orientation::AxisClusterDebug as ClusterDebug;
 
 /// Build the [`ClusterParams`] the generic clusterer consumes from the
 /// chessboard tuning.
@@ -120,11 +105,11 @@ fn collect_strong_features(corners: &[CornerAug]) -> (Vec<AxisFeature>, Vec<usiz
 pub fn cluster_axes(
     corners: &mut [CornerAug],
     params: &ChessboardParams,
-) -> Option<ClusterCenters> {
+) -> Option<AxisClusterCenters> {
     cluster_axes_debug(corners, params).0
 }
 
-/// Same as [`cluster_axes`] but also returns a [`ClusterDebug`] payload
+/// Same as [`cluster_axes`] but also returns an [`AxisClusterDebug`] payload
 /// with the smoothed histogram and the peak seeds — useful for offline
 /// triage of clustering failures. The caller pays the cost of carrying
 /// the histogram (a few KB).
@@ -135,7 +120,7 @@ pub fn cluster_axes(
 pub fn cluster_axes_debug(
     corners: &mut [CornerAug],
     params: &ChessboardParams,
-) -> (Option<ClusterCenters>, ClusterDebug) {
+) -> (Option<AxisClusterCenters>, AxisClusterDebug) {
     let cluster_params = cluster_params(params);
     let (features, indices) = collect_strong_features(corners);
 
@@ -174,6 +159,7 @@ mod tests {
     use crate::corner::{ChessCorner, ClusterLabel};
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
+    use projective_grid::expert::orientation::{angular_dist_pi, wrap_pi};
 
     fn make_corner(
         input_index: usize,
@@ -343,6 +329,7 @@ mod plateau_peak_regression {
     use crate::corner::{ChessCorner, CornerAug};
     use calib_targets_core::AxisEstimate;
     use nalgebra::Point2;
+    use projective_grid::expert::orientation::angular_dist_pi;
 
     #[test]
     fn near_pi_wrap_still_clusters() {

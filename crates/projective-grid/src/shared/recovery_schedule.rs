@@ -64,6 +64,8 @@ use std::collections::{HashMap, HashSet};
 
 use nalgebra::{Point2, Vector2};
 
+use crate::lattice::rebase::rebase_to_origin;
+use crate::shared::cell_size::mean_cardinal_edge_length;
 use crate::shared::extension::{extend_via_local_homography, LocalExtensionParams};
 use crate::shared::fill::{fill_grid_holes, FillParams};
 use crate::shared::grow::{GrowParams, GrowResult, SquareAttachPolicy};
@@ -384,7 +386,7 @@ pub(crate) fn recover_components(
         // Drop any corner an already-recovered (larger) component absorbed, so
         // two solutions never reference the same corner index. A fragment whose
         // members were fully absorbed collapses to empty and is filtered out.
-        let comp: HashMap<(i32, i32), usize> = merged[k]
+        let mut comp: HashMap<(i32, i32), usize> = merged[k]
             .iter()
             .filter(|(_, &idx)| !claimed.contains(&idx))
             .map(|(&k, &v)| (k, v))
@@ -393,19 +395,17 @@ pub(crate) fn recover_components(
             for &idx in comp.values() {
                 claimed.insert(idx);
             }
-            recovered_by_slot[k] = if comp.is_empty() {
-                HashMap::new()
-            } else {
-                rebase_to_origin(&comp)
-            };
+            rebase_to_origin(&mut comp);
+            recovered_by_slot[k] = comp;
             continue;
         }
-        let cell_size = cell_size_of(&comp, positions);
+        let cell_size = mean_cardinal_edge_length(&comp, positions);
         let own: HashSet<usize> = comp.values().copied().collect();
         let masked: HashSet<usize> = claimed.difference(&own).copied().collect();
-        let recovered = recover_positions_component(&comp, &masked, cell_size, inputs);
+        let mut recovered = recover_positions_component(&comp, &masked, cell_size, inputs);
         claimed.extend(recovered.values().copied());
-        recovered_by_slot[k] = rebase_to_origin(&recovered);
+        rebase_to_origin(&mut recovered);
+        recovered_by_slot[k] = recovered;
     }
     // Drop fragments that collapsed to empty after absorption.
     recovered_by_slot.retain(|m| !m.is_empty());
@@ -452,30 +452,6 @@ pub(crate) fn local_pitch_of(positions: &[Point2<f32>]) -> Vec<f32> {
         .collect()
 }
 
-/// Mean labelled-pair cardinal edge length for a component (the recovery
-/// schedule's `cell_size`). Mirrors the facade's `estimate_cell_size`.
-fn cell_size_of(labelled: &HashMap<(i32, i32), usize>, positions: &[Point2<f32>]) -> f32 {
-    let mut sum = 0.0_f32;
-    let mut count = 0usize;
-    // Sorted for the same reason as `ensure_axes`: this is an `f32` mean, and
-    // hash order would leak the process's `RandomState` into the result.
-    for (i, j) in sorted_cells(labelled) {
-        let idx = labelled[&(i, j)];
-        let here = positions[idx];
-        for (di, dj) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
-            if let Some(&n) = labelled.get(&(i + di, j + dj)) {
-                sum += (positions[n] - here).norm();
-                count += 1;
-            }
-        }
-    }
-    if count == 0 {
-        1.0
-    } else {
-        sum / count as f32
-    }
-}
-
 /// Labelled cells in a deterministic order.
 ///
 /// Any reduction over a labelled set that is not order-invariant — an `f32`
@@ -485,19 +461,6 @@ fn sorted_cells(labelled: &HashMap<(i32, i32), usize>) -> Vec<(i32, i32)> {
     let mut cells: Vec<(i32, i32)> = labelled.keys().copied().collect();
     cells.sort_unstable();
     cells
-}
-
-/// Rebase a labelled component so its bounding-box minimum sits at `(0, 0)`.
-fn rebase_to_origin(labelled: &HashMap<(i32, i32), usize>) -> HashMap<(i32, i32), usize> {
-    let min_i = labelled.keys().map(|&(i, _)| i).min().unwrap_or(0);
-    let min_j = labelled.keys().map(|&(_, j)| j).min().unwrap_or(0);
-    if min_i == 0 && min_j == 0 {
-        return labelled.clone();
-    }
-    labelled
-        .iter()
-        .map(|(&(i, j), &idx)| ((i - min_i, j - min_j), idx))
-        .collect()
 }
 
 /// Run the geometry-only recovery schedule over a labelled `(i, j) → index`

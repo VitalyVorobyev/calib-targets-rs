@@ -42,6 +42,7 @@ use crate::lattice::{Coord, GridDimensions, LatticeKind};
 use crate::result::{
     GridEntry, GridSolution, LabelledGrid, LatticeFit, RejectedFeature, RejectionReason,
 };
+use crate::shared::cell_size::mean_cardinal_edge_length;
 use crate::shared::merge::{merge_components_local, LocalMergeParams};
 use crate::shared::recovery_schedule::SquareAxisProvenance;
 use crate::shared::validate as pg_validate;
@@ -655,7 +656,7 @@ fn build_component_solution(
         })
         .collect();
     validate_entries.sort_by_key(|entry| (entry.grid.1, entry.grid.0, entry.idx));
-    let cell_size = estimate_cell_size(labelled, positions);
+    let cell_size = mean_cardinal_edge_length(labelled, positions);
     #[cfg(feature = "tracing")]
     let validation = {
         let _span = tracing::debug_span!("topological_validation").entered();
@@ -956,74 +957,10 @@ pub(in crate::topological) fn triangulate_usable(
     triangulation
 }
 
-/// Mean labelled-pair edge length over cardinal lattice neighbours.
-/// Used as the `cell_size` input to the shared validate post-stage.
-///
-/// Falls back to `1.0` when no cardinal pair exists, in which case the
-/// validate caller's relative tolerances reduce to absolute thresholds.
-/// In practice the topological pipeline only reaches this helper with
-/// at least one labelled quad, so the fallback is defensive.
-fn estimate_cell_size(
-    labelled: &std::collections::HashMap<Coord, usize>,
-    positions: &[Point2<f32>],
-) -> f32 {
-    use crate::lattice::SQUARE_CARDINAL_OFFSETS;
-
-    // Sorted: this is an `f32` sum, and hash order would leak the process's
-    // `RandomState` into the validate thresholds built on it.
-    let mut coords: Vec<Coord> = labelled.keys().copied().collect();
-    coords.sort_unstable();
-    let mut sum = 0.0_f32;
-    let mut count: usize = 0;
-    for coord in coords {
-        let here = positions[labelled[&coord]];
-        for offset in &SQUARE_CARDINAL_OFFSETS {
-            let neigh = Coord::new(coord.u + offset.u, coord.v + offset.v);
-            if let Some(&n_idx) = labelled.get(&neigh) {
-                let nb = positions[n_idx];
-                let dx = nb.x - here.x;
-                let dy = nb.y - here.y;
-                sum += (dx * dx + dy * dy).sqrt();
-                count += 1;
-            }
-        }
-    }
-    if count == 0 {
-        return 1.0;
-    }
-    sum / count as f32
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::feature::{LocalAxis, PointFeature};
-
-    /// The cell size feeds the validate thresholds, so it must not depend on
-    /// hash order: every fresh `HashMap` draws its own `RandomState`.
-    #[test]
-    fn estimate_cell_size_is_independent_of_hash_order() {
-        // Irrational-ish jitter so the f32 sum is order-sensitive.
-        let mut positions = Vec::new();
-        let mut cells = Vec::new();
-        for v in 0..15 {
-            for u in 0..15 {
-                let k = (u * 15 + v) as f32;
-                positions.push(Point2::new(
-                    20.0 * u as f32 + 0.37 * (1.3 * k).sin(),
-                    20.0 * v as f32 + 0.41 * (0.7 * k).cos(),
-                ));
-                cells.push(Coord::new(u, v));
-            }
-        }
-        let build = || -> std::collections::HashMap<Coord, usize> {
-            cells.iter().enumerate().map(|(i, &c)| (c, i)).collect()
-        };
-        let first = estimate_cell_size(&build(), &positions).to_bits();
-        for _ in 0..32 {
-            assert_eq!(estimate_cell_size(&build(), &positions).to_bits(), first);
-        }
-    }
 
     fn axis_aligned_features(rows: i32, cols: i32, s: f32) -> Vec<OrientedFeature<2>> {
         let origin = 50.0_f32;

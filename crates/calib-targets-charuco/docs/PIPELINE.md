@@ -65,7 +65,7 @@ corners — it is the production path serialized stage-by-stage.
 |---|---|
 | 0 | `calib_targets_chessboard::ChessboardDetector::detect_all` |
 | 1 | `detector/grid_smoothness.rs::smooth_grid_corners` |
-| 2 | `detector/marker_sampling.rs::build_marker_cells` (+ `build_corner_map`) |
+| 2 | `detector/marker_sampling.rs::build_marker_cells` (over `ChessboardDetection::corner_map`) |
 | 3–4 | `detector/board_match/mod.rs::match_board` (`match_board_diag` on the diagnose path); bits decoded via `calib-targets-aruco` |
 | 5 | `detector/corner_mapping.rs::map_charuco_corners` |
 | 6 | `detector/corner_refit.rs::validate_and_fix_corners` (homography via `core::estimate_homography_rect_to_img`) |

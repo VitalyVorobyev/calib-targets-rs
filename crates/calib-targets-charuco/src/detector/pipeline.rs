@@ -1,107 +1,26 @@
-use super::board_match::{match_board, BoardMatchConfig};
 #[cfg(feature = "diagnostics")]
-use super::board_match::{match_board_diag, BoardMatchDiagnostics};
+use super::board_match::match_board_diag;
+use super::board_match::{match_board, BoardMatchConfig};
 use super::corner_mapping::map_charuco_corners;
 use super::corner_refit::{
     validate_and_fix_corners, CornerValidationConfig, FrameNoise, Redetector,
 };
 use super::grid_smoothness::smooth_grid_corners;
-use super::marker_sampling::{build_corner_map, build_marker_cells};
+use super::marker_sampling::build_marker_cells;
 use super::merge::merge_charuco_results;
 use super::{CharucoDetectError, CharucoDetection, CharucoParams};
 use crate::alignment::CharucoAlignment;
 use crate::board::{CharucoBoard, CharucoBoardError};
 use calib_targets_aruco::{MarkerDetection, ScanDecodeConfig};
 use calib_targets_chessboard::{detect_corner_frame, ChessCorner, CornerFrame};
-use calib_targets_chessboard::{
-    ChessboardCorner, ChessboardDetection, ChessboardDetector as ChessDetector,
-};
-use calib_targets_core::{GrayImageView, TargetDetection, TargetKind};
+use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector as ChessDetector};
+use calib_targets_core::GrayImageView;
 use log::{debug, warn};
 
-/// Adapt a [`ChessboardDetection`] into the generic [`TargetDetection`]
-/// the ChArUco corner-mapping / marker-sampling stages consume. Every
-/// corner the chessboard detector emits is a validated labelled grid
-/// point, so all of them carry a non-optional `grid`.
-fn chessboard_detection_to_target(chess: &ChessboardDetection) -> TargetDetection {
-    let corners = chess
-        .corners
-        .iter()
-        .map(ChessboardCorner::to_labeled)
-        .collect();
-    TargetDetection::new(TargetKind::Chessboard, corners)
-}
-
-/// Rich per-frame diagnostics captured by [`CharucoDetector::diagnose`] /
-/// [`CharucoDetector::diagnose_with_corners`].
-///
-/// One entry per chessboard connected component the detector tried to
-/// match; fail-early stages (no chessboard) produce an empty list.
 #[cfg(feature = "diagnostics")]
-#[derive(Clone, Debug, Default, serde::Serialize)]
-#[non_exhaustive]
-pub struct CharucoDetectDiagnostics {
-    /// One entry per chessboard connected component the detector tried
-    /// to match.
-    pub components: Vec<ComponentDiagnostics>,
-    /// Total number of markers decoded out of candidate cells, **before**
-    /// alignment-based inlier filtering, summed across the components that
-    /// contributed to the returned [`CharucoDetection`].
-    ///
-    /// `raw_marker_count - result.markers.len()` is the number of raw
-    /// marker decodings rejected by the alignment stage.
-    pub raw_marker_count: usize,
-    /// Raw decodings whose id mapped to a valid board position that
-    /// **disagreed** with the chosen alignment — a self-consistency
-    /// wrong-id count. It excludes pure dictionary-noise decodings whose id
-    /// did not correspond to any marker on this board.
-    pub raw_marker_wrong_id_count: usize,
-}
-
-/// Per-component diagnostics for one chessboard connected component.
-#[cfg(feature = "diagnostics")]
-#[derive(Clone, Debug, serde::Serialize)]
-#[non_exhaustive]
-pub struct ComponentDiagnostics {
-    /// Zero-based index of this component.
-    pub index: usize,
-    /// Number of chessboard corners in this component.
-    pub chess_corner_count: usize,
-    /// Number of candidate marker cells extracted from this component.
-    pub candidate_cell_count: usize,
-    /// Board-level matcher diagnostics (per-cell scores, chosen/runner-up
-    /// hypotheses, margin, rejection reason).
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub board: Option<BoardMatchDiagnostics>,
-    /// Final detection outcome for this component.
-    pub outcome: ComponentOutcome,
-}
-
-/// Final outcome of detecting one chessboard component.
-#[cfg(feature = "diagnostics")]
-#[derive(Clone, Debug, serde::Serialize)]
-#[serde(tag = "status", rename_all = "snake_case")]
-#[non_exhaustive]
-pub enum ComponentOutcome {
-    /// The component yielded a detection.
-    Ok {
-        /// Number of markers in the component's detection.
-        markers: usize,
-        /// Number of ChArUco corners in the component's detection.
-        charuco_corners: usize,
-        /// Raw markers decoded for this component before alignment-based
-        /// inlier filtering.
-        raw_marker_count: usize,
-        /// Raw decodings for this component whose id disagreed with the
-        /// chosen alignment.
-        raw_marker_wrong_id_count: usize,
-    },
-    /// The component produced no detection.
-    Failed {
-        /// Human-readable reason the component failed.
-        reason: String,
-    },
-}
+use crate::diagnostics::{
+    BoardMatchDiagnostics, CharucoDetectDiagnostics, ComponentDiagnostics, ComponentOutcome,
+};
 
 /// Per-component raw marker counts captured before alignment-based inlier
 /// filtering. Threaded alongside each component's [`CharucoDetection`]
@@ -518,16 +437,15 @@ impl CharucoDetector {
         redetector: &mut Redetector<'_>,
         sink: &mut S,
     ) -> Result<(CharucoDetection, RawMarkerCounts), CharucoDetectError> {
-        // Adapt the typed chessboard result into the generic
-        // `TargetDetection` the corner-mapping / marker-sampling stages
-        // expect. Every labelled corner is an inlier by construction.
         // Bind the advanced (opt-in, unstable) tuning once; the grid-smoothness
         // gate, the board-level matcher knobs, and the corner-validation gate
         // all read off it below.
         let tuning = self.params.effective_tuning();
-        let chessboard = chessboard_detection_to_target(chessboard);
-        let inliers: Vec<usize> = (0..chessboard.corners.len()).collect();
-        let mut corner_map = build_corner_map(&chessboard.corners, &inliers);
+        // The marker-sampling stage reads the grid → position map; the
+        // corner-mapping stage the generic `TargetDetection`. Every labelled
+        // chessboard corner is an inlier by construction.
+        let mut corner_map = chessboard.corner_map();
+        let chessboard = chessboard.to_target_detection();
         smooth_grid_corners(
             &mut corner_map,
             image,

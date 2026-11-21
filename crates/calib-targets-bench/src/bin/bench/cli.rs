@@ -271,8 +271,7 @@ impl From<DatasetKindArg> for ImageKind {
 }
 
 /// The bench exercises a single graph-build algorithm (the topological grid
-/// builder — the sole builder since the seed-and-grow seam was removed). The
-/// slug is still embedded in the `engine.algorithm.orientation` config id, the
+/// builder, the detector's sole builder). The slug is still embedded in the `engine.algorithm.orientation` config id, the
 /// result rows, and output filenames, so `compare` parsing and pinned baselines
 /// stay stable.
 pub(crate) const ALGORITHM_SLUG: &str = "topological";

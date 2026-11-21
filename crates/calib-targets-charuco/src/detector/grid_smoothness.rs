@@ -1,6 +1,6 @@
 //! Local grid smoothness pre-filter for ChArUco detection.
 //!
-//! Runs between `build_corner_map` and `build_marker_cells` to detect and
+//! Runs on the chessboard corner map before `build_marker_cells` to detect and
 //! correct false corners (typically ArUco marker internal features picked up
 //! by ChESS with a loose orientation tolerance).
 //!
@@ -9,9 +9,10 @@
 //! the prediction are re-detected locally or snapped to the predicted position.
 
 use super::corner_refit::Redetector;
-use calib_targets_core::{square_predict_grid_position, Coord, CornerMap, GrayImageView};
+use calib_targets_core::{Coord, CornerMap, GrayImageView};
 use log::debug;
 use nalgebra::Point2;
+use projective_grid::{expert::lattice::predict_grid_position, LatticeKind};
 
 /// Check grid corners for smoothness and fix or remove outliers.
 ///
@@ -48,7 +49,9 @@ pub(crate) fn smooth_grid_corners(
     for gc in &keys {
         let pos = corner_map[gc];
 
-        let Some(predicted) = square_predict_grid_position(corner_map, *gc) else {
+        let Some(predicted) = predict_grid_position(corner_map, *gc, LatticeKind::Square)
+            .map(|prediction| prediction.position)
+        else {
             continue;
         };
 

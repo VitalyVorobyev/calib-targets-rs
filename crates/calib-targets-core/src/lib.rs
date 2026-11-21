@@ -29,15 +29,12 @@ mod corner;
 mod corner_map;
 mod covariance;
 mod grid_alignment;
-mod grid_smoothness;
 mod homography;
 mod image;
 pub mod io;
 mod quality;
-mod rectify;
 
 pub use bit_likelihood::log_sigmoid;
-pub use grid_smoothness::square_predict_grid_position;
 pub use homography::{
     estimate_homography_rect_to_img, estimate_homography_with_quality, homography_from_4pt,
     homography_from_4pt_with_quality, warp_perspective_gray, Homography, HomographyQuality,
@@ -45,7 +42,6 @@ pub use homography::{
 pub use image::{
     sample_bilinear, sample_bilinear_fast, sample_bilinear_u8, GrayImage, GrayImageView,
 };
-pub use rectify::{RectToImgMapper, RectifiedView};
 
 // Only the two `chess-corners` types the workspace's own public API
 // legitimately exposes are re-exported: `DetectorConfig` is the ChESS config

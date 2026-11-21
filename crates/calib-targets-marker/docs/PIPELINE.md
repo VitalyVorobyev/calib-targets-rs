@@ -77,7 +77,7 @@ misaligned alignments.
 
 | Stage | Function |
 |---|---|
-| 0 | `calib_targets_chessboard::ChessboardDetector::detect`, then `detector.rs::build_corner_map` |
+| 0 | `calib_targets_chessboard::ChessboardDetector::detect`, then `ChessboardDetection::corner_map` |
 | 1a | `detect.rs::detect_circles_via_square_warp` → `circle_score.rs::DiskProbe::levels_at_centre`, `detect.rs::empty_square_references` |
 | 1b | `circle_score.rs::DiskProbe::score` |
 | 2–3 | `match_circles.rs::resolve_board_frame` |

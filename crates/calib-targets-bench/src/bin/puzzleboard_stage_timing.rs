@@ -47,12 +47,11 @@ use calib_targets::puzzleboard::{
     PuzzleBoardSpec,
 };
 use calib_targets_bench::span_timing::{
-    command_output, cpu_name, span_ms, summarize, SummaryStats, TimingLayer,
+    command_output, span_ms, summarize, ReportMetadata, SpanTimingSample, SummaryStats, TimingLayer,
 };
 use clap::{Parser, ValueEnum};
 use image::ImageReader;
 use serde::Serialize;
-use std::collections::HashMap;
 use std::time::Instant;
 
 /// Stage spans, outermost first. `detect_inner` is the total; the rest are
@@ -125,12 +124,6 @@ struct Args {
     out: Option<PathBuf>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
-struct TimingSample {
-    spans: HashMap<String, f64>,
-    detect_ms: f64,
-}
-
 #[derive(Debug, Serialize)]
 struct StageReport {
     name: String,
@@ -150,22 +143,9 @@ struct Workload {
     scoring_mode: String,
 }
 
-/// Provenance for the report, so a number can be traced to the build and
-/// machine that produced it.
-#[derive(Debug, Serialize)]
-struct Metadata {
-    git_sha: Option<String>,
-    rustc: Option<String>,
-    cpu: Option<String>,
-    profile: &'static str,
-    repeats: usize,
-    warmup: usize,
-    timing_source: &'static str,
-}
-
 #[derive(Debug, Serialize)]
 struct Report {
-    metadata: Metadata,
+    metadata: ReportMetadata,
     image: String,
     width: u32,
     height: u32,
@@ -174,7 +154,7 @@ struct Report {
     stages: Vec<StageReport>,
     /// `detect_inner` minus the stages it directly contains — unlabelled work.
     unattributed_p50_ms: f64,
-    samples: Vec<TimingSample>,
+    samples: Vec<SpanTimingSample>,
 }
 
 fn measure_once(
@@ -182,14 +162,14 @@ fn measure_once(
     img: &image::GrayImage,
     corners: &[calib_targets::chessboard::ChessCorner],
     totals: &calib_targets_bench::span_timing::SpanTotals,
-) -> TimingSample {
+) -> SpanTimingSample {
     totals.clear();
     let view = gray_view(img);
     let start = Instant::now();
     let _ = detector.detect_with_corners(&view, corners);
     let detect_ms = start.elapsed().as_secs_f64() * 1000.0;
     let raw = totals.snapshot_ms();
-    TimingSample {
+    SpanTimingSample {
         spans: STAGE_SPANS
             .iter()
             .map(|&name| (name.to_owned(), span_ms(&raw, name)))
@@ -235,7 +215,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     for _ in 0..args.warmup {
         let _ = measure_once(&detector, &img, &corners, &totals);
     }
-    let samples: Vec<TimingSample> = (0..args.repeats)
+    let samples: Vec<SpanTimingSample> = (0..args.repeats)
         .map(|_| measure_once(&detector, &img, &corners, &totals))
         .collect();
 
@@ -290,19 +270,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     );
 
     let report = Report {
-        metadata: Metadata {
-            git_sha: command_output("git", &["rev-parse", "HEAD"]),
-            rustc: command_output("rustc", &["--version"]),
-            cpu: cpu_name(),
-            profile: if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            },
-            repeats: args.repeats,
-            warmup: args.warmup,
-            timing_source: "tracing span busy time",
-        },
+        metadata: ReportMetadata::new(
+            command_output("git", &["rev-parse", "HEAD"]),
+            args.repeats,
+            args.warmup,
+            "tracing span busy time",
+        ),
         image: args.image.display().to_string(),
         width,
         height,

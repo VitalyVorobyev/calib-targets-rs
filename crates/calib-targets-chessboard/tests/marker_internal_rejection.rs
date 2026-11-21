@@ -117,8 +117,7 @@ fn marker_internal_corners_never_labelled() {
     // labelled. On this pathological synthetic input — 25 markers placed only
     // ~3.5 px off the cell centres of a 20 px-pitch board — the topological
     // Delaunay walk is polluted enough that it may decline to recover the
-    // board (a miss). That recall difference vs. the retired seed-and-grow
-    // builder is allowed by the contract; what matters is that no marker
+    // board (a miss). A miss is allowed by the contract; what matters is that no marker
     // corner is ever mislabelled, which also holds when a board *is* recovered.
     // The real-image marker-rejection contract is the live charuco gate
     // `charuco::tests::private_dataset::flagship_rejects_reviewed_marker_bit_false_corners`.

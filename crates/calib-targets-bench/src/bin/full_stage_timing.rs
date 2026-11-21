@@ -48,7 +48,7 @@ use calib_targets::detect::{default_chess_config, detect_corners};
 use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_bench::baseline::{BaselineCorner, BaselineImage};
 use calib_targets_bench::overlay::{render_report_overlay_on_gray, MarkerQuad};
-use calib_targets_bench::span_timing::{command_output, cpu_name};
+use calib_targets_bench::span_timing::{command_output, ReportMetadata};
 use clap::Parser;
 use image::{GrayImage, ImageReader};
 use serde::Serialize;
@@ -242,19 +242,8 @@ struct ImageReport {
 }
 
 #[derive(Debug, Serialize)]
-struct Metadata {
-    git_sha: Option<String>,
-    rustc: Option<String>,
-    cpu: Option<String>,
-    profile: &'static str,
-    repeats: usize,
-    warmup: usize,
-    timing_source: &'static str,
-}
-
-#[derive(Debug, Serialize)]
 struct Report {
-    metadata: Metadata,
+    metadata: ReportMetadata,
     images: Vec<ImageReport>,
 }
 
@@ -699,19 +688,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
 
     let report = Report {
-        metadata: Metadata {
-            git_sha: command_output("git", &["rev-parse", "--short", "HEAD"]),
-            rustc: command_output("rustc", &["--version"]),
-            cpu: cpu_name(),
-            profile: if cfg!(debug_assertions) {
-                "debug"
-            } else {
-                "release"
-            },
-            repeats: args.repeats,
-            warmup: args.warmup,
-            timing_source: "wall_clock",
-        },
+        metadata: ReportMetadata::new(
+            command_output("git", &["rev-parse", "--short", "HEAD"]),
+            args.repeats,
+            args.warmup,
+            "wall_clock",
+        ),
         images,
     };
 

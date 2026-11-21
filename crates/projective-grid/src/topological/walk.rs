@@ -18,6 +18,7 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use nalgebra::{Point2, Vector2};
 
 use super::quads::Quad;
+use crate::lattice::rebase::rebase_to_origin;
 use crate::lattice::Coord;
 
 /// One connected labelled component returned by the walker.
@@ -303,27 +304,6 @@ fn linked_components(links: &[Vec<QuadLink>]) -> Vec<Vec<usize>> {
         out.push(members);
     }
     out
-}
-
-/// Rebase a labelled set so the bbox starts at (0, 0). Mutates in place.
-fn rebase_to_origin(labelled: &mut HashMap<Coord, usize>) {
-    if labelled.is_empty() {
-        return;
-    }
-    let mut min_u = i32::MAX;
-    let mut min_v = i32::MAX;
-    for c in labelled.keys() {
-        min_u = min_u.min(c.u);
-        min_v = min_v.min(c.v);
-    }
-    if min_u == 0 && min_v == 0 {
-        return;
-    }
-    let rebased: HashMap<Coord, usize> = labelled
-        .drain()
-        .map(|(c, v)| (Coord::new(c.u - min_u, c.v - min_v), v))
-        .collect();
-    *labelled = rebased;
 }
 
 /// Walk the quad mesh and produce one labelled component per connected

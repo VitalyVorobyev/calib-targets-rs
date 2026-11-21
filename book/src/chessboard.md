@@ -283,7 +283,5 @@ corner cloud detected and printed end to end — see
 cargo run -p calib-targets-chessboard --example detect_chessboard
 ```
 
-The per-image regression overlays for the `testdata/` set are emitted by
-the driver script `scripts/chessboard_regression_overlays.sh` and are
-wired into a `#[test]` harness at
+The `testdata/` regression set is wired into a `#[test]` harness at
 `crates/calib-targets-chessboard/tests/testdata_regression.rs`.

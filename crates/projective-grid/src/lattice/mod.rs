@@ -17,6 +17,7 @@ use nalgebra::{Point2, Vector2};
 
 pub mod hex;
 pub mod predict;
+pub(crate) mod rebase;
 pub mod square;
 
 pub use hex::Hex;
@@ -346,6 +347,17 @@ pub const HEX_AXIAL_OFFSETS: [Coord; 6] = hex::HEX_AXIAL_OFFSETS;
 
 /// Dihedral group D4 acting on square lattice coordinates.
 pub const D4_TRANSFORMS: [GridTransform; 8] = square::D4_TRANSFORMS;
+
+/// The dihedral group D4 in alignment-search order: the identity, the
+/// rotations as successive powers of `(u, v) -> (v, -u)`, then the four
+/// reflections in [`D4_TRANSFORMS`] order.
+///
+/// Rotation index `k < 4` is the inverse of `D4_TRANSFORMS[k]`; the first four
+/// entries are the orientation-preserving rotation subgroup `C4`. Component
+/// merge and every target detector's board-alignment search enumerate this
+/// table, so an index means the same transform everywhere and equal-score ties
+/// resolve identically.
+pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = square::GRID_TRANSFORMS_D4;
 
 /// Dihedral group D6 acting on hex axial coordinates.
 pub const D6_TRANSFORMS: [GridTransform; 12] = hex::D6_TRANSFORMS;

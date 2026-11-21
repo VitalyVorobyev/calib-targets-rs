@@ -19,7 +19,6 @@
 //!   whose visible component can be strongly anisotropic before final
 //!   recovery has filled the boundary.
 
-use super::cluster::{angular_dist_pi, wrap_pi, ClusterCenters};
 use crate::corner::{ClusterLabel, CornerAug, CornerStage};
 use crate::params::ChessboardParams;
 use calib_targets_core::AxisEstimate;
@@ -28,6 +27,7 @@ use projective_grid::expert::attachment::{
     Admit, FillEdgeCtx, GrowResult, LabelledNeighbour, SquareAttachPolicy,
 };
 use projective_grid::expert::fill::{fill_grid_holes, FillParams};
+use projective_grid::expert::orientation::{angular_dist_pi, wrap_pi, AxisClusterCenters};
 use std::collections::{HashMap, HashSet};
 
 /// Diagnostic returned by the recall-booster stage.
@@ -53,7 +53,7 @@ pub struct BoosterResult {
 pub(crate) fn apply_boosters_with_directional_edge_scale(
     corners: &mut [CornerAug],
     grow: &mut GrowResult,
-    centers: ClusterCenters,
+    centers: AxisClusterCenters,
     cell_size: f32,
     blacklist: &HashSet<usize>,
     params: &ChessboardParams,
@@ -248,7 +248,7 @@ fn vector_step_matches(
 fn apply_boosters_impl(
     corners: &mut [CornerAug],
     grow: &mut GrowResult,
-    centers: ClusterCenters,
+    centers: AxisClusterCenters,
     cell_size: f32,
     blacklist: &HashSet<usize>,
     params: &ChessboardParams,
@@ -306,7 +306,7 @@ fn apply_boosters_impl(
 struct ChessboardFillValidator<'a> {
     corners: &'a [CornerAug],
     blacklist: &'a HashSet<usize>,
-    centers: ClusterCenters,
+    centers: AxisClusterCenters,
     cell_size: f32,
     attach_tol_rad: f32,
     edge_tol_rad: f32,
@@ -448,7 +448,7 @@ fn label_to_u8(label: ClusterLabel) -> u8 {
 /// distance is smaller; require it to be within `tol`.
 fn infer_label_from_axes(
     axes: &[AxisEstimate; 2],
-    centers: ClusterCenters,
+    centers: AxisClusterCenters,
     tol: f32,
 ) -> Option<ClusterLabel> {
     let a0 = wrap_pi(axes[0].angle);
@@ -468,7 +468,7 @@ fn infer_label_from_axes(
     }
 }
 
-fn axes_match_centers(axes: &[AxisEstimate; 2], centers: ClusterCenters, tol: f32) -> bool {
+fn axes_match_centers(axes: &[AxisEstimate; 2], centers: AxisClusterCenters, tol: f32) -> bool {
     let a0 = wrap_pi(axes[0].angle);
     let a1 = wrap_pi(axes[1].angle);
     let canon_max = angular_dist_pi(a0, centers.theta0).max(angular_dist_pi(a1, centers.theta1));

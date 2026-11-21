@@ -22,7 +22,7 @@
 //!   stages and emits the match with **zero** diagnostic allocation.
 //! * [`diagnostics::match_board_diag`] — the introspection matcher, behind the
 //!   `diagnostics` feature. Runs the *same* stages and additionally fills a
-//!   [`diagnostics::BoardMatchDiagnostics`] record for overlays.
+//!   [`crate::diagnostics::BoardMatchDiagnostics`] record for overlays.
 //!
 //! The split is a sink: [`match_board_core`] is generic over a [`MatchSink`]
 //! and routes every diagnostic touchpoint through it. The production path
@@ -48,17 +48,11 @@ use hypothesis::{enumerate_hypotheses, hypothesis_to_alignment, Selection};
 use score_matrix::{build_score_matrix, ScoreMatrix};
 
 // `DiagHypothesis` is always compiled (the production matcher selects on it).
-// Its *public* exposure is gated by `detector/mod.rs`; re-exported `pub` here
-// so that gated `pub use` can reach it.
+// Its *public* exposure is the feature-gated `crate::diagnostics` module.
 pub use hypothesis::DiagHypothesis;
 
-// The diagnostics types are `pub` in the child module; re-export them `pub`
-// (and `match_board_diag` `pub(crate)`) so `detector/mod.rs`'s feature-gated
-// `pub use board_match::{...}` reaches the public surface.
 #[cfg(feature = "diagnostics")]
 pub(crate) use diagnostics::match_board_diag;
-#[cfg(feature = "diagnostics")]
-pub use diagnostics::{BoardMatchDiagnostics, CellBestMatch, CellDiag, RejectReason};
 
 /// Configuration of the board-level matcher.
 #[derive(Clone, Copy, Debug)]

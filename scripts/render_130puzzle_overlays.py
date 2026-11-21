@@ -239,8 +239,8 @@ def render_frame(
             fig.savefig(out_dir / filename, bbox_inches="tight", pad_inches=0.05)
             plt.close(fig)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 5), dpi=180)
-    for ax, (label, _, _) in zip(axes, methods):
+    fig, axes = plt.subplots(1, len(methods), figsize=(6 * len(methods), 5), dpi=180, squeeze=False)
+    for ax, (label, _) in zip(axes[0], methods):
         title = f"{label}: target_{frame.target_idx} snap {frame.snap_idx}"
         draw_overlay(
             ax,
@@ -291,8 +291,8 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=25.0,
         help=(
-            "ChESS-strength floor passed to the chessboard detector for both "
-            "methods. The workspace default is `0.0` (no filter); we use "
+            "ChESS-strength floor passed to the chessboard detector. "
+            "The workspace default is `0.0` (no filter); we use "
             "25.0 here to drop the blurred-region corners that make the "
             "overlay look noisier than the actual signal. Empirically this "
             "trades ~15%% labelled-count for noticeably cleaner detection "
@@ -308,7 +308,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--side-by-side-only",
         action="store_true",
-        help="Write only the combined SeedAndGrow/Topological overlay for each frame.",
+        help="Write only the combined overlay for each frame.",
     )
     parser.add_argument(
         "--label-grid",
@@ -361,7 +361,7 @@ def main() -> None:
         )
         print(
             f"target_{frame.target_idx} snap {frame.snap_idx}: "
-            f"v2={row['labelled']['SeedAndGrow']} topo={row['labelled']['Topological']}"
+            f"topo={row['labelled']['Topological']}"
         )
         rows.append(row)
     manifest = {

@@ -7,6 +7,17 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- `expert::lattice::GRID_TRANSFORMS_D4`: the D4 group in alignment-search
+  order (identity, rotations as powers of `(u, v) -> (v, -u)`, then the
+  reflections), the order component merge breaks ties in. Target detectors
+  that enumerate board alignments can share it, so a transform index means
+  the same thing everywhere.
+- `expert::component::{median_edge_length, max_axis_median_edge_length}`: the
+  upper-median cell-size estimators of a labelled component that component
+  merge uses, for detectors that size their own recovery stages.
+
 ## [0.14.5] - 2026-11-17
 
 ### Changed

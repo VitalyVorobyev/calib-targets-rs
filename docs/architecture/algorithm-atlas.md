@@ -42,7 +42,8 @@ The numerical bedrock: homography / projective fits and warps.
 | Core homography alias (N≥4) | `core homography.rs::estimate_homography_rect_to_img` | src/dst → `Homography` | Re-export of the canonical `pg` normalized DLT under the detector-facing frame name. | ✅ (single implementation) |
 | Perspective warp (gray) | `core homography.rs::warp_perspective_gray` | image + H + size → rectified image | Per-output-pixel inverse-map + bilinear sample. | ✅ |
 | Grid-position prediction | `pg lattice/predict.rs::predict_grid_position` | labelled neighbours + lattice → predicted position | Average opposite-neighbour midpoints across the lattice's axis families. | ✅ (canonical) |
-| Square prediction compatibility alias | `core grid_smoothness.rs::square_predict_grid_position` | labelled neighbours → predicted position | Thin square-lattice wrapper over the canonical `pg` predictor. | ✅ (no duplicate logic) |
+| Rebase to origin | `pg lattice/rebase.rs::rebase_to_origin` / `rebase_slice_to_origin` | labelled set → labelled set | Shift labels so the bounding-box minimum is `(0, 0)`; the one implementation behind every walk, merge, recovery and result normalisation. | ✅ |
+| Component cell size | `pg shared/cell_size.rs::median_edge_length` / `max_axis_median_edge_length` / `mean_cardinal_edge_length` | labelled component + positions → pitch px | Upper median of all forward cardinal edges (merge, chessboard `cell_size`); larger per-axis median (chessboard booster scale); sorted-order mean over both edge directions (validation, recovery schedule). | ✅ |
 
 Deep dive: homography conventions are documented in the canonical `pg`
 implementation and the image-aware core adapter. `core` holds no second solver —
@@ -104,7 +105,7 @@ detector feeds native ChESS dual axes (`Oriented2`). Deep dive:
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
 | Local geometric merge | `pg shared/merge.rs::merge_components_local` | labelled components + shared positions → merged | Reunite components under D4 symmetry via shortest label-space edge; keeps the labelling injective in both directions. | ✅ |
-| Shared-corner-index merge | `chess pipeline/recover.rs::merge_components_with_shared_corners` | two label maps → merged | Merge by shared *corner indices* under D4 (`core`'s `GRID_TRANSFORMS_D4`); runs after the boosters and is followed by a second geometric merge. | ✅ (chess-local) |
+| Shared-corner-index merge | `chess pipeline/recover.rs::merge_components_with_shared_corners` | two label maps → merged | Merge by shared *corner indices* under D4 (`GRID_TRANSFORMS_D4`, owned by `pg`); runs after the boosters and is followed by a second geometric merge. | ✅ (chess-local) |
 
 ## 7. Growth & recovery — the geometry-only engine
 
@@ -121,7 +122,6 @@ library-only orientation-free path.
 | Per-neighbour prediction | `pg shared/grow/predict.rs::predict_from_neighbours` | labelled neighbours → predicted px | Weighted average from K nearest labelled corners. | ✅ |
 | Interior hole fill | `pg shared/fill.rs::fill_grid_holes` | labelled + bbox + policy → attached count | Enumerate empty cells in bbox+skirt, attach via the grow ladder. | ✅ |
 | Chessboard boosters | `chess pipeline/boosters.rs::apply_boosters_with_directional_edge_scale` | component + policy → grown component | Wrap `fill_grid_holes` with a weak-cluster-rescue `SquareAttachPolicy`. | ✅ (chess-local) |
-| Directional edge scale | `chess pipeline/recover.rs::directional_edge_lengths` | component + positions → per-axis medians | Anisotropy-tolerant edge-length gate for boosters. | ✅ (chess-local) |
 | Local-H boundary extension | `pg shared/extension/local.rs::extend_via_local_homography` | candidate + K-nearest → attached | Per-candidate local homography, project + revalidate. | 📚 |
 | Recovery schedule | `pg shared/recovery_schedule.rs::run_schedule` | labelled + params → recovered (fixed point) | Iterate extend→fill→validate→drop until stable. Opt-in via `RecoverySchedule`. | 📚 |
 
@@ -172,7 +172,6 @@ with its alignment. Deep dive:
 | Grid smoothing (opt) | `charuco detector/grid_smoothness.rs::smooth_grid_corners` | corners + image → refined | Per-corner ChESS re-detect to tighten the grid. | ✅ |
 | Corner-ID assignment | `charuco detector/corner_mapping.rs::map_charuco_corners` | corners + alignment → `CharucoCorner`s | Map grid→board coords, look up charuco id, dedup per cell. | ✅ |
 | Homography corner refit | `charuco detector/corner_refit.rs::validate_and_fix_corners` | corners + inlier markers → refined | Global board→image H; flag deviating corners, re-detect via a ChESS ROI (the front end's localizer) sized by the locally predicted pitch; a re-detection must pass the same deviation test, one claimant per corner. | ✅ |
-| Marker-corner linkage check | `charuco link_check.rs::validate_marker_corner_links` | reported links + spec → violations | **Public** post-hoc check that a result matches the board definition. | ✅ (API) |
 | Multi-component merge | `charuco detector/merge.rs::merge_charuco_results` | per-component results → union | Dedup + union across grid components. | ✅ |
 
 ## 11. PuzzleBoard decode

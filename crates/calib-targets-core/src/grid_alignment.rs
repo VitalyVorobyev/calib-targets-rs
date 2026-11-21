@@ -62,20 +62,9 @@ pub fn cell_to_corner_alignment(cell_alignment: GridAlignment) -> GridAlignment 
     cell_alignment.with_translation([tx - offset[0], ty - offset[1]])
 }
 
-/// The 8 dihedral transforms `D4` on the integer grid.
-///
-/// The order intentionally matches the historical workspace table:
-/// index `1` is `(u, v) -> (v, -u)`.
-pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
-    projective_grid::expert::lattice::D4_TRANSFORMS[0],
-    projective_grid::expert::lattice::D4_TRANSFORMS[3],
-    projective_grid::expert::lattice::D4_TRANSFORMS[2],
-    projective_grid::expert::lattice::D4_TRANSFORMS[1],
-    projective_grid::expert::lattice::D4_TRANSFORMS[4],
-    projective_grid::expert::lattice::D4_TRANSFORMS[5],
-    projective_grid::expert::lattice::D4_TRANSFORMS[6],
-    projective_grid::expert::lattice::D4_TRANSFORMS[7],
-];
+/// The 8 dihedral transforms `D4` on the integer grid, in the workspace's
+/// alignment-search order: index `1` is `(u, v) -> (v, -u)`.
+pub use projective_grid::expert::lattice::GRID_TRANSFORMS_D4;
 
 /// The 4 rotations `C4` on the integer grid: the orientation-preserving
 /// (`determinant == +1`) subgroup of [`GRID_TRANSFORMS_D4`].
@@ -101,10 +90,10 @@ pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
 /// points `+x` and `+v` points `+y` in pixels); without that step the observed
 /// labelling can be an arbitrary element of `D4`.
 pub const GRID_TRANSFORMS_C4: [GridTransform; 4] = [
-    projective_grid::expert::lattice::D4_TRANSFORMS[0],
-    projective_grid::expert::lattice::D4_TRANSFORMS[3],
-    projective_grid::expert::lattice::D4_TRANSFORMS[2],
-    projective_grid::expert::lattice::D4_TRANSFORMS[1],
+    GRID_TRANSFORMS_D4[0],
+    GRID_TRANSFORMS_D4[1],
+    GRID_TRANSFORMS_D4[2],
+    GRID_TRANSFORMS_D4[3],
 ];
 
 #[cfg(test)]

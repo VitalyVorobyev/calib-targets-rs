@@ -9,17 +9,20 @@ use std::collections::{HashMap, HashSet};
 use crate::corner::ChessCorner;
 use calib_targets_core::{GridTransform, GRID_TRANSFORMS_D4};
 use nalgebra::{Point2, Vector2};
-use projective_grid::expert::component::merge_components_local;
+use projective_grid::expert::component::{
+    max_axis_median_edge_length, median_edge_length, merge_components_local,
+};
 use projective_grid::Coord;
 
 use super::boosters::{apply_boosters_with_directional_edge_scale, apply_geometry_only_recovery};
-use super::cluster::{cluster_axes, ClusterCenters};
+use super::cluster::cluster_axes;
 use super::geometry_check::run_geometry_check;
 use super::output::build_detection;
 use super::types::ChessboardDetection;
 use crate::corner::{CornerAug, CornerStage};
 use crate::params::ChessboardParams;
 use projective_grid::expert::attachment::GrowResult;
+use projective_grid::expert::orientation::AxisClusterCenters;
 
 pub(super) type LabelledComponent = HashMap<(i32, i32), usize>;
 
@@ -34,71 +37,6 @@ pub(super) struct RecoveryOutcome {
     /// [`RecoveryOutcome::axis_aware_additions`].
     #[cfg(feature = "diagnostics")]
     pub(super) geometry_only_additions: Vec<usize>,
-}
-
-/// Cardinal edge lengths (pixels) along the labelled `i` and `j` axes,
-/// returned as two separate per-axis lists.
-///
-/// This is the chessboard detector's own scale primitive. It deliberately does
-/// NOT reuse `projective_grid`'s `cell_size_of` (a single **mean** over all
-/// cardinal edges) because the chessboard cell-size estimators below are
-/// **median**-based (robust to the ragged blurred-region frontier) and
-/// **directional** (anisotropy-aware for the booster scale) — different choices
-/// for different reasons, not a duplicate to consolidate.
-fn directional_edge_lengths(
-    labelled: &LabelledComponent,
-    positions: &[Point2<f32>],
-) -> (Vec<f32>, Vec<f32>) {
-    let mut i_dists: Vec<f32> = Vec::new();
-    let mut j_dists: Vec<f32> = Vec::new();
-    for (&(i, j), &idx) in labelled.iter() {
-        let p = positions[idx];
-        if let Some(&right) = labelled.get(&(i + 1, j)) {
-            let q = positions[right];
-            i_dists.push(((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt());
-        }
-        if let Some(&down) = labelled.get(&(i, j + 1)) {
-            let q = positions[down];
-            j_dists.push(((q.x - p.x).powi(2) + (q.y - p.y).powi(2)).sqrt());
-        }
-    }
-    (i_dists, j_dists)
-}
-
-fn median(mut values: Vec<f32>) -> Option<f32> {
-    if values.is_empty() {
-        return None;
-    }
-    values.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    Some(values[values.len() / 2])
-}
-
-/// Global cell size of a labelled component: the median nearest-neighbour pixel
-/// distance over **all** labelled `i` and `j` cardinal edges. The conservative
-/// all-edge median is the final reported `cell_size` and the scale the geometry
-/// check runs against.
-fn estimate_cell_size_from_labels(labelled: &LabelledComponent, positions: &[Point2<f32>]) -> f32 {
-    let (mut dists, j_dists) = directional_edge_lengths(labelled, positions);
-    dists.extend(j_dists);
-    median(dists).unwrap_or(0.0)
-}
-
-/// Booster scale for a labelled component: the **larger** of the two per-axis
-/// medians. The topological walk can produce components whose visible axes are
-/// strongly anisotropic under perspective; using the all-edge median as the
-/// booster scale would make the longer axis fail the shared edge-length gate,
-/// so recovery uses the larger directional median while the reported
-/// `cell_size` keeps the conservative all-edge median above.
-fn estimate_recovery_cell_size_from_labels(
-    labelled: &LabelledComponent,
-    positions: &[Point2<f32>],
-) -> f32 {
-    let (i_dists, j_dists) = directional_edge_lengths(labelled, positions);
-    match (median(i_dists), median(j_dists)) {
-        (Some(i), Some(j)) => i.max(j),
-        (Some(v), None) | (None, Some(v)) => v,
-        (None, None) => 0.0,
-    }
 }
 
 /// Mean step vectors along the labelled `i` and `j` axes.
@@ -159,7 +97,7 @@ fn estimate_grid_steps(
 pub(super) fn clustered_augs(
     corners: &[ChessCorner],
     params: &ChessboardParams,
-) -> (Vec<CornerAug>, Option<ClusterCenters>) {
+) -> (Vec<CornerAug>, Option<AxisClusterCenters>) {
     let min_corner_strength = params.min_corner_strength;
     // Same admission rule as the `topological_inputs` prefilter — a corner may
     // only vote in axis clustering if its axis is determined at least as
@@ -285,11 +223,8 @@ fn shared_corner_alignment(
 /// transform + offset), whereas the geometric merge aligns by *position
 /// agreement*. Neither subsumes the other, so both run.
 ///
-/// It stays in the chessboard crate — rather than moving to `projective-grid` —
-/// because it needs [`calib_targets_core::GRID_TRANSFORMS_D4`], and
-/// `projective-grid` is standalone (no workspace deps). With a single caller
-/// and a criterion distinct from the geometric merge, duplicating a D4 table
-/// into `projective-grid` to host it there is not worth the coupling.
+/// It stays in the chessboard crate: it has a single caller and a criterion
+/// distinct from the geometric merge.
 fn merge_components_with_shared_corners(
     components: Vec<LabelledComponent>,
     min_overlap: usize,
@@ -313,11 +248,11 @@ fn merge_components_with_shared_corners(
     out
 }
 
-/// Synthetic [`ClusterCenters`] derived from labelled grid step directions.
-fn cluster_centers_from_grid(axis_i: Vector2<f32>, axis_j: Vector2<f32>) -> ClusterCenters {
+/// Synthetic [`AxisClusterCenters`] derived from labelled grid step directions.
+fn cluster_centers_from_grid(axis_i: Vector2<f32>, axis_j: Vector2<f32>) -> AxisClusterCenters {
     let theta0 = axis_i.y.atan2(axis_i.x);
     let theta1 = axis_j.y.atan2(axis_j.x);
-    ClusterCenters::new(theta0, theta1)
+    AxisClusterCenters::new(theta0, theta1)
 }
 
 #[cfg_attr(
@@ -332,7 +267,7 @@ pub(super) fn recover_topological_components(
     merged_components: &[LabelledComponent],
     positions: &[Point2<f32>],
     base_augs: &[CornerAug],
-    clustered_centers: Option<ClusterCenters>,
+    clustered_centers: Option<AxisClusterCenters>,
     params: &ChessboardParams,
 ) -> RecoveryOutcome {
     let mut boosted_components: Vec<LabelledComponent> = Vec::new();
@@ -341,7 +276,7 @@ pub(super) fn recover_topological_components(
     for component_labels in merged_components {
         let blacklist = HashSet::new();
         let mut labelled = component_labels.clone();
-        let cell_size = estimate_cell_size_from_labels(&labelled, positions);
+        let cell_size = median_edge_length(&labelled, positions);
         let (axis_i, axis_j) = estimate_grid_steps(&labelled, positions);
         let centers =
             clustered_centers.unwrap_or_else(|| cluster_centers_from_grid(axis_i, axis_j));
@@ -370,8 +305,7 @@ pub(super) fn recover_topological_components(
 
         if clustered_centers.is_some() && cell_size > 0.0 {
             let before: HashSet<usize> = grow.labelled.values().copied().collect();
-            let recovery_cell_size =
-                estimate_recovery_cell_size_from_labels(&grow.labelled, positions);
+            let recovery_cell_size = max_axis_median_edge_length(&grow.labelled, positions);
             let _ = apply_boosters_with_directional_edge_scale(
                 &mut augs,
                 &mut grow,
@@ -455,7 +389,7 @@ pub(super) fn build_topological_detections(
     final_components: Vec<LabelledComponent>,
     positions: &[Point2<f32>],
     base_augs: &[CornerAug],
-    clustered_centers: Option<ClusterCenters>,
+    clustered_centers: Option<AxisClusterCenters>,
     params: &ChessboardParams,
 ) -> Vec<ChessboardDetection> {
     let mut out: Vec<ChessboardDetection> = Vec::new();
@@ -468,7 +402,7 @@ pub(super) fn build_topological_detections(
             clustered_centers.unwrap_or_else(|| cluster_centers_from_grid(axis_i, axis_j));
         let mut augs = base_augs.to_vec();
         mark_labelled(&mut augs, &labelled);
-        let cell_size = estimate_cell_size_from_labels(&labelled, positions);
+        let cell_size = median_edge_length(&labelled, positions);
         // Topological recovery: the labels' parity convention is set
         // by `align_label_parity` (when applicable); no parity shift
         // needed here. See the other GrowResult initializer above for

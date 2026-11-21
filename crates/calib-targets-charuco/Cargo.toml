@@ -41,6 +41,7 @@ calib-targets-chessboard.workspace = true
 calib-targets-aruco.workspace = true
 chess-corners = { workspace = true, features = ["rayon"] }
 nalgebra.workspace = true
+projective-grid.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true
@@ -52,7 +53,6 @@ env_logger = { workspace = true, optional = true }
 image.workspace = true
 tempfile.workspace = true
 calib-targets = { path = "../calib-targets" }
-projective-grid.workspace = true
 criterion.workspace = true
 
 [[example]]

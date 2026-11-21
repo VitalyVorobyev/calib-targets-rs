@@ -20,8 +20,8 @@ use tracing::instrument;
 /// Always compiled: this is not a diagnostics-only record but the core
 /// hypothesis-selection result the production matcher consumes (it is turned
 /// into the chosen `GridAlignment` and its `score` drives the margin gate).
-/// Only its *exposure* on the public diagnostics surface is feature-gated
-/// (see `detector/mod.rs`).
+/// Only its *exposure* on the public diagnostics surface
+/// (`crate::diagnostics`) is feature-gated.
 #[derive(Clone, Copy, Debug)]
 #[cfg_attr(feature = "diagnostics", derive(Serialize))]
 pub struct DiagHypothesis {
@@ -170,7 +170,9 @@ struct HypothesisScore {
     /// `Σ w · bits² · ln 2` over the same cells: the evidence they would
     /// carry if each read its expected marker perfectly.
     capacity: f32,
-    /// Number of those cells (with non-zero weight).
+    /// Number of those cells (with non-zero weight). Read only by the
+    /// diagnostics surface (`DiagHypothesis::contributing_cells`).
+    #[cfg(feature = "diagnostics")]
     contributing: usize,
 }
 
@@ -210,6 +212,7 @@ fn score_hypothesis(
     HypothesisScore {
         evidence,
         capacity,
+        #[cfg(feature = "diagnostics")]
         contributing,
     }
 }
