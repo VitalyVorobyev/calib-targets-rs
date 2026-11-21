@@ -1,15 +1,10 @@
 # Command reference
 
-The everyday gate (format, lint, test, docs) lives in `.claude/CLAUDE.md`.
-This file is the full catalogue of build, example, benchmark, and binding
-commands for the workspace.
+The everyday gate lives in `.claude/CLAUDE.md` ("Everyday gate"); the
+pre-release checklist is [release-gates.md](release-gates.md). This file is the
+catalogue of build, example, benchmark, and binding commands.
 
-## Core gate
-
-The everyday gate (`cargo fmt --all --check`, clippy with `-D warnings`,
-`cargo test --workspace`, zero-warning `cargo doc --workspace --no-deps`) is
-defined once, in the "Everyday gate" section of `.claude/CLAUDE.md`; the full
-pre-release checklist is [release-gates.md](release-gates.md). Extras:
+## Extra checks
 
 ```bash
 cargo test --workspace --all-features
@@ -67,12 +62,12 @@ bash scripts/run-perf-campaign.sh
 # Whole-workspace criterion micro-benches
 cargo bench --workspace
 
-# Criterion: PuzzleBoard detection timing across board sizes (Full vs KnownOrigin fast path)
+# Criterion: PuzzleBoard detection timing across board sizes (`PuzzleBoardSearchMode::Full` vs `FixedBoard`)
 cargo bench -p calib-targets --bench puzzleboard_sizes
 ```
 
 The grid bench harness (`calib-targets-bench`) selector is documented in
-[detection-pipeline.md](detection-pipeline.md#bench-harness-selector); profiling
+[debugging.md](debugging.md); profiling
 how-to + the bottleneck ranking live in [profiling.md](profiling.md) and
 [performance.md](performance.md).
 

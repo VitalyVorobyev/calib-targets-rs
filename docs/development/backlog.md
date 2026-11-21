@@ -16,12 +16,7 @@ here.
 
 | Item | What | Sev | Effort | API |
 |---|---|---|---|---|
-| [B-2](#b-2) | `scan.marker_size_rel` repairs on a sentinel that is never set — **resolved** | — | — | — |
 | [B-3](#b-3) | The soft ChArUco path reports a `hamming` it did not compute | P3 | S | none |
-| [B-4](#b-4) | Covariance cost: upstream `chess-corners` API asks — **resolved** | — | — | — |
-| [B-5](#b-5) | Config knobs that nothing reads — **resolved** | — | — | — |
-| [B-6](#b-6) | Two corner-strength floors on one response — **kept, roles documented** | P3 | — | none |
-| [B-7](#b-7) | "Board not found" is reported differently on every surface — **resolved** | — | — | — |
 | [B-8](#b-8) | Bindings mirror Rust params and defaults by hand | P2 | L | semver |
 | [B-9](#b-9) | PuzzleBoard binding helpers fix `cell_size = 1` and require unused `rows`/`cols` | P2 | S | semver |
 | [B-10](#b-10) | Binding and tooling parity gaps | P2 | M | additive |
@@ -34,39 +29,15 @@ here.
 | [B-17](#b-17) | `#[non_exhaustive]` + constructor convention gaps | P3 | S | semver |
 | [B-18](#b-18) | The accuracy suite does not test covariance calibration | P3 | M | none |
 | [B-19](#b-19) | Upstream `chess-corners` findings from the real-data localizer study | P3 | S | none |
+| [B-20](#b-20) | Hand-maintained mirrors next to the generated schemas | P2 | M | internal-safe |
+| [B-21](#b-21) | Two parallel recovery engines | P2 | L | internal-safe |
+| [B-22](#b-22) | Overlay renderer sprawl | P3 | M | none |
+| [B-23](#b-23) | Unreferenced scripts and tools | P3 | S | none |
+| [B-24](#b-24) | Source files over ~1000 lines | P3 | M | internal-safe |
+| [B-25](#b-25) | Vestigial algorithm slug in the bench | P3 | S | none |
+| [B-26](#b-26) | PuzzlePole lives in the PuzzleBoard crate | P3 | M | semver |
 
 ---
-
-## <a id="b-2"></a>B-2 · `scan.marker_size_rel` repairs on an unset-sentinel that is never unset — **resolved**
-
-Resolved in 0.16 with B-5: `CharucoParams` no longer carries a scan block;
-the marker size and ring come from the board, and `inset_frac` is the one
-sampling knob.
-
-**Sev P2 · Effort S · API semver (behaviour)**
-
-- **Problem.** `CharucoDetector::new` fills `scan.marker_size_rel` from the
-  board only `if !is_finite() || <= 0.0`. `ScanDecodeConfig::default()` sets it
-  to `1.0`, so the repair never fires for a defaulted scan block — the same
-  shape of defect as the `border_bits` one fixed in 0.14.0, and the same two
-  reachable paths (reassigning `params.board`, or deserialising a config that
-  names the board and omits `scan`, which is what the Python bindings take).
-  A board with `marker_size_rel = 0.75` is then sampled as if the marker filled
-  the whole square.
-- **Why it was not fixed alongside `border_bits`.** Scope: it changes sampling
-  *geometry* rather than a ring predicate, so it needs its own before/after on
-  the regression sets rather than riding a fix whose default-path output is
-  byte-identical.
-- **Fix.** Same argument: `marker_size_rel` describes the printed target, so
-  derive it from `CharucoBoardSpec` unconditionally and document
-  `scan.marker_size_rel` as derived, exactly as `border_bits` now is. Then
-  audit `ScanDecodeConfig` for any *other* field a ChArUco detector should be
-  deriving rather than accepting.
-- **Evidence to gather first.** Measure what a mismatch actually costs before
-  changing it. For `border_bits` the answer was surprising — a synthetic
-  `border_bits = 3` board still decoded at hamming 0 with a one-cell ring
-  configured, because the inset grid lands inside the payload either way — so
-  do not assume `marker_size_rel` behaves as the arithmetic suggests either.
 
 ## <a id="b-3"></a>B-3 · The soft ChArUco path reports `hamming` it did not compute
 **Sev P3 · Effort S · API none**
@@ -76,87 +47,12 @@ sampling knob.
   the legacy per-marker matcher (`aruco matcher.rs`) computes. The board-level
   matcher does not decode per marker — it scores soft per-cell likelihoods and
   picks an alignment — yet its markers still carry the field, reading `0`.
-  A `0` there is not evidence of a clean decode, and it was read as such while
-  investigating the `border_bits` derivation (a board sampled with the wrong
-  ring reported `hamming = 0` for every marker).
+  A `0` there is not evidence of a clean decode (a board sampled with the wrong
+  ring reports `hamming = 0` for every marker).
 - **Fix.** Either compute the real distance on the board-match path, or make
   the field `Option<u8>` / document it as legacy-matcher-only so a `0` cannot
   be mistaken for a verified decode. The second is cheaper and honest; the
   first is more useful for diagnostics.
-
-## <a id="b-4"></a>B-4 · Position-covariance cost: upstream `chess-corners` API asks — **resolved**
-
-Resolved by `chess-corners` 2.0 and the 0.16 migration. The covariance is off
-by default (`Uncertainty::Off`), so the default pays nothing for it. Ask 1
-shipped as `Detector::last_noise_sigma()`, which the corner front end now reads
-instead of estimating the noise itself; upstream skips the Jacobians when its
-own estimate declines (Ask 2). Ask 3 (covariance for selected corners after the
-fact) is moot while the covariance is opt-in.
-
-## <a id="b-5"></a>B-5 · Config knobs that nothing reads — **resolved**
-
-Resolved in 0.16 (see `docs/migrations/0.16.0.md`).
-
-**Sev P2 · Effort S · API semver**
-
-- **Problem.** Fields users can set — and docs used to tell them to tune — with
-  no effect on detection:
-  - `PuzzleBoardParams.px_per_square`: declared, defaulted, plumbed through
-    Python and the C ABI, never read by the PuzzleBoard detector.
-  - `CharucoParams.scan.{min_border_score, dedup_by_id, multi_threshold}`: the
-    ChArUco matcher calls only `aruco::sample_cell`, which reads
-    `border_bits`, `marker_size_rel` and `inset_frac`. `for_board` still sets
-    `min_border_score`.
-  - `aruco::ArucoScanConfig`: an all-`Option` copy of `ScanDecodeConfig`, used
-    only by the bench and an example.
-  - Python `ChessboardParams.chess`: exists only in Python, ignored by
-    `detect_chessboard` (the corner config is a separate argument).
-  - Python `OrientationClusteringParams`, `GridGraphParams`,
-    `OrientationHistogram`, `GridGraph*`, `ChessboardDebug`: no Rust
-    counterpart.
-- **Fix.** Remove them (one 0.x minor). For ChArUco, replace `scan` with the
-  one field the user has a reason to set (`inset_frac`) and derive the rest from
-  the board — the audit B-2 asks for.
-
-## <a id="b-6"></a>B-6 · Two corner-strength floors on one response — **kept, roles documented**
-**Sev P3 · Effort — · API none**
-
-- **What was claimed.** `default_chess_config()` accepts ChESS responses ≥ 15
-  and `ChessboardParams.min_corner_strength` (33) then drops those below 33, so
-  "lowering the ChESS threshold does nothing unless `min_corner_strength` is
-  lowered too".
-- **What the code does (checked for 0.16).** On the default image path the
-  claim holds in effect: a corner below `min_corner_strength` never reaches the
-  `Strong` stage, so it is neither triangulated nor eligible for any recovery
-  booster. But the two floors have different jobs, and merging them breaks one:
-  - `min_corner_strength` is the chessboard detector's own admission floor for
-    **any** corner cloud, including the custom clouds `ChessboardDetector::detect`
-    and every `*_with_corners` entry point accept. Moving it into the ChESS
-    config would leave those callers with no floor.
-  - The ChESS `threshold` gates the image pass only, and it also shapes
-    non-maximum suppression (`min_cluster_size` counts above-threshold pixels),
-    so raising it to 33 to make it the one floor can change which peaks
-    survive — a label-moving change with no principled gain.
-- **Decision.** Keep both; `min_corner_strength` is the knob that binds and the
-  docs say so (book tuning, the Python `ChessConfig` docstring, the chessboard
-  README). Revisit only if a measured benefit appears — e.g. corner-pass time
-  spent on corners the admission floor discards.
-
-## <a id="b-7"></a>B-7 · "Board not found" is reported differently on every surface — **resolved**
-
-Resolved in 0.16: `DetectError::is_not_found()`; `None` / `null` for a miss
-and `ValueError` / a thrown error for a misuse in Python and WASM.
-
-**Sev P2 · Effort M · API semver**
-
-- **Problem.** Rust: a miss is one of ~10 nested `DetectError` variants with no
-  `is_not_found()`. Python: `None` for chessboard and marker board,
-  `RuntimeError` for ChArUco / PuzzleBoard / pole; `detect_chessboard` also
-  maps an invalid config to `None`. WASM: `null` or a throw, same split. FFI:
-  `CT_STATUS_NOT_FOUND` vs `CONFIG_ERROR` — the only surface that separates a
-  miss from a misuse.
-- **Fix.** `DetectError::is_not_found()`; one convention per binding (Python:
-  `None` for a miss, a `ConfigError` exception for misuse; WASM likewise).
 
 ## <a id="b-8"></a>B-8 · Bindings mirror Rust params and defaults by hand
 **Sev P2 · Effort L · API semver (Python/TS)**
@@ -248,9 +144,6 @@ and `ValueError` / a thrown error for a misuse in Python and WASM.
   the chessboard rectifiers).
 - Edge-length / step statistics ~8×; `square_detector::estimate_cell_size`
   is the one that summed in hash order.
-- Two DLT solvers: `geometry::estimate_projective` (unnormalised, used by
-  `shared/fit.rs` and `check`) and `geometry::estimate_homography`
-  (Hartley-normalised); the atlas says `shared::fit` uses the latter.
 - The reordered D4 table 3× (core, `shared/merge.rs`, bench); the chessboard
   `recover.rs` comment that keeps its merge local because pg lacks the table is
   stale.
@@ -259,7 +152,7 @@ and `ValueError` / a thrown error for a misuse in Python and WASM.
 - Hex vs square: component split, residual-drop fit (hex swallows errors with
   `.ok()`), solution assembly.
 - **Fix.** One `rebase_to_origin`, `bbox`, per-axis edge-vector helper, one
-  DLT, one exported D4 table.
+  exported D4 table.
 
 ## <a id="b-15"></a>B-15 · Print target specs mirror detector board specs
 **Sev P2 · Effort M · API semver**
@@ -297,7 +190,7 @@ chessboard trace types, `DiagHypothesis`; `PuzzleBoardDecodeInfo` has no
 constructor.
 
 ## <a id="b-18"></a>B-18 · The accuracy suite does not test covariance calibration
-**Sev P3 · Effort M · API none** (was P2; lowered in 0.16 — see "Status" below)
+**Sev P3 · Effort M · API none**
 
 - **Problem.** `tests/accuracy.rs` bounds σ̂₀² from above only. No lower bound
   (over-conservative covariances pass), no χ²₂ coverage (fraction of corners
@@ -305,20 +198,8 @@ constructor.
   computed but not asserted; the noise estimate is printed, not compared to the
   rendered σ. Corners whose error exceeds `MATCH_RADIUS_PX` (1 px) drop out of
   both RMSE and σ̂₀², so an overconfident gross error is invisible.
-- **Why first.** Any use of the covariance *in* detection (algorithmic gaps)
-  needs this evidence that the covariance is calibrated on each family and
-  refiner.
 - **Fix.** A coverage band and a two-sided σ̂₀² band per family × refiner;
   count correctly labelled corners beyond the match radius as their own metric.
-- **Status (0.16).** The premise, the covariance used *in* detection or as a
-  corner filter, was tested directly on real calibration images.
-  - σ is close to constant across real corners.
-  - Dropping the corners with the largest σ did not lower held-out error.
-  - Even an oracle that drops each view's worst held-out corners barely moved
-    the calibration.
-
-  The covariance stays a report (book: uncertainty page), so this item is
-  suite hygiene now, not a prerequisite.
 
 ## <a id="b-19"></a>B-19 · Upstream `chess-corners` findings from the real-data localizer study
 **Sev P3 · Effort S · API none**
@@ -336,3 +217,64 @@ this item when they are resolved.
 - **The `edge_width` estimate saturates on blurred corners.** It compresses a
   wide range of measured edge blur into a narrow one, so an adaptive window
   driven by it would barely adapt.
+
+## <a id="b-20"></a>B-20 · Hand-maintained mirrors next to the generated schemas
+**Sev P2 · Effort M · API internal-safe**
+
+- **Problem.** `schemas/*.json` are generated, but field metadata is restated by
+  hand in `crates/calib-targets-studio/src/routes/params_schema.rs`,
+  `crates/calib-targets-py/python/calib_targets/config.py` and
+  `crates/calib-targets-wasm/typescript-extras.d.ts`.
+- **Fix.** Generate the field metadata from the schemars output.
+
+## <a id="b-21"></a>B-21 · Two parallel recovery engines
+**Sev P2 · Effort L · API internal-safe**
+
+- **Problem.** The chessboard's `pipeline/boosters.rs` + `recover.rs` and
+  `projective-grid`'s `RecoverySchedule` implement the same boundary-extension /
+  interior-fill idea twice.
+- **Fix.** Converge on one engine.
+
+## <a id="b-22"></a>B-22 · Overlay renderer sprawl
+**Sev P3 · Effort M · API none**
+
+- **Problem.** Overlays are drawn by the bench `overlay.rs`,
+  `tools/plot_*_overlay.py`, `crates/calib-targets-py/examples/overlay_*.py` and
+  `scripts/render_*_overlays.py`.
+- **Fix.** Consolidate on the bench overlay plus one shared Python helper.
+
+## <a id="b-23"></a>B-23 · Unreferenced scripts and tools
+**Sev P3 · Effort S · API none**
+
+- **Problem.** Nothing references `scripts/puzzlesnap_overlay.sh`,
+  `scripts/puzzlesnap_plot.sh`, `scripts/run-topo-bench.sh`,
+  `scripts/topological_report.py`, `tools/stereodata.py`, `tools/runxfeat.py`,
+  `tools/render_opencv_charuco_labeled.py`.
+- **Fix.** Delete them or move them under `research/`.
+
+## <a id="b-24"></a>B-24 · Source files over ~1000 lines
+**Sev P3 · Effort M · API internal-safe**
+
+- **Problem.** Past the ~1000-line split rule: `calib-targets-wasm/src/lib.rs`,
+  `projective-grid/src/topological/square_detector.rs`,
+  `projective-grid/src/orient.rs`,
+  `calib-targets-puzzleboard/src/detector/pipeline.rs`,
+  `calib-targets-print/src/render.rs`, `calib-targets-py/src/lib.rs`,
+  `projective-grid/src/shared/validate/wrong_label_filters.rs`,
+  `calib-targets-print/src/render_dxf.rs`, `calib-targets-aruco/src/scan.rs`.
+- **Fix.** Split each along its natural seams.
+
+## <a id="b-25"></a>B-25 · Vestigial algorithm slug in the bench
+**Sev P3 · Effort S · API none**
+
+- **Problem.** `ALGORITHM_SLUG` in `crates/calib-targets-bench/src/bin/bench/cli.rs`
+  and the `algorithm` parameter of `scripts/evaluate_topo_grid_regression.py`
+  carry a single constant ("topological"): the bench has one grid builder.
+- **Fix.** Drop both at the next baseline re-bless.
+
+## <a id="b-26"></a>B-26 · PuzzlePole lives in the PuzzleBoard crate
+**Sev P3 · Effort M · API semver**
+
+- **Problem.** `crates/calib-targets-puzzleboard/src/pole/` is a separate target
+  family inside the PuzzleBoard crate.
+- **Fix.** Optionally split it into its own crate (lowest priority).

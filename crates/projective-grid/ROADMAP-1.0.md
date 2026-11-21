@@ -1,7 +1,7 @@
 # Road to `projective-grid` 1.0
 
-The crate remains on the independent `0.14.x` line. The ordinary facade is
-already the intended shape:
+The crate is versioned on its own `0.x` line, independent of the workspace.
+The ordinary facade is the intended 1.0 shape:
 
 ```rust
 let request = DetectionRequest::new(lattice, evidence)
@@ -12,9 +12,9 @@ let detection = detect_grid(request)?;
 
 Before 1.0:
 
-1. establish real-image evidence for Square `Positions` / `Oriented1` and all
-   Hex paths;
-2. freeze or narrow the `expert` surface;
+1. real-image evidence for the experimental evidence kinds — Gap 21 in
+   [`algorithmic_gaps.md`](../../docs/algorithms/algorithmic_gaps.md);
+2. an API-surface pass that makes `expert` a compatibility boundary — Gap 22;
 3. complete a public-API and semver audit against the latest published 0.x;
 4. publish and exercise a release candidate.
 

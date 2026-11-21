@@ -78,9 +78,9 @@ shipped maps. Two consequences fall out rather than being asserted:
 
 ## 4. Verifying the paper's table
 
-The issue asked for the paper's Table 1 to be verified against the shipped
-author maps rather than transcribed. It was. `is_seamless` re-derives it, and
-`pole::periods::tests` pins the result:
+The paper's Table 1 is verified against the shipped author maps rather than
+transcribed: `is_seamless` re-derives it, and `pole::periods::tests` pins the
+result:
 
 | period | paper `start y` | closes? | every seamless start row over the master |
 |---|---|---|---|
@@ -119,7 +119,7 @@ tests:
 ### A start row names a pattern modulo 501, not modulo 167
 
 Seamlessness depends on `map_b` only through `start_row % 167`, which makes it
-tempting to store the reduction. **That is wrong, and it was wrong here first.**
+tempting to store the reduction. **That is wrong.**
 `map_a` is indexed by `start_row % 3` and the checkerboard colour by
 `start_row % 2`, and 167 is neither even nor a multiple of 3 — so `s`, `s + 167`
 and `s + 334` are three *different patterns* that all close.
@@ -276,11 +276,11 @@ repetition does *not* extend past the overlap.
 
 ## 7. Pole identity
 
-The axial start column is what distinguishes one pole from another. Poles cut
-from **disjoint corner-column windows** of the 501-wide master share no corner,
-so a decoded corner ID identifies its pole as well as its place on it —
-the paper's "each corner point can only belong to one PuzzlePole".
-`PuzzlePoleSpec::distinct_poles` enumerates that family.
+Poles cut from **disjoint corner-column windows** of the 501-wide master share
+no corner, so a decoded corner ID identifies its pole
+(`PuzzlePoleSpec::distinct_poles` enumerates that family). Whether the detector
+can actually tell poles apart is open: see Gap 25 in
+[`algorithmic_gaps.md`](algorithmic_gaps.md).
 
 ## 8. Routing the decode
 
@@ -308,10 +308,10 @@ where `assemble_global_runner_up` is an assembly of per-family maxima.
 Two consequences worth stating, because they are not obvious:
 
 - **The period must be threaded as data, not as a constant.**
-  `decode/tables.rs` carries `const _: () = assert!(H_ROWS == LONG && V_COLS == LONG)`
-  — a compile-time statement that the two families *share* a long axis. That
-  assertion is precisely what a pole breaks. Only the H family's long period
-  changes (167 to `p`) and only its packed pattern table is derived; the short
+  `decode/tables.rs` fixes only the short axis at compile time
+  (`const _: () = assert!(H_COLS == SHORT && V_ROWS == SHORT)`); each family's
+  long period travels at runtime in a `CodeGeometry`. Only the H family's long
+  period changes (167 to `p`) and only its packed pattern table is derived; the short
   axis stays 3 in all four positions, and `map_a` is used **verbatim** provided
   the decoder keeps its internal circumference coordinate in master-row units
   taken mod `p`. Converting to a seam-relative index at the output boundary is
@@ -332,9 +332,9 @@ the full write-up at
 [`report/puzzlepole-floor.md`](../../research/puzzleboard-rings/report/puzzlepole-floor.md).
 The constants below are outputs of that measurement, not choices.
 
-`min_window = 7` was measured for the *planar* master over its 251 001
-positions. A pole's position space is `p × axial extent`, so the floor had to be
-re-measured rather than inherited.
+`min_window = 7` is the floor for the *planar* master over its 251 001
+positions. A pole's position space is `p × axial extent`, so its floor is
+measured separately.
 
 **The answer is a 2-D frontier, not a scalar**, because the two axes have
 different periods and a pole fragment is naturally wide-and-short. Clean on
@@ -367,8 +367,7 @@ period and both groups**. A fragment of `span_y` corner rows subtends
 
 A cylinder shows roughly 120–140° before the limb foreshortens the pattern past
 detection — a stated modelling assumption, the one input here not derived from
-the maps. So **every supported period is single-view decodable**, refuting the
-expectation that p = 12 might not be. But p = 12 needs *exactly* the
+the maps. So **every supported period is single-view decodable**. But p = 12 needs *exactly* the
 conservative 120°, with no margin, **and only at the wide corner of its
 frontier**: its square-ish points cost 180° (`7 × 5`) and 150° (`6 × 6`), both
 impossible from one view.
@@ -389,16 +388,9 @@ is measured, so it is not the threshold-tightening the contract forbids.
 
 ## 10. Still open
 
-- **Grid assembly on a curved surface** — **measured, and it does not fire.**
-  §6 localised the risk to `shared/validate/lines.rs`, which fits *straight*
-  lines to grid rows and columns while a cylinder's circumferential rows project
-  to conics. Rendering analytic cylinders and running the real grid builder over
-  them shows a single component and essentially total labelling at both the
-  smallest and largest shipped circumference, across axis tilts to 45° — see
-  Gap 24 in [`algorithmic_gaps.md`](algorithmic_gaps.md) for the numbers and
-  for the conditions under which it should be re-checked. The sagitta estimate
-  that raised the alarm was pessimistic: the tolerance is relative to the local
-  cell size, which foreshortens along with the residual it bounds.
+- **Grid assembly on a curved surface.** Straight-line validation on a
+  cylinder's conic-projected rows: see Gap 24 in
+  [`algorithmic_gaps.md`](algorithmic_gaps.md).
 - **The colour bit is not modelled** in the floor measurement, matching the
   planar harness: a dot readout carries no parity. Withholding information can
   only raise a floor, so every number above is an upper bound.

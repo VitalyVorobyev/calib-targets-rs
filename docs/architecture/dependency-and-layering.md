@@ -20,15 +20,15 @@ upstream ChESS corner detector; every detector depends on it. Internal edges onl
           marker ─────────────────────────┘     → core, chessboard
                 ▲
  L4  print → core, aruco, charuco, marker, puzzleboard
-     calib-targets (facade) → all detectors + print
+     calib-targets (facade) → core, all detectors, print
                 ▲
- L5  ffi → facade      py → facade      wasm → facade + all detectors + print
+ L5  ffi → facade      py → facade      wasm → facade, core, all detectors, print
      bench → facade, chessboard, core, projective-grid      studio → facade, bench, chessboard
 ```
 
-It is a **clean acyclic graph with no cycles** — the crate boundaries are sound,
-and every numerical primitive lives in the lowest crate that needs it, so the
-layering itself never forces a second implementation.
+It is a **clean acyclic graph**, and every canonical numerical primitive lives in
+the lowest crate that needs it, so the layering never forces a second
+implementation.
 
 | Crate | Layer | Internal prod deps | Role |
 |---|---|---|---|
@@ -40,85 +40,53 @@ layering itself never forces a second implementation.
 | `calib-targets-puzzleboard` | L3 | core, chessboard | Self-identifying chessboard. |
 | `calib-targets-marker` | L3 | core, chessboard | Checkerboard + 3-circle board. |
 | `calib-targets-print` | L4 | core, aruco, charuco, marker, puzzleboard | Printable-target generation (not a detector). |
-| `calib-targets` | L4 | all detectors + print | Facade + CLI. |
-| `ffi` / `py` / `wasm` | L5 | facade (wasm also: all detectors + print) | Bindings (C ABI, PyO3, wasm). |
-| `bench` / `studio` | L5 | facade, chessboard, core, projective-grid | Harness + GUI (local tooling). |
+| `calib-targets` | L4 | core, all detectors, print | Facade + CLI. |
+| `ffi` / `py` | L5 | facade | Bindings (C ABI, PyO3). |
+| `wasm` | L5 | facade, core, all detectors, print | Bindings (wasm). |
+| `bench` | L5 | facade, chessboard, core, projective-grid | Regression / timing harness (local tooling). |
+| `studio` | L5 | facade, bench, chessboard | Detection GUI (local tooling). |
 
 **Atlas scope** ([Algorithm Atlas](algorithm-atlas.md)) is L0–L3: the crates that
 *implement detection algorithms*. The **rim** — `print`, `ffi`, `py`, `wasm`,
 `bench`, `studio` — generates, exposes, or measures those algorithms but implements
 none of its own, so it is documented here (this table) and not atlased.
 
-## The "one real consumer" reality
+## Who drives `projective-grid`
 
-`projective-grid` has two production consumers inside the workspace:
+Inside the workspace `projective-grid` has two production consumers:
 
-- **`calib-targets-core`** consumes its *type model* (`Coord`, `Projective2`,
-  transforms) to build adapters.
-- **`calib-targets-chessboard`** consumes its *engine* — the topological assembler
-  plus the `shared::{merge, grow, fill, validate}` primitives.
+- **`calib-targets-core`** consumes its *type model* (`Coord`, `GridTransform`,
+  the D4 table, the homography estimators, the grid-position predictor) and
+  re-exports or wraps it with image-domain extras.
+- **`calib-targets-chessboard`** consumes its *engine*, through the crate root
+  and the curated `expert` namespace: the topological assembler seam, local
+  merge, grow / fill, and validation.
 
-`charuco`, `puzzleboard`, and `marker` do **not** depend on `projective-grid` in
-production at all — they list it only as a *dev*-dependency (tests) and reach the
-grid through their embedded `chessboard` detector. So within this workspace, the
-17.3K-LOC engine has exactly **one detector driving it**.
-
-That is not a criticism by itself — `projective-grid` is published for *external*
-consumers too. But it explains the shape: the crate is co-designed with one
-in-workspace client, and its public surface reflects that.
-
-## The two public tiers (and the coupling note)
-
-`projective-grid/src/lib.rs` declares two tiers explicitly:
-
-- **Stable facade** — `detect_grid`, `detect_grid_all`, `check_consistency`, the
-  `Evidence` / `DetectionParams` / result model, the `Lattice` model, the
-  `orient::synthesize_*` helpers, `cluster_axes`. Normal semver intent.
-- **Advanced tier** — `pub mod shared` and `pub mod topological`: the assembly
-  engine, **declared semver-exempt pre-1.0**, "for in-workspace consumers (the
-  chessboard detector) that compose the engine directly with their own policies"
-  (lib.rs:37–45).
-
-So the deep reach from `chessboard` into `pg shared::{grow, fill, validate, merge}`
-is **sanctioned by design**, not an encapsulation leak. The open question is
-narrower: a *semver-exempt `pub` module is still a `pub` module* on a published
-crate — it appears in docs.rs and external users can depend on it. Either it is a
-supported composition API (then document the contract and the policies a consumer
-must supply) or it is chessboard-private (then it wants a workspace-internal seam,
-not a published `pub mod`).
-
-## <a id="the-library-only-surface"></a>The library-only surface
+`charuco`, `puzzleboard`, and `marker` list `projective-grid` only as a
+*dev*-dependency (tests) and reach the grid through their embedded `chessboard`
+detector, so exactly **one detector drives the engine**. `bench` also depends on
+it directly, for stage timing and the standalone-grid engine.
 
 The `📚` rows in the [atlas](algorithm-atlas.md) — hex assembly, orientation
-synthesis, local/global-H extension, the recovery schedule — are reachable only
-through the L0 public facade and are exercised in-workspace **only by
-`projective-grid`'s own tests/benches/examples**. By line count this is a large
-slice of L0 (orientation synthesis alone is `orient.rs` at ~1.08K LOC; hex is
-~0.88K across three files; the recovery schedule + extension add more).
+synthesis, local-H boundary extension, the recovery schedule — are exercised
+in-workspace only by `projective-grid`'s own tests, benches, and examples. The
+public surface (crate root, `expert`, opt-in `diagnostics`), the composition
+contract the chessboard follows, and why the library-only breadth stays compiled
+in are documented once, in
+[`crates/projective-grid/docs/DESIGN.md`](../../crates/projective-grid/docs/DESIGN.md#public-surface).
 
-Per the owner's decision, this is **intended product** for external users (dot
-grids, circle grids, hex targets), **not** dead code, and is kept. It is called out
-so a reader of *this workspace* is not misled into thinking the detectors use it.
+## Why `projective-grid` is broad
 
-**It stays compiled in, not feature-gated.** Moving `Hex`, `Evidence::Positions`,
-the `orient::*` helpers and the recovery schedule behind off-by-default features
-would break every downstream user who composes them today, and would impose a CI
-feature-matrix obligation, in exchange for a compile-time win nobody has
-measured. Legibility — the core-vs-extended table in
-[`crates/projective-grid/docs/DESIGN.md`](../../crates/projective-grid/docs/DESIGN.md)
-and the "Core vs. extended surface" section in `pg lib.rs` — achieves the
-comprehension goal without the semver break. Revisit only if compile time or
-surface size becomes a *measured*, felt cost.
-
-## <a id="why-projective-grid-is-big-and-duplicated"></a>Why `projective-grid` is broad, but no longer duplicated
-
-Two structural facts, both downstream of the layering:
-
-1. **Breadth (intended).** L0 ships two lattice families × three evidence kinds ×
+1. **Breadth (intended).** L0 ships two lattice families × several evidence kinds ×
    an optional recovery schedule. Only `(Square, Oriented2)` is on a workspace
    detector path; the rest is external library scope.
-2. **Low-level ownership (resolved).** L0 owns the canonical normalized DLT,
-   grid-position predictor, modulo-π helpers, D4/D6 tables, `Coord`, and affine
-   `GridTransform`. `core` re-exports or wraps those primitives and adds only
-   image-domain operations. This direction follows the DAG and avoids both a
-   dependency cycle and parallel numerical implementations.
+2. **Low-level ownership.** L0 owns the normalized DLT core, the grid-position
+   predictor, the modulo-π helpers, the D4/D6 tables, `Coord`, and the affine
+   `GridTransform`. `core` re-exports or wraps those primitives (its
+   `GRID_TRANSFORMS_D4` is a reordering of the L0 table) and adds only
+   image-domain operations. This direction follows the DAG and avoids a
+   dependency cycle.
+
+Smaller helpers are still written more than once across crates — rebase-to-origin,
+bounding-box loops, edge-length statistics; see
+[backlog B-14](../development/backlog.md#b-14).
