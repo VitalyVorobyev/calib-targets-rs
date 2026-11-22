@@ -133,7 +133,8 @@ per-marker pixel area.
 The detector uses a single **board-level matcher**: it scores each
 per-cell soft-bit log-likelihood against every candidate
 `(D4 rotation, integer translation)` board hypothesis, picks the
-maximum-likelihood placement, and accepts it only when the
+maximum-likelihood placement, and accepts it only when its evidence
+exceeds what the best of the searched placements reaches by chance and the
 chosen-vs-runner-up margin clears `alignment_min_margin`. Precision is
 guaranteed by construction — markers are re-emitted under the chosen
 hypothesis, so a decoded marker can never disagree with the alignment it

@@ -988,6 +988,7 @@ export type RejectReason =
   | { kind: "no_cells" }
   | { kind: "empty_board" }
   | { kind: "translation_window_empty" }
+  | { kind: "evidence_at_chance"; evidence: number; chance_level: number }
   | { kind: "margin_below_gate"; margin: number; required: number }
   | { kind: "no_emitted_markers" };
 

@@ -179,6 +179,15 @@ pub enum RejectReason {
     EmptyBoard,
     /// No valid board translation could be enumerated.
     TranslationWindowEmpty,
+    /// The chosen hypothesis's evidence did not exceed the chance level: the
+    /// evidence the best of the competing hypotheses reaches on cells that say
+    /// nothing about the board (`ln` of their number).
+    EvidenceAtChance {
+        /// The chosen hypothesis's evidence (nats).
+        evidence: f32,
+        /// The chance level it had to exceed (nats).
+        chance_level: f32,
+    },
     /// The chosen-vs-runner-up margin fell below the acceptance gate.
     MarginBelowGate {
         /// The observed score margin.
