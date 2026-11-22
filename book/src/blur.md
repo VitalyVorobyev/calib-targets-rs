@@ -110,10 +110,12 @@ fit frees the geometry so that a misplaced corner is not mistaken for blur.
 corner, starting at `ρ = ½`. It grows (¾, 1, 1½, 2 cells) while the blur
 cannot be told from the contrast — while the photometric parameters inflate
 the variance of `σ` more than fourfold — or while the window is narrower than
-the corner's own blurred edges (five standard deviations). Only cells next to
-a labelled corner count as known print; pixels within three blur widths of
-anything else are left out, so corners at the edge of a detection have a
-smaller window.
+the corner's own blurred edges (five standard deviations). A blur the
+largest window still cannot separate well from the contrast is delivered
+with the larger standard error that says so. Only cells next to a labelled
+corner count as known print; pixels within three blur widths of anything
+else are left out, so corners at the edge of a detection have a smaller
+window, and a corner that falls inside that clearance itself is declined.
 
 **Standard errors.** Residuals on real images are spatially correlated, so the
 standard errors are a heteroskedasticity-and-autocorrelation-consistent
@@ -129,7 +131,8 @@ cover:
 
 | `BlurDecline` | Meaning |
 |---|---|
-| `Confounded` | The blur is too wide for the largest window the known print allows: it cannot be told from the contrast there, or the window cannot hold its edge profile. |
+| `TooBlurred` | The blur is too wide for the known print around the corner: for some blur within three standard errors of the estimate, the largest window cannot hold the corner's blurred edges, or the corner lies within three blur widths of print that is not known (a corner at the edge of the detection). |
+| `Unresolved` | The kernel's trace is not resolved from zero at two standard errors: `σ ± SE` would not mean anything. |
 | `SharperThanPixel` | The estimate lies below the pixel aperture (`Σ` not `⪰ I/12`): an in-camera sharpened image, a sensor aperture smaller than the pixel, or a patch that does not support the fit. |
 | `NoGeometry` | Fewer than three labelled neighbours, or a degenerate local frame. |
 | `TooFewPixels` | Too few unclipped pixels with known print around the corner. |
@@ -147,8 +150,8 @@ blur of 0.5–6 px convolved with the unit pixel, cells of 16–64 px, rotation,
 |---|---|
 | Bias of `σ` | within ±0.1 % wherever estimates are delivered |
 | Scatter of `σ` | 0.1–0.7 % (robust SD), tracking the stated standard error |
-| Standard errors | `(σ̂ − σ_true)/SE` has SD 1.03 over 66 000 corners; 0.4 % beyond 3 SE |
-| Coverage | ≈ 1 up to `σ`/cell ≈ 0.08–0.13; 0.8–0.95 at 0.1–0.16 on 16 px cells; none from ≈ 0.2 (declined as `Confounded`) |
+| Standard errors | `(σ̂ − σ_true)/SE` has SD 1.03 over 70 000 corners; 0.4 % beyond 3 SE; none beyond 4.6 SE up to `σ`/cell 0.3 |
+| Coverage | ≈ 1 up to `σ`/cell ≈ 0.2; 0.9 at 0.2–0.3 (corners at the edge of the board decline); little beyond ≈ 0.35 (`TooBlurred`) |
 | Anisotropic Gaussian (2 × 1 px, any orientation) | every entry of `Σ` within 0.2 %, major axis within 0.02° |
 | Defocus disk (radius 1–3 px) | `σ` 4–9 % above the disk's second moment (see above) |
 | Radial distortion k₁ = 0.15, 64 px cells | bias ≤ 0.1 % |
@@ -172,14 +175,19 @@ set.
 - **Lens distortion inside the patch** is not modelled: the local homography
   cannot follow curvature, which adds about 0.1 % to `σ` at k₁ = 0.15 on the
   suite.
-- **Corners at the edge of a detection** see a smaller window, and a detector
-  that misplaces them under heavy blur gives the fit a poor start.
+- **Blur above about 0.3 of a cell** is mostly declined, and what is
+  delivered there is not reliable yet (an underestimate can pass the window
+  tests on its own value); treat estimates with `σ` above 0.3 cell with
+  caution.
+- **Corners at the edge of a detection** see a smaller window and decline
+  earlier.
 - Bindings (Python, C, WebAssembly) do not expose the blur yet.
 
 ## Cost
 
 A few milliseconds per corner, single-threaded (about 3 ms at 14 px
-PuzzleBoard cells and 1.5 ms at 64 px chessboard cells for a 1–1.5 px blur);
+PuzzleBoard cells and 1.5 ms at 64 px chessboard cells for a 1–1.5 px blur;
+the experimental prototype took 40 and 184 ms);
 several times more when the blur is a large fraction of the cell and the
 window grows, and on real images, where the fit converges more slowly. Corners are independent: split a
 detection across threads if you need to.

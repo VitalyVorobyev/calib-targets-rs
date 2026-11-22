@@ -1,7 +1,7 @@
 //! The per-corner fit: window selection, initialisation, Levenberg–Marquardt,
 //! the window-growth / decline rules, and the HAC covariance.
 
-use super::frame::{pixel_bounds, select_pixels, Frame};
+use super::frame::{in_support, pixel_bounds, select_pixels, Frame};
 use super::gauss_polygon::CUT;
 use super::model::{
     cholesky2, eig2, sigma_of, BoardPolygon, BoxModel, Model, Pixel, Vector, Want, I_A, I_C, I_H,
@@ -18,8 +18,10 @@ use crate::{GrayImageView, Homography};
 /// confounded with the photometry.
 const WINDOWS: [f64; 5] = [0.5, 0.75, 1.0, 1.5, 2.0];
 
-/// Maximum variance inflation of `σ` by the photometric parameters: the
-/// confounding may at most double its standard error.
+/// Variance inflation of `σ` by the photometric parameters beyond which a
+/// larger window is tried (the confounding doubles its standard error).
+/// Not a decline: a confounded estimate's standard error says so, and it
+/// stays honest (measured up to σ/cell 0.38 on interior corners).
 const MAX_VIF: f64 = 4.0;
 
 /// Pixels stay this many blur standard deviations (plus the pixel's
@@ -286,7 +288,7 @@ fn fit_window(
         // A fit the window will grow past is only a seed; check the basin
         // of the one that may be delivered.
         let delivered = last
-            || (holds_profile(rho, frame, &th)
+            || (holds_profile(rho, frame, max_sigma(&th))
                 && photometric_vif(&eval.jtj, &re, sigma_of(&th)).is_some_and(|v| v <= MAX_VIF));
         if let Some(seed) = delivered
             .then(|| better_basin(&model, frame, &th, &pixels))
@@ -343,12 +345,27 @@ fn fit_window(
 }
 
 impl WindowFit {
-    /// Whether this window's fit may be delivered: the blur is told from the
-    /// photometry ([`MAX_VIF`]) and the window holds the corner's own edge
-    /// profile ([`holds_profile`]).
+    /// Whether this window is final: the blur is told from the photometry
+    /// ([`MAX_VIF`]) and the window holds the corner's own edge profile
+    /// ([`holds_profile`]). Otherwise a larger window is tried.
     fn accepted(&self, frame: &Frame) -> bool {
-        self.vif <= MAX_VIF && holds_profile(self.rho, frame, &self.theta)
+        self.vif <= MAX_VIF && holds_profile(self.rho, frame, max_sigma(&self.theta))
     }
+}
+
+/// Whether the corner itself is among the pixels the fit may use: it lies
+/// inside the known print by at least the clearance ([`SUPPORT_MARGIN_SIGMAS`]
+/// blur widths plus half a pixel) that keeps unknown print out of the patch.
+///
+/// Where the clearance swallows the corner — a corner at the edge of the
+/// labelled region under a blur comparable to the cell — the patch sees the
+/// pattern on one side only, and σ is extrapolated rather than observed
+/// (measured: boundary corners honest at σ/cell 0.16 and 0.25, where the
+/// corner stays observed; underestimated by up to 7.5 SE at 0.375, where it
+/// does not).
+fn observes_corner(pattern: &BlurPattern, frame: &Frame, sigma: f64) -> bool {
+    let margin_px = SUPPORT_MARGIN_SIGMAS * sigma + 0.5;
+    in_support(pattern, [0.0, 0.0], margin_px / frame.scale_min)
 }
 
 /// Whether a window of half-width `rho` cells holds the blurred edges
@@ -359,8 +376,13 @@ impl WindowFit {
 /// non-linearly, and the linearised standard error no longer covers it
 /// (measured: errors beyond 3 SE in 4 % of corners whose window was 3–4 σ
 /// wide, none from 5 σ).
-fn holds_profile(rho: f64, frame: &Frame, theta: &Vector) -> bool {
-    rho * frame.scale_min >= CUT * eig2(sigma_of(theta)).1.sqrt() + 0.5
+fn holds_profile(rho: f64, frame: &Frame, sigma: f64) -> bool {
+    rho * frame.scale_min >= CUT * sigma + 0.5
+}
+
+/// The kernel's largest principal standard deviation at `theta`, px.
+fn max_sigma(theta: &Vector) -> f64 {
+    eig2(sigma_of(theta)).1.sqrt()
 }
 
 /// See [`super::estimate_corner_blur`].
@@ -387,7 +409,7 @@ pub(super) fn estimate(
         let last = k + 1 == WINDOWS.len();
         // A window too narrow for the blur fitted so far would only be
         // rejected: go straight to one that can hold it.
-        if theta.is_some_and(|t| !last && !holds_profile(rho, &frame, &t)) {
+        if theta.is_some_and(|t| !last && !holds_profile(rho, &frame, max_sigma(&t))) {
             continue;
         }
         match fit_window(image, pattern, &polygons, &frame, rho, theta, last) {
@@ -413,10 +435,11 @@ pub(super) fn estimate(
         }
     }
     let fit = best.ok_or(last_err)?;
-    if !fit.accepted(&frame) {
-        return Err(BlurDecline::Confounded);
+    let sigma = max_sigma(&fit.theta);
+    if !holds_profile(fit.rho, &frame, sigma) || !observes_corner(pattern, &frame, sigma) {
+        return Err(BlurDecline::TooBlurred);
     }
-    finish(&polygons, &frame, &fixed, fit, pattern.polarity_known)
+    finish(&polygons, &frame, &fixed, fit, pattern)
 }
 
 /// Covariances, goodness of fit and the remaining decline rules.
@@ -425,8 +448,9 @@ fn finish(
     frame: &Frame,
     fixed: &[bool; NP],
     fit: WindowFit,
-    polarity_known: bool,
+    pattern: &BlurPattern,
 ) -> Result<CornerBlur, BlurDecline> {
+    let polarity_known = pattern.polarity_known;
     let WindowFit {
         rho,
         theta,
@@ -482,6 +506,13 @@ fn finish(
     // patch does not support.
     if eig2(sigma).0 < PIXEL_VAR {
         return Err(BlurDecline::SharperThanPixel);
+    }
+    // The reported σ ± SE linearises √(tr Σ / 2); that is meaningful only
+    // while the trace is resolved from zero, its 2-SE interval excluding 0
+    // (equivalently SE(σ)/σ < 1/4). Beyond it the kernel is not measured.
+    let var_trace = cov3[0][0] + 2.0 * cov3[0][2] + cov3[2][2];
+    if sigma[0] + sigma[2] <= 2.0 * var_trace.max(0.0).sqrt() {
+        return Err(BlurDecline::Unresolved);
     }
     let n = pixels.len() as f64;
     let rms = (full.cost / (n - nfree as f64).max(1.0)).sqrt();

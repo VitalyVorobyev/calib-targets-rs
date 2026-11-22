@@ -94,7 +94,7 @@ impl Frame {
 
 /// Whether `q` (board units) lies at least `m` inside the pattern's known
 /// region and `m` clear of every uncertain region.
-fn in_support(pattern: &BlurPattern, q: [f64; 2], m: f64) -> bool {
+pub(super) fn in_support(pattern: &BlurPattern, q: [f64; 2], m: f64) -> bool {
     let (x0, x1) = ((q[0] - m).floor() as i32, (q[0] + m).floor() as i32);
     let (y0, y1) = ((q[1] - m).floor() as i32, (q[1] + m).floor() as i32);
     for b in y0..=y1 {

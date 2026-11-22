@@ -275,90 +275,72 @@ its blur: stop it at the marker border or the nearest strong non-corner
 edge. Then re-measure on the same held-out harness. It belongs upstream, in
 `chess-corners`.
 
-### Gap 31 — Per-corner blur: shipped for chessboard, PuzzleBoard and marker boards; ChArUco, non-Gaussian PSFs and in-patch distortion open
+### Gap 31 — Per-corner blur: ChArUco, non-Gaussian PSFs and σ/cell above ≈ 0.3 open
 
 **What exists.** `calib_targets::blur::{chessboard_blur, puzzleboard_blur,
-marker_board_blur}` return one `Result<CornerBlur, BlurDecline>` per corner of
-a detection, from the original image. The estimator is
-`calib_targets_core::blur` (pattern-agnostic: signed polygons in board units,
-the known-cell region, a starting homography). Per corner it fits the raw
-pixels of a board-space window with
-`I = (1 + α dx + β dy)(C + A(1 − B_Σ))`, `B_Σ` the exact Gaussian mass of the
-printed polygons (Owen's T, tabulated) under a free local homography,
-integrated over the pixel box (four-point moment-matched mixture below
-σ = 1.3 px, one Gaussian above). Σ is the full 2 × 2 *total* kernel
-covariance (lens and unit pixel box; truth on the suite's renderer is
-`Σ_lens + I/12`). Levenberg–Marquardt runs on the observable directions only:
-homography directions the window does not constrain keep the neighbours'
-values. Standard errors are a Bartlett HAC sandwich with Andrews' automatic
-bandwidth from the residuals' lag-1 autocorrelation.
+marker_board_blur}` return one `Result<CornerBlur, BlurDecline>` per corner,
+from the original image; the estimator is `calib_targets_core::blur`
+(pattern-agnostic: signed polygons in board units, the known cells, a
+starting homography). Per corner it fits the raw pixels of a board-space
+window with `I = (1 + α dx + β dy)(C + A(1 − B_Σ))`, `B_Σ` the exact Gaussian
+mass of the printed polygons (Owen's T, tabulated) under a free local
+homography, integrated over the pixel box (four-point moment-matched mixture
+below σ = 1.3 px). Σ is the full 2 × 2 *total* kernel (lens and unit pixel;
+the suite's truth is `Σ_lens + I/12`). LM runs on the observable directions
+only (homography directions the window cannot see keep the neighbours'
+values); standard errors are a Bartlett HAC sandwich, Andrews bandwidth.
 
-**Window and declines.** Window `ρ ∈ {½, ¾, 1, 1½, 2}` cells; it grows while
-the photometric parameters inflate Var(σ) more than 4× (VIF) or while it is
-narrower than `5σ + ½` px (the model's own neglect radius) along the local
-frame's narrow axis; past 2 cells → `Confounded`. Pixels stay `3σ + ½` px
-clear of cells not adjacent to a labelled corner (and of PuzzleBoard dots on
-the known region's border). The delivered fit must beat the isotropic σ
-profile at the caller's geometry on the same pixels (a nested model), else it
-restarts there. `Σ̂` with `λ_min < 1/12` → `SharperThanPixel`.
+**Rules** (each tied to the synthetic failure it removes).
 
-**Measured (synthetic, `bench accuracy --only-blur`: chessboard, PuzzleBoard,
-marker board; cells 16/32/64 px; blur 0.5–6 px; rotation 0/8/30°; tilt 0/30°;
-noise 1/4; k₁ = 0.15 on 64 px).**
+- *Window growth*, ½ → 2 cells: while the photometric VIF of σ exceeds 4, or
+  the window is narrower than `5σ + ½` px. VIF is not a decline: estimates
+  with VIF in the hundreds stay honest on interior corners; the SE carries
+  the confounding.
+- `TooBlurred`: the largest window cannot hold `5σ` (3–4σ windows put 4 % of
+  corners beyond 3 SE), or the corner lies within the `3σ + ½` px clearance
+  of unknown print, so the patch sees one side only (boundary corners: honest
+  at σ/cell 0.16 and 0.25 where the corner stays observed, down to −7.5 SE at
+  0.375 where it does not).
+- `Unresolved`: tr Σ̂ not resolved from zero at 2 SE (the linearised σ ± SE is
+  meaningless; removed two −61 / −70 % estimates at σ/cell 0.38).
+- `SharperThanPixel`: λ_min(Σ̂) < 1/12.
+- Basin restart (not a decline): a delivered fit must beat the isotropic σ
+  profile at the caller's geometry.
 
-- Bias of σ: |median| ≤ 0.1 % in every group with estimates; robust scatter
-  0.1–0.7 %. Over all 66 167 delivered estimates the SD of
-  `(σ̂ − σ_true)/SE` is 1.03, 0.40 % beyond 3 SE; per-group robust honesty
-  0.6–1.3.
-- Coverage ≈ 1 up to σ/cell ≈ 0.08 (all families) and ≈ 0.13 (32 px cells);
-  0.78–0.95 at σ/cell 0.1–0.16 on 16 px cells; ≈ 0 from σ/cell 0.19 (32 px)
-  or 0.25 (16 px): `Confounded`.
-- Pixel box: one Gaussian instead of the mixture biases σ by ≈ 0.06 %/σ⁴
-  (σ in px; 0.6 % at 0.58 px); with the mixture ≤ 0.1 %, the rest being the
-  renderer's own sub-sample variance.
-- Anisotropic Gaussian (σ 2 × 1 px at 0/30/60/135°, 1.2 × 0.8 at 45°): every
-  Σ component within 0.2 %, major axis within 0.02°; component honesty
-  0.7–1.6 (Σxy on a chessboard the least determined, as expected from two
-  edge directions).
-- Defocus disk (r = 1/2/3 px): σ above the disk's second moment by
-  +4.4/+8/+9 %; the Gaussian-equivalent width of a flat-topped PSF.
-- Remaining failures: 2 of 66 167 estimates more than 5 SE off, both on the
-  boundary row of 16 px boards at σ/cell ≈ 0.38 where the detector itself
-  places the corners 1.5 px off.
-- Cost (single thread): 3.0 ms/corner on a 14 px PuzzleBoard at 1 px blur,
-  1.4 ms on a 64 px chessboard (the prototype took 40 and 184 ms); ~8 ms at
-  2 px blur on 14 px cells (window grows).
+**Measured** (`bench accuracy --only-blur`; chessboard, PuzzleBoard, marker
+board; cells 16/32/64 px; blur 0.5–6 px; rotation 0/8/30°; tilt 0/30°; noise
+1/4; k₁ = 0.15 on 64 px). 70 659 estimates: group bias within ±0.1 %, SD of
+`(σ̂ − σ_true)/SE` 1.03, 0.40 % beyond 3 SE; up to σ/cell 0.3 none beyond
+4.6 SE. Coverage ≈ 1 up to σ/cell 0.2, 0.90 at 0.2–0.3 (the declines are
+boundary corners). Anisotropic Gaussians: Σ components within 0.2 %, axis
+within 0.02°. Disk PSF (r = 1/2/3 px): σ 4.4 / 8 / 9 % above the second
+moment. Cost: 3.2 ms/corner at 14 px PuzzleBoard cells and 1 px blur, 1.5 ms
+at 64 px chessboard cells; more for wide blur (larger windows).
 
-**Real images.** On tilted-sensor PuzzleBoard frames most corners get an
-estimate, the σ field is smooth with second differences consistent with the
-stated standard errors, roughly a third of corners are anisotropic beyond
-3 SE, and a corner costs a few tens of ms (wider windows, slower convergence
-on structured misfit). Public phone photographs (`puzzleboard_reference/`) and
-`mid.png` are sharpened in camera: their in-focus corners decline as
-`SharperThanPixel`.
-
-**What the number means.** The covariance of the Gaussian that best
-reproduces this pattern's blur over the window: a width over the patch's
-spatial frequencies, not the PSF's second moment; for a sharp-core,
-heavy-tailed PSF smaller than the second moment and not additive in
-quadrature; it depends on cell size and pattern.
+**Meaning.** The Gaussian that best reproduces this pattern's blur over the
+window: a width over the patch's spatial frequencies, not the PSF's second
+moment; smaller than it and not additive in quadrature for a sharp-core,
+heavy-tailed PSF; dependent on cell size and pattern.
 
 **Open.**
 
-- **ChArUco**: printed geometry deviates measurably from the nominal one and
-  the residuals are structured; the standard errors are not honest there yet.
-  No entry point until the marker print is modelled from the image or
-  calibrated.
-- **Non-Gaussian PSFs**: a core + tail (two-Gaussian) or disk model would
-  report a second moment where the Gaussian reports an equivalent width.
-- **Lens-distortion curvature** inside the window (the homography cannot
-  follow it): +0.1 % at k₁ = 0.15 on 64 px cells; larger windows on strongly
-  distorted lenses will show more.
-- **Cost on real frames**: tens of ms per corner where blur forces 1–1.5-cell
-  windows; per-σ circle polygonisation and a cheaper Owen's-T path are the
-  levers.
-- **Bindings** (Python, C, WASM): not exposed yet; they need a
-  `GrayImageView`-based entry point (the facade takes `image::GrayImage`).
+- **σ/cell above ≈ 0.3**: at 0.375 coverage drops to ≈ 0.2 with −3.5 % bias,
+  and one estimate (the board's outer corner) is 6 SE low — an underestimate
+  whose own clearance admits it. With ground-truth labels at σ/cell 0.4–0.6
+  (no detector delivers there) a few percent of corners are delivered at
+  −20 to −60 %: when the true blur exceeds what the window can hold, the
+  estimates that pass the window test are the low draws of a σ–contrast
+  valley. Needs the window tests applied to every blur the likelihood admits
+  (a constrained refit), and larger windows where the labelled grid allows.
+- **ChArUco**: printed geometry deviates from the nominal one, residuals are
+  structured, standard errors not honest; no entry point.
+- **Non-Gaussian PSFs**: a core + tail or disk model would report a second
+  moment.
+- **Lens-distortion curvature** inside the window (+0.1 % at k₁ = 0.15).
+- **Real frames shown on raster displays** (cells snapped to display pixels,
+  dots not disks) violate the polygon model; modelling the raster is a
+  follow-up.
+- **Bindings** need a `GrayImageView` entry point.
 
 ### Gap 32 — Wrong ChArUco labels under strong blur on the synthetic suite — **open, not yet localized**
 

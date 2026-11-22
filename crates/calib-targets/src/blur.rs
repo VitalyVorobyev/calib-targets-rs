@@ -58,10 +58,13 @@
 //!
 //! Every corner gets `Ok` or a [`BlurDecline`] reason. A corner is declined
 //! rather than given a number its standard error does not cover: when the
-//! blur cannot be told from the contrast on the largest window the known
-//! print allows (blur comparable to the cell), when it is sharper than the
-//! pixel aperture (an in-camera sharpened image), when too few labelled
-//! neighbours fix the local geometry, or when the fit fails. The estimate
+//! blur is too wide for the known print around the corner (comparable to
+//! the cell, or reaching unlabelled print from a corner at the edge of the
+//! detection), when it is sharper than the pixel aperture (an in-camera
+//! sharpened image) or not resolved at all, when too few labelled neighbours
+//! fix the local geometry, or when the fit fails. A blur the patch can only
+//! partly separate from the contrast is delivered with the larger standard
+//! error that says so. The estimate
 //! uses only cells next to a labelled corner, so the corners at the edge of
 //! a detection see a smaller window.
 //!

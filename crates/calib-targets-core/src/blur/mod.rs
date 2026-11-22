@@ -34,17 +34,25 @@
 //!
 //! The patch is the board square `[−ρ, ρ]²` around the corner, starting at
 //! `ρ = ½` cell. Only pixels three blur widths clear of any cell whose print
-//! the caller does not know are used. When the blur cannot be told from the
-//! contrast on the patch — its variance inflated more than fourfold by the
-//! photometric parameters — the window grows, up to two cells; past that the
-//! corner is declined ([`BlurDecline::Confounded`]). The fit that may be
-//! delivered must also beat every isotropic blur at the caller's geometry on
-//! the same pixels (a model it contains); if one does better, the fit is in
-//! a worse basin and restarts from it. A corner whose kernel estimate lies
-//! outside the physical domain `Σ ⪰ I/12` is declined
-//! ([`BlurDecline::SharperThanPixel`]: a sharpened image, an aperture
-//! smaller than the pixel, or a fit the patch does not support). A miss is
-//! acceptable; a `σ` biased beyond its standard error is not.
+//! the caller does not know are used. The window grows, up to two cells,
+//! while the blur cannot be told from the contrast on the patch (its variance
+//! inflated more than fourfold by the photometric parameters) or while the
+//! window is narrower than the corner's blurred edges (five standard
+//! deviations). A confounded estimate is delivered with the larger standard
+//! error that says so. The corner is declined
+//! ([`BlurDecline::TooBlurred`]) when, for any blur within three standard
+//! errors of the estimate, the largest window cannot hold its edges or the
+//! corner itself falls within the clearance of unknown print (the patch would
+//! see one side of the pattern only). The fit that may be delivered must also
+//! beat every isotropic blur at the caller's geometry on the same pixels (a
+//! model it contains); if one does better, the fit is in a worse basin and
+//! restarts from it. A kernel estimate outside the physical domain
+//! `Σ ⪰ I/12` is declined ([`BlurDecline::SharperThanPixel`]: a sharpened
+//! image, an aperture smaller than the pixel, or a fit the patch does not
+//! support), and so is one whose trace is not resolved from zero at two
+//! standard errors ([`BlurDecline::Unresolved`]), where the linearised
+//! `σ ± SE` stops meaning anything. A miss is acceptable; a `σ` biased beyond
+//! its standard error is not.
 //!
 //! # Uncertainty
 //!
@@ -303,10 +311,15 @@ pub enum BlurDecline {
     /// The fit's normal matrix is singular.
     #[error("the fit is singular")]
     Singular,
-    /// The blur cannot be told from the contrast on the largest window the
-    /// known print allows.
-    #[error("blur confounded with contrast")]
-    Confounded,
+    /// The blur is too wide for the known print around the corner: the
+    /// largest window cannot hold the corner's blurred edges, or the corner
+    /// lies within the blur's reach of print that is not known.
+    #[error("blur too wide for the known print around the corner")]
+    TooBlurred,
+    /// The kernel is not resolved: its standard error is comparable to its
+    /// size, so `σ` and its standard error are not meaningful.
+    #[error("blur not resolved")]
+    Unresolved,
     /// The blur is significantly below the unit-box pixel aperture: the
     /// image was sharpened, or the aperture is not the unit box.
     #[error("sharper than the pixel aperture")]

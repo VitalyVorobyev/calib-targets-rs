@@ -18,8 +18,8 @@
 //! A second test runs the corner-blur study's quick subset and bounds the
 //! per-corner blur ([`calib_targets::blur`]) the same way (see
 //! [`BLUR_BOUNDS`]): coverage, worst error and standard-error honesty against
-//! the rendered truth, a condition beyond the estimator's range that must
-//! decline, and the anisotropic and defocus-disk PSFs.
+//! the rendered truth up to σ/cell 0.25, and the anisotropic and defocus-disk
+//! PSFs.
 //!
 //! The full grid is `cargo run -p calib-targets-bench --release --bin bench
 //! -- accuracy`.
@@ -30,7 +30,7 @@ use calib_targets_bench::accuracy::blur::{
 use calib_targets_bench::accuracy::blur::{robust_sd, BlurScore};
 use calib_targets_bench::accuracy::families::Family;
 use calib_targets_bench::accuracy::render::Psf;
-use calib_targets_bench::accuracy::{quick_conditions, run, summarize, Condition, Refiner, Row};
+use calib_targets_bench::accuracy::{quick_conditions, run, summarize, Refiner, Row};
 
 /// `(family, refiner, min detected of the family's quick conditions — 4, or 5
 /// for the marker board — min mean recall, max RMSE px, max σ̂₀² truth)` —
@@ -179,7 +179,6 @@ fn blur_metrics(rows: &[Row], family: Family, refiner: Refiner) -> (f64, f64, f6
     let mine: Vec<&BlurScore> = rows
         .iter()
         .filter(|r| r.condition.family == family && r.refiner == refiner)
-        .filter(|r| !beyond_range(&r.condition))
         .filter_map(|r| r.blur.as_ref())
         .collect();
     let corners: usize = mine.iter().map(|b| b.corners).sum();
@@ -203,23 +202,16 @@ fn blur_metrics(rows: &[Row], family: Family, refiner: Refiner) -> (f64, f64, f6
     )
 }
 
-/// The quick subset's condition beyond the estimator's range: a 4 px blur on
-/// 16 px chessboard cells (σ/cell 0.25), where the blur cannot be told from
-/// the contrast within the two-cell window. Every corner must decline.
-fn beyond_range(c: &Condition) -> bool {
-    c.family == Family::Chessboard && c.cell_px == 16.0 && c.blur_px == 4.0
-}
-
 /// `(family, refiner, min coverage, max worst |σ̂/σ_true − 1|, max SE
 /// honesty against the truth)` on the blur study's quick subset, measured
 /// values in the comments. Margins: coverage −0.05 absolute, the worst error
 /// ×1.25 + 0.005, honesty ×1.25 (a robust SD over a few hundred corners
 /// scatters by ~0.1).
 const BLUR_BOUNDS: [(Family, Refiner, f64, f64, f64); 6] = [
-    // 1.000, worst 1.53 %, honesty 1.23
-    (Family::Chessboard, Refiner::CenterOfMass, 0.95, 0.024, 1.54),
-    // 1.000, worst 1.54 %, honesty 1.21
-    (Family::Chessboard, Refiner::SaddlePoint, 0.95, 0.024, 1.51),
+    // 1.000, worst 1.53 %, honesty 1.08
+    (Family::Chessboard, Refiner::CenterOfMass, 0.95, 0.024, 1.35),
+    // 1.000, worst 1.54 %, honesty 1.12
+    (Family::Chessboard, Refiner::SaddlePoint, 0.95, 0.024, 1.40),
     // 1.000, worst 2.26 %, honesty 0.96
     (
         Family::PuzzleBoard,
@@ -250,21 +242,11 @@ fn quick_blur_study_holds_its_accuracy() {
 
     let mut failures = Vec::new();
     for row in &rows {
-        let c = row.condition;
-        let Some(blur) = &row.blur else {
+        if row.blur.is_none() {
             failures.push(format!(
                 "{} {}: no detection",
-                c.label(),
+                row.condition.label(),
                 row.refiner.label()
-            ));
-            continue;
-        };
-        if beyond_range(&c) && !blur.estimates.is_empty() {
-            failures.push(format!(
-                "{} {}: {} σ beyond the estimator's range",
-                c.label(),
-                row.refiner.label(),
-                blur.estimates.len()
             ));
         }
     }
