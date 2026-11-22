@@ -40,10 +40,17 @@
 //! window is narrower than the corner's blurred edges (five standard
 //! deviations). A confounded estimate is delivered with the larger standard
 //! error that says so. The corner is declined
-//! ([`BlurDecline::TooBlurred`]) when, for any blur within three standard
-//! errors of the estimate, the largest window cannot hold its edges or the
-//! corner itself falls within the clearance of unknown print (the patch would
-//! see one side of the pattern only). The fit that may be delivered must also
+//! ([`BlurDecline::TooBlurred`]) when the window it ends with cannot hold the
+//! fitted blur's edges, when the corner itself falls within the clearance of
+//! unknown print (the patch would see one side of the pattern only), or when
+//! `σ` exceeds 0.3 of the local cell (`√|det J|` of the homography at the
+//! corner). That last limit is the end of the validated range, not a tuned
+//! threshold: up to it the synthetic suite measures no bias beyond ±0.1 % and
+//! honest standard errors; beyond it the estimates that survive are biased
+//! low while their standard errors still claim precision. Because a
+//! low-biased estimate can fall back inside the limit, the rule declines most
+//! but not all corners whose true blur is beyond it (see the book's *Corner
+//! blur* page for the measured remainder). The fit that may be delivered must also
 //! beat every isotropic blur at the caller's geometry on the same pixels (a
 //! model it contains); if one does better, the fit is in a worse basin and
 //! restarts from it. A kernel estimate outside the physical domain
@@ -312,8 +319,10 @@ pub enum BlurDecline {
     #[error("the fit is singular")]
     Singular,
     /// The blur is too wide for the known print around the corner: the
-    /// largest window cannot hold the corner's blurred edges, or the corner
-    /// lies within the blur's reach of print that is not known.
+    /// largest window cannot hold the corner's blurred edges, the corner
+    /// lies within the blur's reach of print that is not known, or `σ`
+    /// exceeds 0.3 of the local cell, the end of the range the estimator is
+    /// validated on.
     #[error("blur too wide for the known print around the corner")]
     TooBlurred,
     /// The kernel is not resolved: its standard error is comparable to its

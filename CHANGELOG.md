@@ -35,7 +35,9 @@ Rarely used public surface with no in-workspace consumers is removed.
   free local homography and illumination; its standard errors stay honest on
   correlated real-image residuals. On synthetic renders `σ` is unbiased to
   0.1 % with honest standard errors, and an anisotropic kernel is recovered
-  with its orientation. Separate from detection: corner types, detection
+  with its orientation. The validated range ends at a blur of 0.3 of the
+  local cell: a corner whose fitted `σ` exceeds it is declined
+  (`TooBlurred`). Separate from detection: corner types, detection
   results and the C ABI are unchanged; ChArUco and the bindings are not
   covered yet. See the book's *Corner blur* page. The estimator itself is
   `calib_targets_core::blur::estimate_corner_blur`.
