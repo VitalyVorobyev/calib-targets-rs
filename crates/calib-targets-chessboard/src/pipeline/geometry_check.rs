@@ -14,8 +14,6 @@ use projective_grid::expert::orientation::AxisClusterCenters;
 
 use super::types::GeometryCheckTrace;
 
-const MIN_EDGE_SHAPE_LABELS: usize = 40;
-
 /// Mandatory final precision gate. Runs after every other stage and
 /// can only remove corners or refuse the detection — never add or
 /// relabel.
@@ -77,16 +75,18 @@ pub(crate) fn run_geometry_check(
     // deterministic input ordering) lives in the shared `drop_set` helper —
     // the same path the geometry-only recovery schedule routes through. Only
     // the chessboard-specific bookkeeping below (stage machine, blacklist,
-    // refusal threshold) stays here. The direct wrong-label check needs a
-    // dense enough grid to be meaningful, so it stays gated on the
-    // chessboard's label count.
-    let dense_enough = grow_res.labelled.len() >= MIN_EDGE_SHAPE_LABELS;
+    // refusal threshold) stays here. The direct wrong-label check runs on
+    // every component, however small: it judges an edge only against a
+    // reference it has enough nearby edges to form, so a sparse region is
+    // left alone by the check itself. A small component is where a false
+    // grid assembled from non-board saddles shows up, and gating the check
+    // on the component's size let such a component through unexamined.
     let result = pg_validate::wrong_label_filters::drop_set(
         &grow_res.labelled,
         |idx| augs[idx].position,
         cell_size,
         &geom_params,
-        tuning.enable_final_edge_shape_check && dense_enough,
+        tuning.enable_final_edge_shape_check,
         true,
     );
 

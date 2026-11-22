@@ -345,27 +345,50 @@ heavy-tailed PSF; dependent on cell size and pattern.
   follow-up.
 - **Bindings** need a `GrayImageView` entry point.
 
-### Gap 32 — Small grid components of marker-interior corners under strong blur — **open**
+### Gap 32 — Unverifiable labels on small components — **open, measured**
 
-Under a blur that smears ChArUco markers below resolution (σ = 4 px on 32 px
-squares) the ChESS responses at the true X-junctions are weak, while
-marker-interior saddles about a third of a cell away fire strongly. The
-chessboard stage then builds small components out of the latter: a 10-corner
-component whose cells are not images of squares (on one grid line, a 7.7 px
-edge next to a 30 px one; axes 45° off the board's). The grid-level
-wrong-label checks did not remove it; which check skipped it, and on what
-reference, is not yet measured.
+Witness: the ChArUco board at 32 px squares under a 4 px blur (bench test
+`chessboard_on_unresolved_charuco_markers_delivers_no_false_grid`). ChESS
+barely fires at the true X-junctions; marker-interior saddles about a third
+of a cell away do. The topological builder makes three single-quad
+components of them, chessboard recovery joins two and adds three corners: a
+10-corner "grid" with axes 45° off the board's and a 7.7 px edge beside a
+30.1 px one on one grid line. Its corners sit up to 20 px (0.8 cell) off a
+best-fit homography. Neither detector delivers it any more (the final
+wrong-label check now runs on every component, and ChArUco's board matcher
+refuses placements at chance level), but the frame exposes checks that
+cannot judge a small component:
 
-ChArUco no longer delivers such a component: the board matcher's chance gate
-(evidence above `ln N`) refuses the single chance marker read it rested on.
-But the component itself is a grid-level false positive with only the marker
-evidence between it and the output, and ChArUco's corner validation
-cannot see it — with one or two markers, the homography it validates against
-is fitted to the same corners.
+- **Wrong-label check references.** An edge is judged only against ≥ 5
+  nearby same-direction edges, or ≥ 8 in the component. In the witness the
+  vertical edges were judged (3.6× and 3.5× their local median, 30–55° off
+  axis) and the horizontal ones were not (4 local, 5 global). A false
+  component of 8–9 corners can have no judgeable edge at all.
+- **Local-H attribution.** `validate` measured local-H residuals of 0.8 to
+  20 cells on five of the ten witness corners (tolerance 0.6) but
+  blacklisted nothing: a residual without a corroborating line flag is
+  deferred.
+- **Quad shape.** The chessboard tuning sets
+  `opposing_edge_ratio_max = 10` (projective-grid's own default is 1.5);
+  the witness quads had opposite sides 3.1× and 2.4× apart.
+- **ChArUco merge.** `merge_charuco_results` unions every component that
+  shares the winning D4 rotation; nothing checks that a secondary
+  component's board placement agrees with the primary's in translation, and
+  corners with the same id keep the higher score regardless of position.
+  Measured: every merge in the ChArUco regression tests and on the synthetic
+  grid placed the secondary within 0.04 cell of a homography fitted to the
+  primary, so no wrong merge has been seen.
+- **ChArUco corner validation.** `validate_and_fix_corners` fits its
+  homography to the decoded markers' cell corners, which are grid corners
+  the alignment labelled. With one marker the four corners of its cell are
+  validated against a fit they define exactly; only corners outside that
+  cell get an independent prediction.
 
-**Fix.** Trace the component through `trace_topological_detection` to find
-which check it should have failed; a cell-shape consistency predicate for
-components too small for the local-reference checks is the likely shape.
+**Fix.** Each item needs a criterion, not a constant: e.g. refuse a
+component whose labels no check could judge; accept an uncorroborated local-H
+residual of a whole cell or more; merge a ChArUco component only if a
+homography fitted to the primary predicts its corners within half a cell;
+validate a corner only against a fit that excludes it.
 
 ---
 

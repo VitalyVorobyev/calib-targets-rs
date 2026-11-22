@@ -33,7 +33,9 @@ use calib_targets_bench::accuracy::blur::{
 use calib_targets_bench::accuracy::blur::{robust_sd, BlurScore};
 use calib_targets_bench::accuracy::families::Family;
 use calib_targets_bench::accuracy::render::Psf;
-use calib_targets_bench::accuracy::{quick_conditions, run, summarize, Condition, Refiner, Row};
+use calib_targets_bench::accuracy::{
+    metrics, quick_conditions, render_in_geometry, run, summarize, Condition, Refiner, Row,
+};
 
 /// `(family, refiner, min detected of the family's quick conditions — 4, or 5
 /// for the marker board — min mean recall, max RMSE px, max σ̂₀² truth)` —
@@ -176,17 +178,13 @@ fn quick_suite_holds_the_contract_and_its_accuracy() {
     );
 }
 
-/// A ChArUco board under a blur that smears its markers below resolution
-/// (σ = 4 px on 32 px squares) delivered five wrong ids: the chessboard
-/// stage built a small grid component out of marker-interior saddles, one of
-/// its cells read as a marker with three bits wrong, and that single chance
-/// decode was accepted as the board placement. The board matcher now requires
-/// the chosen placement to beat the best of the placements it searched by
-/// chance, and the frame declines. The first condition only fixes the render:
-/// a geometry's supersampling is seeded from its first condition, exactly as
-/// in the full grid where the frame was found.
-#[test]
-fn charuco_under_unresolving_blur_delivers_no_wrong_labels() {
+/// The ChArUco board at 32 px squares under a 4 px blur and noise 4, the
+/// frame that once delivered wrong labels. The blur leaves the markers
+/// unreadable and the true X-junctions faint while marker-interior saddles
+/// respond strongly; a detector may miss here, never mislabel. Rendered as
+/// the condition grid renders it: returns the 4 px condition and the 0.5 px
+/// condition that leads its geometry group (and so seeds the render).
+fn unresolved_charuco_markers() -> (Condition, Condition) {
     let condition = |blur_px: f64, noise: f64| Condition {
         family: Family::Charuco,
         cell_px: 32.0,
@@ -196,8 +194,17 @@ fn charuco_under_unresolving_blur_delivers_no_wrong_labels() {
         noise,
         k1: 0.0,
     };
-    let conditions = [condition(0.5, 1.0), condition(4.0, 4.0)];
-    let rows = run(&conditions, &Refiner::ALL, 2, false);
+    (condition(4.0, 4.0), condition(0.5, 1.0))
+}
+
+/// On that frame the chessboard stage once assembled a 10-corner "grid" from
+/// marker-interior saddles (cells of 8 and 30 px side by side on one grid
+/// line), one of its cells read as a marker with three bits wrong, and that
+/// chance decode placed the board. ChArUco must deliver no wrong label.
+#[test]
+fn charuco_under_unresolving_blur_delivers_no_wrong_labels() {
+    let (frame, head) = unresolved_charuco_markers();
+    let rows = run(&[head, frame], &Refiner::ALL, 2, false);
     assert_eq!(rows.len(), 4);
     for row in &rows {
         let wrong = row.score.as_ref().map_or(0, |s| s.wrong_labels);
@@ -208,6 +215,31 @@ fn charuco_under_unresolving_blur_delivers_no_wrong_labels() {
             row.condition.label(),
             row.refiner.label()
         );
+    }
+}
+
+/// The same false grid reached plain chessboard users: the chessboard
+/// detector run on the frame delivered it as a 10-corner detection. Its
+/// edges disagree with their neighbours by up to 3.6× along one grid line,
+/// which the final wrong-label check sees — once it runs on small
+/// components too.
+#[test]
+fn chessboard_on_unresolved_charuco_markers_delivers_no_false_grid() {
+    let (frame, head) = unresolved_charuco_markers();
+    let (board, camera, image) = render_in_geometry(&head, frame.blur_px, &frame);
+    for refiner in Refiner::ALL {
+        if let Ok(found) = board.detect_as_chessboard(&image, &|cfg| refiner.apply(cfg)) {
+            let score = metrics::score(&found, &board.gt, &camera);
+            assert_eq!(
+                score.wrong_labels,
+                0,
+                "{} {}: the chessboard detector delivered {} corners, {} wrong",
+                frame.label(),
+                refiner.label(),
+                score.delivered,
+                score.wrong_labels
+            );
+        }
     }
 }
 
