@@ -60,7 +60,7 @@ triples (σ-fixed ones plus orbit duplicates); propose single-letter mutations
 and accept those that lower it; restart on a local minimum. With one orbit of
 slack it converges in milliseconds.
 
-The companion paper (arXiv:2405.03309) gives a closed-form construction, but no
+The companion paper ([Stelldinger 2024](references.md#stelldinger2024rings)) gives a closed-form construction, but no
 reference implementation — local search is simply the cheaper route to the same
 contract.
 

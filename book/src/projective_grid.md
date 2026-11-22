@@ -153,7 +153,7 @@ features).
 ## The square algorithm: Topological
 
 Detection of `(Square, Oriented2)` uses the **topological** grid finder — the
-sole grid builder for all square targets. It is the Shu / Brunton / Fiala 2009
+sole grid builder for all square targets. It is the Shu / Brunton / Fiala ([2010](references.md#shu2010))
 axis-driven grid finder: a Delaunay triangulation over the corner cloud whose
 edges are classified by per-corner axis match, with triangle pairs merged into
 cells and integer coordinates flooded across the mesh. Image-free; recovers

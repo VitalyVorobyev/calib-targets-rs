@@ -11,6 +11,8 @@ Read an algorithm page when you want to understand *what a stage does and
 why it is correct*; read a pipeline page when you want to understand *how
 a particular target is detected end to end*.
 
+The papers behind these algorithms are listed on the [References](references.md) page.
+
 ## The blocks
 
 | Algorithm | Crate / module | Role |

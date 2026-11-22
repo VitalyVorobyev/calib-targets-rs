@@ -4,9 +4,8 @@ A **PuzzlePole** is the [PuzzleBoard](puzzleboard.md) pattern wrapped around a
 cylinder. Because the pattern closes, the target is recognisable from any
 direction — which is the thing no planar target can do.
 
-This page covers making one. It comes from Zach & Stelldinger,
-[*PuzzlePoles: Cylindrical Fiducial Markers Based on the PuzzleBoard
-Pattern*](https://arxiv.org/abs/2511.19448) (arXiv:2511.19448).
+This page covers making one. It comes from Zach & Stelldinger
+([2025](references.md#zach2025)).
 
 ## 1. Pick a diameter — you do not get a free choice
 

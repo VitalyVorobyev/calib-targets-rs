@@ -5,7 +5,7 @@
 > workspace builds on — not an algorithm this workspace re-implements.
 
 Every detector in the workspace starts from a cloud of **ChESS
-X-junction corners** — the sub-pixel saddle points where four
+X-junction corners** ([Bennett & Lasenby 2014](references.md#bennett2014)) — the sub-pixel saddle points where four
 chessboard squares meet. Corner finding itself is out of scope here:
 the workspace consumes a corner cloud and recovers structure from it.
 What matters downstream is the precise *shape* of each corner, because

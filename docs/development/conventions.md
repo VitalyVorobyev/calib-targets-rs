@@ -1,7 +1,7 @@
 # Code conventions
 
 Short, always-on invariants live in `.claude/CLAUDE.md`. This file holds the
-longer-form conventions: public struct design, binding/CLI parity, and the
+longer-form conventions: public struct design, binding/CLI parity, citations, and the
 local-only artifact rules.
 
 ## Public struct conventions
@@ -95,6 +95,12 @@ hand-mirrored from Rust rather than generated, each with a drift contract:
   materialised `advanced` tree and **fails if any knob lacks an entry** — so a
   new `ChessboardAdvancedTuning` field cannot ship un-described. When you add or rename an
   advanced knob, add/fix its catalogue entry (the test tells you exactly which).
+
+## Citations
+
+Every paper cited in the book, rustdoc or internal docs gets an entry in
+[`book/src/references.md`](../../book/src/references.md) (with a stable anchor
+id). Pages link to that entry rather than repeating the full citation.
 
 ## Local-only artifacts — never commit
 
