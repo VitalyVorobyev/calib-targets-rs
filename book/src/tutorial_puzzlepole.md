@@ -1,9 +1,8 @@
 # Build and detect a PuzzlePole
 
 A **PuzzlePole** is the [PuzzleBoard](puzzleboard.md) pattern wrapped round a
-cylinder, from Zach & Stelldinger, [*PuzzlePoles: Cylindrical Fiducial Markers
-Based on the PuzzleBoard Pattern*](https://arxiv.org/abs/2511.19448)
-(arXiv:2511.19448). It is the only target here that stays identifiable from a full 360° —
+cylinder, from Zach & Stelldinger
+([2025](references.md#zach2025)). It is the only target here that stays identifiable from a full 360° —
 walk round it and it keeps telling you where you are — and the only one whose
 detected corners carry a **3-D** object point rather than a point on a plane.
 

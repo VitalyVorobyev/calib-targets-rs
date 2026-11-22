@@ -13,7 +13,7 @@ local axes each) and the two global grid directions from
 target type — chessboard, ChArUco, PuzzleBoard, marker board — routes
 through this one path.
 
-It is the Shu / Brunton / Fiala (2010) topological grid finder, with the
+It is the Shu / Brunton / Fiala ([2010](references.md#shu2010)) topological grid finder, with the
 paper's image-color cell test replaced by an **axis-alignment test** so
 the core stays image-free and tolerant of perspective and radial
 distortion.

@@ -1,8 +1,8 @@
 # PuzzleBoard edge-code decode
 
 > Code: `calib-targets-puzzleboard` — `detector/edge_sampling.rs` (reading the
-> dots) and `detector/decode/` (recovering the position). Based on Stelldinger
-> 2024, [arXiv:2409.20127](https://arxiv.org/abs/2409.20127).
+> dots) and `detector/decode/` (recovering the position). Based on Stelldinger,
+> Schönherr & Biermann [2024](references.md#stelldinger2024).
 
 A PuzzleBoard is a self-identifying chessboard: every **interior edge** carries a
 dot at its midpoint, and the pattern of dots is designed so that a fragment of

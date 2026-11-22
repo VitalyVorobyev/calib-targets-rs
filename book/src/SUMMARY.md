@@ -49,4 +49,5 @@
   - [Regular Grid Detection](example_regular_grid.md)
   - [Chessboard Detection](example_chessboard.md)
   - [Rectification](rectification.md)
+- [References](references.md)
 - [Data and Tools](data_and_tools.md)

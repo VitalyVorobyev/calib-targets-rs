@@ -24,6 +24,8 @@ Recommended reading order:
 3. [Pipelines](pipelines.md) — each target's end-to-end detection flow
 4. Crate chapters, starting with [calib-targets-core](core.md) and [calib-targets-chessboard](chessboard.md)
 
+Papers the project builds on are listed on the [References](references.md) page.
+
 [API docs](https://vitalyvorobyev.github.io/calib-targets-rs/api).
 
 ## Quickstart
