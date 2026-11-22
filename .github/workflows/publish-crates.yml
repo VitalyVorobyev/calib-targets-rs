@@ -29,8 +29,9 @@ jobs:
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          lfs: true
+
+      - name: Fetch Rust image fixtures
+        run: git lfs pull --include="testdata/**" --exclude=""
 
       - uses: dtolnay/rust-toolchain@stable
 

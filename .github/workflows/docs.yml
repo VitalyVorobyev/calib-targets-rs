@@ -33,8 +33,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
-        with:
-          lfs: true
+
+      - name: Fetch book and demo images
+        run: git lfs pull --include="book/src/img/**,demo/public/samples/**" --exclude=""
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
