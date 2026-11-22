@@ -52,7 +52,8 @@ pub(crate) struct AccuracyArgs {
     /// Run the small subset the integration test runs instead of the full grid.
     #[arg(long)]
     pub(crate) quick: bool,
-    /// Run only the edge-blur study's grid, not the accuracy grid.
+    /// Run only the corner-blur study (its Gaussian grid and PSF
+    /// conditions), not the accuracy grid.
     #[arg(long)]
     pub(crate) only_blur: bool,
     /// Refiner(s) to score (comma-separated or repeated). Default: both.

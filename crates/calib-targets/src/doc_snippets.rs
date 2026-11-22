@@ -50,6 +50,7 @@ pages! {
     ProjectiveGridReadme => "crates/projective-grid/README.md",
     BookAlgoPuzzleboardCodeMaps => "book/src/algo_puzzleboard_code_maps.md",
     BookAlgoPuzzleboardDecode => "book/src/algo_puzzleboard_decode.md",
+    BookBlur => "book/src/blur.md",
     BookChessboard => "book/src/chessboard.md",
     BookExampleChessboard => "book/src/example_chessboard.md",
     BookExampleRegularGrid => "book/src/example_regular_grid.md",

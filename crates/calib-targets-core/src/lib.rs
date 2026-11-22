@@ -24,12 +24,11 @@
 #![deny(missing_docs)]
 
 mod bit_likelihood;
+pub mod blur;
 mod chess;
 mod corner;
 mod corner_map;
 mod covariance;
-#[doc(hidden)]
-pub mod edge_blur;
 mod grid_alignment;
 mod homography;
 mod image;
