@@ -12,8 +12,8 @@ see [Older releases](#older-releases) at the bottom for the index.
 Per-corner blur measurement, and two fixes that stop wrong labels on boards
 blurred past readability. A minor release: rarely used public surface is
 removed; see the [0.17.0 migration guide](docs/migrations/0.17.0.md). The C ABI
-is unchanged (6.0.2), the Python and WASM APIs are unchanged, and the workspace
-requires `projective-grid` 0.14.6.
+moves to 6.0.3 (no type or layout change), the Python and WASM APIs are
+unchanged, and the workspace requires `projective-grid` 0.14.6.
 
 ### Breaking
 

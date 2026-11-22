@@ -21,10 +21,11 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
-## ABI 6.0.2
+## ABI 6.0.3
 
-Workspace 0.17.0 ships the 6.0.2 native ABI: no type, layout or symbol change
-since 6.0.0, so a caller built against 6.0.x links and runs unchanged. ChArUco
+Workspace 0.17.0 ships the 6.0.3 native ABI, a fix with no type, layout or
+symbol change since 6.0.0: a caller built against 6.0.0–6.0.2 links and runs
+unchanged. ChArUco
 diagnostics JSON can now carry the `evidence_at_chance` rejection. A caller
 built against 5.x or earlier must relink and rebuild every caller-allocated
 array, because several structs differ in size. Older ABI history is in
