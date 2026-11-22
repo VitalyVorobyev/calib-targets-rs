@@ -67,6 +67,42 @@ break its symmetry. It carries far less information than the
 others — just enough to fix the frame — but it prints as an ordinary chessboard with three
 dots, which suits setups where the full pattern is impractical.
 
+## Under blur
+
+If the board will be out of focus — a shallow depth of field, a tilted
+sensor, motion — the families part ways. The table gives the fraction of a
+board's 63 inner corners delivered with the correct label, against the blur
+`σ` as a fraction of the square size. These are synthetic renders (the
+accuracy suite's renderer): a Gaussian lens blur convolved with the pixel's
+area (`σ` is the total), squares of 24 and 32 px, rotated 8° and 30°, with and
+without a 30° perspective tilt, sensor noise 1 and 4 gray levels, default
+parameters; each entry pools 8 renders. No render delivered a wrong label.
+
+| Family | Square | σ/cell 0.05 | 0.1 | 0.15 | 0.2 | 0.25 | 0.3 |
+|---|---|---|---|---|---|---|---|
+| Chessboard | 24 px | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 | 0.99 |
+| | 32 px | 1.00 | 1.00 | 1.00 | 1.00 | 0.99 | 0.75 |
+| ChArUco | 24 px | 0.88 | 0 | 0 | 0 | 0 | 0 |
+| | 32 px | 1.00 | 0.52 | 0 | 0 | 0 | 0 |
+| PuzzleBoard | 24 px | 1.00 | 1.00 | 1.00 | 0.62 | 0 | 0 |
+| | 32 px | 1.00 | 1.00 | 1.00 | 0.62 | 0 | 0 |
+| Marker board | 24 px | 1.00 | 1.00 | 0 | 0 | 0 | 0 |
+| | 32 px | 1.00 | 1.00 | 0 | 0 | 0 | 0 |
+
+What an identified family survives is set by the size of the feature that
+carries its code, relative to the square. A ChArUco marker bit is 1/8 of a
+square (a 6 × 6-bit marker filling 0.75 of it), and the marker's black border
+comes within 1/8 of a square of every corner: from `σ` = 0.1 of a square the
+detector mostly fails to find the corner grid at all. A PuzzleBoard bit is a
+dot a third of a square across ([Stelldinger et al.
+2024](references.md#stelldinger2024)), and the board decodes fully up to
+0.15 — two to three times the blur ChArUco tolerates at the same square
+size — partly at 0.2 (where about half of the delivered corners lie more than
+1 px from the truth), and not at 0.25. The marker board's circles are half a square,
+yet its circle search finds none from 0.15: there its detector, not the
+feature size, is the limit. A plain chessboard needs only its corners and
+keeps them longest, but carries no identity.
+
 ## Then choose the size
 
 Two independent numbers, and both are constrained by the camera rather than by
