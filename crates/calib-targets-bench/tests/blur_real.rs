@@ -74,6 +74,13 @@ fn second_differences(estimates: &HashMap<(i32, i32), CornerBlur>) -> (Vec<f64>,
 /// Bounds: coverage ≥ 0.80; z spread in [0.5, 1.25]; σ spread ≤ 0.12 px.
 #[test]
 fn puzzleboard_photograph_has_a_smooth_honest_blur_field() {
+    // `testdata/puzzleboard_reference/` is a local-only directory.
+    let local = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../../testdata/puzzleboard_reference/example4.png");
+    if !local.exists() {
+        println!("testdata/puzzleboard_reference/ not found — skipping.");
+        return;
+    }
     let img = load_gray("puzzleboard_reference/example4.png");
     let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("board spec");
     let mut detection = detect_puzzleboard_best(&img, &PuzzleBoardParams::sweep_for_board(&board))
