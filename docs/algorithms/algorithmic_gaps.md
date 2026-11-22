@@ -326,7 +326,10 @@ heavy-tailed PSF; dependent on cell size and pattern.
 
 - **σ/cell above ≈ 0.3**: at 0.375 coverage drops to ≈ 0.2 with −3.5 % bias,
   and one estimate (the board's outer corner) is 6 SE low — an underestimate
-  whose own clearance admits it. With ground-truth labels at σ/cell 0.4–0.6
+  whose own clearance admits it. Applying the window tests at σ̂ + 3 SE
+  removes it (and costs ≤ 2 points of synthetic coverage below 0.3), but on
+  real frames it declines a large share of corners whose field is honest, so
+  it is not applied. With ground-truth labels at σ/cell 0.4–0.6
   (no detector delivers there) a few percent of corners are delivered at
   −20 to −60 %: when the true blur exceeds what the window can hold, the
   estimates that pass the window test are the low draws of a σ–contrast
