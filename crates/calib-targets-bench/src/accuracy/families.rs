@@ -3,17 +3,23 @@
 //! default parameters.
 
 use calib_targets::aruco::resolve_dictionary;
+use calib_targets::blur::{
+    chessboard_blur, marker_board_blur, puzzleboard_blur, BlurDecline, CornerBlur,
+};
 use calib_targets::charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
-use calib_targets::chessboard::ChessboardParams;
-use calib_targets::core::edge_blur::{EdgeBlurParams, EdgeBlurWindow};
+use calib_targets::chessboard::{ChessboardDetection, ChessboardParams};
 use calib_targets::core::GrayImageView;
 use calib_targets::detect::{default_chess_config, detect_chessboard, DetectorConfig};
-use calib_targets::marker::{MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec};
+use calib_targets::marker::{
+    MarkerBoardDetection, MarkerBoardDetector, MarkerBoardParams, MarkerBoardSpec,
+};
 use calib_targets::printable::{
     board_primitives, CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec,
     PuzzleBoardTargetSpec, TargetSpec,
 };
-use calib_targets::puzzleboard::{PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec};
+use calib_targets::puzzleboard::{
+    PuzzleBoardDetection, PuzzleBoardDetector, PuzzleBoardParams, PuzzleBoardSpec,
+};
 use calib_targets::{Coord, DetectionQuality, PositionCovariance};
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
@@ -26,7 +32,7 @@ pub const SQUARE_MM: f64 = 10.0;
 const SQUARES_X: u32 = 10;
 const SQUARES_Y: u32 = 8;
 const DICTIONARY: &str = "DICT_4X4_50";
-/// PuzzleBoard master coordinates wrap at this period.
+/// PuzzleBoard master ids wrap at this period.
 const PUZZLE_MASTER_PERIOD: i32 = 501;
 
 /// A detector family of the suite.
@@ -96,6 +102,17 @@ pub struct FamilyRun {
     pub delivered: Vec<Delivered>,
     /// The result's own quality summary.
     pub quality: DetectionQuality,
+    /// The typed detection, for the per-corner blur.
+    detection: TypedDetection,
+}
+
+/// A family's own detection result.
+enum TypedDetection {
+    Chessboard(ChessboardDetection),
+    PuzzleBoard(PuzzleBoardDetection),
+    MarkerBoard(MarkerBoardDetection),
+    /// ChArUco has no per-corner blur entry point yet.
+    Charuco,
 }
 
 /// A family's board: its print description, scene and truth.
@@ -194,23 +211,25 @@ impl Board {
         }
     }
 
-    /// The edge-blur estimator's settings for this board: the family's
-    /// window from its print geometry, and the PuzzleBoard's master labels
-    /// wrapping at 501.
-    pub fn edge_blur_params(&self) -> EdgeBlurParams {
-        match &self.target {
-            TargetSpec::Chessboard(_) => EdgeBlurParams::new(EdgeBlurWindow::chessboard()),
-            TargetSpec::Charuco(t) => {
-                EdgeBlurParams::new(EdgeBlurWindow::charuco(t.marker_size_rel))
-            }
-            TargetSpec::PuzzleBoard(t) => {
-                EdgeBlurParams::new(EdgeBlurWindow::puzzleboard(t.dot_diameter_rel))
-                    .with_label_period(PUZZLE_MASTER_PERIOD)
-            }
-            TargetSpec::MarkerBoard(t) => {
-                EdgeBlurParams::new(EdgeBlurWindow::marker_board(t.circle_diameter_rel))
-            }
-            _ => unreachable!("the suite builds only its four families"),
+    /// The per-corner blur of `run` on `image` through the facade's
+    /// [`calib_targets::blur`] entry point for the family, in
+    /// `run.delivered` order; `None` for ChArUco, which has none.
+    pub fn corner_blur(
+        &self,
+        image: &Rendered,
+        run: &FamilyRun,
+    ) -> Option<Vec<Result<CornerBlur, BlurDecline>>> {
+        let img = image::GrayImage::from_raw(
+            image.width as u32,
+            image.height as u32,
+            image.pixels.clone(),
+        )
+        .expect("buffer matches its size");
+        match &run.detection {
+            TypedDetection::Chessboard(d) => Some(chessboard_blur(&img, d)),
+            TypedDetection::PuzzleBoard(d) => Some(puzzleboard_blur(&img, d)),
+            TypedDetection::MarkerBoard(d) => Some(marker_board_blur(&img, &self.marker_spec(), d)),
+            TypedDetection::Charuco => None,
         }
     }
 
@@ -280,6 +299,7 @@ impl Board {
                         })
                         .collect(),
                     quality: d.quality,
+                    detection: TypedDetection::Chessboard(d),
                 })
             }
             Family::Charuco => {
@@ -303,6 +323,7 @@ impl Board {
                         })
                         .collect(),
                     quality: d.quality,
+                    detection: TypedDetection::Charuco,
                 })
             }
             Family::PuzzleBoard => {
@@ -330,6 +351,7 @@ impl Board {
                         })
                         .collect(),
                     quality: d.quality,
+                    detection: TypedDetection::PuzzleBoard(d),
                 })
             }
             Family::MarkerBoard => {
@@ -350,6 +372,7 @@ impl Board {
                         })
                         .collect(),
                     quality: d.quality,
+                    detection: TypedDetection::MarkerBoard(d),
                 })
             }
         }

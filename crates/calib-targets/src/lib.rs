@@ -89,6 +89,9 @@ pub use calib_targets_chessboard::{trace_topological, trace_topological_detectio
 pub use ::image;
 
 #[cfg(feature = "image")]
+pub mod blur;
+
+#[cfg(feature = "image")]
 pub mod detect;
 
 pub mod generate;

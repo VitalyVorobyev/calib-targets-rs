@@ -539,6 +539,210 @@ impl Supersampled {
     }
 }
 
+/// A lens point-spread function beyond the isotropic Gaussian of
+/// [`Supersampled::integrate`], for the blur study's PSF conditions.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Psf {
+    /// A Gaussian of covariance `[xx, xy, yy]` px² (`|xy| ≤ min(xx, yy)`).
+    Gaussian {
+        /// `[Σxx, Σxy, Σyy]`, px².
+        covariance: [f64; 3],
+    },
+    /// A uniform disk (a defocus pillbox) of `radius` px.
+    Disk {
+        /// Radius, px.
+        radius: f64,
+    },
+}
+
+impl Psf {
+    /// Apron the supersampling needs for this PSF, expressed as the
+    /// isotropic-Gaussian `σ` that [`supersample`] sizes its apron from.
+    pub fn apron_sigma(&self) -> f64 {
+        match *self {
+            Self::Gaussian { covariance: c } => c[0].max(c[2]).sqrt(),
+            Self::Disk { radius } => 0.25 * radius + 0.25,
+        }
+    }
+}
+
+/// Quarter-pixel steps per pixel in [`Supersampled::integrate_psf`].
+const QUARTER: usize = 4;
+const QUARTER_PX: f64 = 1.0 / QUARTER as f64;
+
+/// A 1-D Gaussian of per-axis variance `var` px² sampled at quarter-pixel
+/// steps: `(offsets in steps, weights)`, the weights summing to 1.
+fn quarter_gaussian(var: f64) -> Vec<(i64, f64)> {
+    if var <= 0.0 {
+        return vec![(0, 1.0)];
+    }
+    let reach = (4.5 * var.sqrt() / QUARTER_PX).ceil() as i64;
+    let mut w: Vec<(i64, f64)> = (-reach..=reach)
+        .map(|k| {
+            let d = k as f64 * QUARTER_PX;
+            (k, (-0.5 * d * d / var).exp())
+        })
+        .collect();
+    let total: f64 = w.iter().map(|(_, v)| v).sum();
+    for (_, v) in &mut w {
+        *v /= total;
+    }
+    w
+}
+
+impl Supersampled {
+    /// Integrate every output pixel with the pixel box convolved with `psf`.
+    ///
+    /// The samples are first averaged into quarter-pixel cells; the PSF is
+    /// applied as a discrete kernel on that quarter-pixel lattice (a
+    /// Gaussian as three 1-D passes along x, y and the diagonal, which keeps
+    /// every tap on the lattice; a disk as the covered fraction of each
+    /// quarter cell); the quarter cells are then summed into pixels. The
+    /// result's PSF is therefore the unit box convolved with the discrete
+    /// kernel, whose exact covariance (px²) is returned alongside.
+    pub fn integrate_psf(&self, psf: &Psf) -> (Irradiance, [f64; 3]) {
+        let Self {
+            s,
+            reach: apron,
+            width,
+            height,
+            ..
+        } = *self;
+        assert!(s % QUARTER == 0, "supersampling must be a multiple of 4");
+        let block = s / QUARTER;
+        let hi_w = (width + 2 * apron) * s;
+        let qw = (width + 2 * apron) * QUARTER;
+        let qh = (height + 2 * apron) * QUARTER;
+        let mut quarter = vec![0.0f64; qw * qh];
+        let norm = 1.0 / (block * block) as f64;
+        for qy in 0..qh {
+            for qx in 0..qw {
+                let mut acc = 0.0f64;
+                for by in 0..block {
+                    let row = (qy * block + by) * hi_w + qx * block;
+                    for v in &self.samples[row..row + block] {
+                        acc += f64::from(*v);
+                    }
+                }
+                quarter[qy * qw + qx] = acc * norm;
+            }
+        }
+        let at = |grid: &[f64], x: i64, y: i64| -> f64 {
+            let x = x.clamp(0, qw as i64 - 1) as usize;
+            let y = y.clamp(0, qh as i64 - 1) as usize;
+            grid[y * qw + x]
+        };
+        // (dx, dy) taps in quarter steps with weights.
+        let pass = |grid: &[f64], taps: &[(i64, i64, f64)]| -> Vec<f64> {
+            let mut out = vec![0.0f64; qw * qh];
+            for y in 0..qh as i64 {
+                for x in 0..qw as i64 {
+                    let mut acc = 0.0;
+                    for &(dx, dy, w) in taps {
+                        acc += w * at(grid, x + dx, y + dy);
+                    }
+                    out[y as usize * qw + x as usize] = acc;
+                }
+            }
+            out
+        };
+        let mut kernel_cov = [0.0f64; 3];
+        let lensed = match *psf {
+            Psf::Gaussian { covariance: c } => {
+                let d = c[1].abs();
+                let sgn = if c[1] < 0.0 { -1 } else { 1 };
+                assert!(
+                    c[0] >= d && c[2] >= d,
+                    "the three-pass Gaussian needs |xy| ≤ min(xx, yy)"
+                );
+                let mut g = quarter;
+                for (axis, var) in [(0, c[0] - d), (1, c[2] - d), (2, d)] {
+                    let w = quarter_gaussian(var);
+                    let m2: f64 = w
+                        .iter()
+                        .map(|(k, v)| v * (*k as f64 * QUARTER_PX).powi(2))
+                        .sum();
+                    let taps: Vec<(i64, i64, f64)> = w
+                        .iter()
+                        .map(|&(k, v)| match axis {
+                            0 => (k, 0, v),
+                            1 => (0, k, v),
+                            _ => (k, sgn * k, v),
+                        })
+                        .collect();
+                    match axis {
+                        0 => kernel_cov[0] += m2,
+                        1 => kernel_cov[2] += m2,
+                        _ => {
+                            kernel_cov[0] += m2;
+                            kernel_cov[2] += m2;
+                            kernel_cov[1] += sgn as f64 * m2;
+                        }
+                    }
+                    g = pass(&g, &taps);
+                }
+                g
+            }
+            Psf::Disk { radius } => {
+                let reach = (radius / QUARTER_PX).ceil() as i64 + 1;
+                let sub = 16;
+                let mut taps = Vec::new();
+                for dy in -reach..=reach {
+                    for dx in -reach..=reach {
+                        let mut inside = 0usize;
+                        for sy in 0..sub {
+                            for sx in 0..sub {
+                                let x =
+                                    (dx as f64 - 0.5 + (sx as f64 + 0.5) / sub as f64) * QUARTER_PX;
+                                let y =
+                                    (dy as f64 - 0.5 + (sy as f64 + 0.5) / sub as f64) * QUARTER_PX;
+                                if x * x + y * y < radius * radius {
+                                    inside += 1;
+                                }
+                            }
+                        }
+                        if inside > 0 {
+                            taps.push((dx, dy, inside as f64));
+                        }
+                    }
+                }
+                let total: f64 = taps.iter().map(|t| t.2).sum();
+                for t in &mut taps {
+                    t.2 /= total;
+                }
+                for &(dx, dy, w) in &taps {
+                    let (x, y) = (dx as f64 * QUARTER_PX, dy as f64 * QUARTER_PX);
+                    kernel_cov[0] += w * x * x;
+                    kernel_cov[1] += w * x * y;
+                    kernel_cov[2] += w * y * y;
+                }
+                pass(&quarter, &taps)
+            }
+        };
+        let mut values = vec![0.0f64; width * height];
+        let inv = 1.0 / (QUARTER * QUARTER) as f64;
+        for y in 0..height {
+            for x in 0..width {
+                let mut acc = 0.0;
+                for qy in 0..QUARTER {
+                    let row = ((y + apron) * QUARTER + qy) * qw + (x + apron) * QUARTER;
+                    acc += lensed[row..row + QUARTER].iter().sum::<f64>();
+                }
+                values[y * width + x] = acc * inv;
+            }
+        }
+        (
+            Irradiance {
+                values,
+                width,
+                height,
+            },
+            kernel_cov,
+        )
+    }
+}
+
 /// [`supersample`] then [`Supersampled::integrate`] at the spec's blur.
 pub fn integrate(
     scene: &Scene,

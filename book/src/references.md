@@ -54,8 +54,8 @@ construction rules.
 
 ## Blur and focus measurement from calibration targets
 
-These papers inform ongoing work on measuring blur at target corners and on
-using it for tilted-sensor (Scheimpflug) calibration.
+These papers inform the [per-corner blur](blur.md) measurement and its use
+for tilted-sensor (Scheimpflug) calibration.
 
 <a id="kumar2014"></a>
 **Kumar & Ahuja 2014.** A. Kumar, N. Ahuja. *Non-frontal Camera Calibration
@@ -128,6 +128,27 @@ arXiv:2512.00796, 2025.
 [arXiv:2512.00796](https://arxiv.org/abs/2512.00796).
 Argues that checkerboard edges sample the blur in only two directions, and
 estimates the PSF from a circle grid target instead.
+
+<a id="owen1956"></a>
+**Owen 1956.** D. B. Owen. *Tables for Computing Bivariate Normal
+Probabilities.* The Annals of Mathematical Statistics 27(4), 1075–1090, 1956.
+[doi:10.1214/aoms/1177728074](https://doi.org/10.1214/aoms/1177728074).
+Introduces the T function; the per-corner blur fit integrates a Gaussian over
+each printed polygon exactly with it.
+
+<a id="neweywest1987"></a>
+**Newey & West 1987.** W. K. Newey, K. D. West. *A Simple, Positive
+Semi-Definite, Heteroskedasticity and Autocorrelation Consistent Covariance
+Matrix.* Econometrica 55(3), 703–708, 1987.
+[doi:10.2307/1913610](https://doi.org/10.2307/1913610).
+The Bartlett-kernel sandwich covariance the blur fit's standard errors use.
+
+<a id="andrews1991"></a>
+**Andrews 1991.** D. W. K. Andrews. *Heteroskedasticity and Autocorrelation
+Consistent Covariance Matrix Estimation.* Econometrica 59(3), 817–858, 1991.
+[doi:10.2307/2938229](https://doi.org/10.2307/2938229).
+Automatic bandwidth selection for that sandwich, from the residuals' own
+autocorrelation.
 
 <a id="iso12233"></a>
 **ISO 12233.** ISO 12233, *Photography — Electronic still picture imaging —

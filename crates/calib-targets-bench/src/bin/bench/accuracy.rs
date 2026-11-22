@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
-use calib_targets_bench::accuracy::blur::{blur_conditions, summarize_blur};
+use calib_targets_bench::accuracy::blur::{
+    blur_conditions, psf_conditions, run_psf, summarize_blur, summarize_psf,
+};
 use calib_targets_bench::accuracy::families::Family;
 use calib_targets_bench::accuracy::{
     full_conditions, markdown, quick_conditions, run, summarize, Refiner, Report, SUPERSAMPLE,
@@ -34,18 +36,24 @@ pub(crate) fn cmd_accuracy(args: AccuracyArgs) -> ExitCode {
         full_conditions(&families)
     };
     let blur_grid = blur_conditions(&families, args.quick);
+    let psf_grid: Vec<_> = psf_conditions(args.quick)
+        .into_iter()
+        .filter(|c| families.contains(&c.family))
+        .collect();
     let threads = args.threads.unwrap_or_else(|| {
         std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get)
     });
     println!(
-        "accuracy: {} + {} blur-study conditions × {} refiner(s) on {threads} thread(s)",
+        "accuracy: {} + {} blur-study conditions × {} refiner(s), {} PSF conditions, on {threads} thread(s)",
         conditions.len(),
         blur_grid.len(),
-        refiners.len()
+        refiners.len(),
+        psf_grid.len()
     );
     let started = Instant::now();
-    let rows = run(&conditions, &refiners, threads);
-    let blur_rows = run(&blur_grid, &refiners, threads);
+    let rows = run(&conditions, &refiners, threads, false);
+    let blur_rows = run(&blur_grid, &refiners, threads, true);
+    let psf_rows = run_psf(&psf_grid, threads);
     let elapsed = started.elapsed().as_secs_f64();
     let report = Report {
         grid: if args.quick { "quick" } else { "full" }.to_string(),
@@ -54,10 +62,21 @@ pub(crate) fn cmd_accuracy(args: AccuracyArgs) -> ExitCode {
         rows,
         blur_summary: summarize_blur(&blur_rows),
         blur_rows,
+        psf_summary: summarize_psf(&psf_rows),
+        psf_rows,
     };
     let md = markdown(&report);
-    // The summary table is the first section.
-    let head: String = md.split("\n## ").next().unwrap_or_default().to_string();
+    // The summary table is the first section (the blur tables with
+    // `--only-blur`).
+    let head: String = if args.only_blur {
+        md.split("\n## ")
+            .filter(|sec| sec.to_lowercase().contains("blur"))
+            .map(|sec| format!("## {sec}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    } else {
+        md.split("\n## ").next().unwrap_or_default().to_string()
+    };
     println!("{head}\nran in {elapsed:.1} s");
 
     let dir = match args.out.as_deref() {

@@ -35,9 +35,11 @@
 //! [`quick_conditions`] is the small subset the integration test and
 //! `bench accuracy --quick` run.
 //!
-//! Every detection is also handed to the per-corner edge-blur estimate and
-//! scored against the rendered blur ([`blur`]); the blur study adds its own
-//! grid of larger cells and five blur levels ([`blur::blur_conditions`]).
+//! The blur study hands its detections to the per-corner blur
+//! ([`calib_targets::blur`]) and scores it against the rendered blur
+//! ([`blur`]), on its own grid of larger cells and six blur levels
+//! ([`blur::blur_conditions`]) and under anisotropic and defocus-disk PSFs
+//! ([`blur::psf_conditions`]).
 
 pub mod blur;
 pub mod families;
@@ -50,7 +52,7 @@ use calib_targets::detect::DetectorConfig;
 use chess_corners::{ImageRefiner, NoiseLevel, Uncertainty};
 use serde::{Deserialize, Serialize};
 
-use blur::{BlurScore, BlurSummary};
+use blur::{BlurScore, BlurSummary, PsfRow, PsfSummary};
 use families::{Board, Family};
 use metrics::Score;
 use render::{supersample, Camera, Pose, RenderSpec};
@@ -91,7 +93,7 @@ impl Refiner {
     }
 
     /// `cfg` with this refiner and the covariance switched on.
-    fn apply(self, cfg: DetectorConfig) -> DetectorConfig {
+    pub(crate) fn apply(self, cfg: DetectorConfig) -> DetectorConfig {
         let cfg = cfg.with_uncertainty(Uncertainty::Propagated {
             noise: NoiseLevel::Estimate,
         });
@@ -260,13 +262,19 @@ pub struct Row {
     pub score: Option<Score>,
     /// The detector's reason for a miss.
     pub miss: Option<String>,
-    /// The edge-blur estimate on the delivered corners.
-    pub edge_blur: Option<BlurScore>,
+    /// The per-corner blur on the delivered corners (blur-study rows only).
+    pub blur: Option<BlurScore>,
 }
 
-/// Run every condition with every refiner. Conditions sharing a geometry
-/// share one supersampled render; geometries run on `threads` worker threads.
-pub fn run(conditions: &[Condition], refiners: &[Refiner], threads: usize) -> Vec<Row> {
+/// Run every condition with every refiner, and the per-corner blur on each
+/// detection when `with_blur`. Conditions sharing a geometry share one
+/// supersampled render; geometries run on `threads` worker threads.
+pub fn run(
+    conditions: &[Condition],
+    refiners: &[Refiner],
+    threads: usize,
+    with_blur: bool,
+) -> Vec<Row> {
     let mut groups: Vec<Vec<Condition>> = Vec::new();
     for c in conditions {
         match groups
@@ -287,7 +295,7 @@ pub fn run(conditions: &[Condition], refiners: &[Refiner], threads: usize) -> Ve
                     loop {
                         let k = next.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
                         let Some(group) = groups.get(k) else { break };
-                        done.push((k, run_geometry(group, refiners)));
+                        done.push((k, run_geometry(group, refiners, with_blur)));
                     }
                     done
                 })
@@ -322,7 +330,7 @@ pub fn render_condition(c: &Condition) -> (Board, render::Rendered) {
     (board, image)
 }
 
-fn run_geometry(group: &[Condition], refiners: &[Refiner]) -> Vec<Row> {
+fn run_geometry(group: &[Condition], refiners: &[Refiner], with_blur: bool) -> Vec<Row> {
     let first = group[0];
     let board = Board::new(first.family);
     let margin = QUIET_ZONE_SQUARES * first.cell_px;
@@ -357,7 +365,6 @@ fn run_geometry(group: &[Condition], refiners: &[Refiner]) -> Vec<Row> {
             noise_seed: c.seed(),
         };
         let image = blurred[idx].1.expose(&spec);
-        let blur_params = board.edge_blur_params();
         for &refiner in refiners {
             let mut row = Row {
                 condition: *c,
@@ -365,16 +372,18 @@ fn run_geometry(group: &[Condition], refiners: &[Refiner]) -> Vec<Row> {
                 image_size: size,
                 score: None,
                 miss: None,
-                edge_blur: None,
+                blur: None,
             };
             match board.detect(&image, &|cfg| refiner.apply(cfg)) {
                 Ok(run) => {
-                    row.edge_blur = Some(BlurScore::measure(
-                        &image,
-                        &run.delivered,
-                        &blur_params,
-                        c.blur_px,
-                    ));
+                    if with_blur {
+                        row.blur = BlurScore::measure(
+                            &board,
+                            &image,
+                            &run,
+                            blur::iso_truth_kernel(c.blur_px),
+                        );
+                    }
                     row.score = Some(metrics::score(&run, &board.gt, &camera));
                 }
                 Err(reason) => row.miss = Some(reason),
@@ -532,10 +541,14 @@ pub struct Report {
     pub summary: Vec<Summary>,
     /// Every condition × refiner.
     pub rows: Vec<Row>,
-    /// Edge-blur aggregates over the blur study's rows.
+    /// Blur aggregates over the blur study's rows.
     pub blur_summary: Vec<BlurSummary>,
     /// The blur study's condition × refiner rows.
     pub blur_rows: Vec<Row>,
+    /// The PSF conditions' summaries.
+    pub psf_summary: Vec<PsfSummary>,
+    /// The PSF conditions' rows.
+    pub psf_rows: Vec<PsfRow>,
 }
 
 fn fmt(v: Option<f64>, digits: usize) -> String {
@@ -621,6 +634,9 @@ pub fn markdown(report: &Report) -> String {
     if !report.blur_summary.is_empty() {
         let _ = writeln!(s, "\n{}", blur::blur_markdown(&report.blur_summary));
     }
+    if !report.psf_summary.is_empty() {
+        let _ = writeln!(s, "\n{}", blur::psf_markdown(&report.psf_summary));
+    }
     s
 }
 
@@ -632,12 +648,14 @@ mod tests {
     fn grid_sizes() {
         assert_eq!(full_conditions(&[Family::Chessboard]).len(), 64 + 16);
         assert_eq!(quick_conditions(&Family::ALL).len(), 17);
-        // 3 cells × 3 rotations × 2 tilts × 5 blurs × 2 noises + 5 distorted.
+        // 3 cells × 3 rotations × 2 tilts × 6 blurs × 2 noises + 6 distorted.
         assert_eq!(
             blur::blur_conditions(&[Family::Chessboard], false).len(),
-            185
+            222
         );
-        assert_eq!(blur::blur_conditions(&Family::ALL, true).len(), 12);
+        // ChArUco has no blur entry point.
+        assert!(blur::blur_conditions(&[Family::Charuco], false).is_empty());
+        assert_eq!(blur::blur_conditions(&Family::ALL, true).len(), 9);
     }
 
     #[test]

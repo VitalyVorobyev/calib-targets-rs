@@ -13,6 +13,8 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 Rarely used public surface with no in-workspace consumers is removed.
 
+- The hidden, unstable `calib_targets_core::edge_blur` study module is removed;
+  `calib_targets::blur` replaces it.
 - `calib_targets_core::RectifiedView` and `RectToImgMapper` removed. For a
   rectified view of a detected board use `calib_targets_chessboard`'s
   `rectify_from_chessboard_result` or `rectify_mesh_from_grid`.
@@ -24,6 +26,19 @@ Rarely used public surface with no in-workspace consumers is removed.
 
 ### Added
 
+- **Per-corner blur.** `calib_targets::blur::{chessboard_blur,
+  puzzleboard_blur, marker_board_blur}` measure, at every labelled corner of a
+  detection, the blur kernel's 2 × 2 covariance `Σ` (lens and pixel aperture
+  together, px²), `σ = √(tr Σ / 2)` and their standard errors, from the
+  original image and the board's known print, or say why not
+  (`BlurDecline`). The fit models the exact Gaussian-blurred print under a
+  free local homography and illumination; its standard errors stay honest on
+  correlated real-image residuals. On synthetic renders `σ` is unbiased to
+  0.1 % with honest standard errors, and an anisotropic kernel is recovered
+  with its orientation. Separate from detection: corner types, detection
+  results and the C ABI are unchanged; ChArUco and the bindings are not
+  covered yet. See the book's *Corner blur* page. The estimator itself is
+  `calib_targets_core::blur::estimate_corner_blur`.
 - `ChessboardDetection::to_target_detection` and
   `ChessboardDetection::corner_map`: the detection as the shared
   `TargetDetection` carrier and as a grid → position `CornerMap`.
