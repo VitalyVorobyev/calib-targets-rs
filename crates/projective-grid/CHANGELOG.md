@@ -7,6 +7,11 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.14.6] - 2026-11-22
+
+Additive: two expert exports that target detectors share with the crate. No
+existing API changes, and no label or position moves.
+
 ### Added
 
 - `expert::lattice::GRID_TRANSFORMS_D4`: the D4 group in alignment-search
@@ -17,6 +22,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 - `expert::component::{median_edge_length, max_axis_median_edge_length}`: the
   upper-median cell-size estimators of a labelled component that component
   merge uses, for detectors that size their own recovery stages.
+
+### Changed
+
+- Label rebasing and the component cell-size estimators each have one
+  implementation; every caller keeps its statistic, fallback and summation
+  order.
 
 ## [0.14.5] - 2026-11-17
 
@@ -286,7 +297,8 @@ See [Road to 1.0](https://github.com/VitalyVorobyev/calib-targets-rs/blob/projec
 for the compact 0.11 → 0.12 request example, release process, readiness status,
 and remaining stabilization work.
 
-[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.5...HEAD
+[Unreleased]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.6...HEAD
+[0.14.6]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.5...projective-grid-v0.14.6
 [0.14.5]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.4...projective-grid-v0.14.5
 [0.14.4]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.3...projective-grid-v0.14.4
 [0.14.3]: https://github.com/VitalyVorobyev/calib-targets-rs/compare/projective-grid-v0.14.2...projective-grid-v0.14.3

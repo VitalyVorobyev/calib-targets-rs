@@ -1,12 +1,12 @@
-# calib-targets 0.16.3
+# calib-targets 0.17.0
 
-A missing or undetected corner no longer costs a whole patch of the board: the
-square grid walk now refuses the cell that spans a hole instead of discarding
-the connected component around it, so dense, partly occluded boards keep
-corners they lost before, with no wrong labels. The build also no longer
-compiles C or assembly: `projective-grid` 0.14.5 answers its neighbour queries
-from its own kd-tree instead of `kiddo`. No API change. See the
-[workspace changelog](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/CHANGELOG.md#0163).
+Two fixes that stop wrong labels on boards blurred past readability: ChArUco
+no longer places the board on a marker read no stronger than chance, and the
+chessboard's final wrong-label check now also runs on small detections. Both
+apply to the native library unchanged in shape. The Rust crates add per-corner
+blur measurement (not yet in the C API) and remove some rarely used Rust
+surface; see the
+[workspace changelog](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/CHANGELOG.md#0170).
 
 ## Native C API archives
 
@@ -23,11 +23,12 @@ version, not the workspace version.
 
 ## ABI 6.0.2
 
-Workspace 0.16.3 ships the 6.0.2 native ABI. It has no type or layout change
-relative to 6.0.0, so a caller built against 6.0.0 or 6.0.1 links and runs
-unchanged. A caller built against 5.x or earlier must relink and rebuild every
-caller-allocated array, because several structs differ in size. Older ABI
-history is in [`CHANGELOG.md`](../../CHANGELOG.md) and the
+Workspace 0.17.0 ships the 6.0.2 native ABI: no type, layout or symbol change
+since 6.0.0, so a caller built against 6.0.x links and runs unchanged. ChArUco
+diagnostics JSON can now carry the `evidence_at_chance` rejection. A caller
+built against 5.x or earlier must relink and rebuild every caller-allocated
+array, because several structs differ in size. Older ABI history is in
+[`CHANGELOG.md`](../../CHANGELOG.md) and the
 [0.16 migration guide](../migrations/0.16.0.md).
 
 ## Verifying an archive
