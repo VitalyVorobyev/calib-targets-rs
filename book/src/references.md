@@ -130,9 +130,9 @@ Argues that checkerboard edges sample the blur in only two directions, and
 estimates the PSF from a circle grid target instead.
 
 <a id="iso12233"></a>
-**ISO 12233.** ISO 12233:2023, *Photography — Electronic still picture imaging
-— Resolution and spatial frequency responses.*
-[iso.org/standard/79169.html](https://www.iso.org/standard/79169.html).
+**ISO 12233.** ISO 12233, *Photography — Electronic still picture imaging —
+Resolution and spatial frequency responses* (current edition at
+[iso.org](https://www.iso.org/)).
 The standard edge-based (slanted-edge) spatial frequency response measurement.
 
 <a id="steger2017"></a>
