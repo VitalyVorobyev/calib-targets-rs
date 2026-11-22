@@ -7,22 +7,27 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.17.0
+
+Per-corner blur measurement, and two fixes that stop wrong labels on boards
+blurred past readability. A minor release: rarely used public surface is
+removed; see the [0.17.0 migration guide](docs/migrations/0.17.0.md). The C ABI
+moves to 6.0.3 (no type or layout change), the Python and WASM APIs are
+unchanged, and the workspace requires `projective-grid` 0.14.6.
 
 ### Breaking
 
 Rarely used public surface with no in-workspace consumers is removed.
 
-- The hidden, unstable `calib_targets_core::edge_blur` study module is removed;
-  `calib_targets::blur` replaces it.
 - `calib_targets_core::RectifiedView` and `RectToImgMapper` removed. For a
   rectified view of a detected board use `calib_targets_chessboard`'s
   `rectify_from_chessboard_result` or `rectify_mesh_from_grid`.
 - `calib_targets_core::square_predict_grid_position` removed; call
   `projective_grid::expert::lattice::predict_grid_position(grid, idx,
   LatticeKind::Square)` and read the prediction's `position`.
-- The `dataset` feature of `calib-targets-chessboard` is removed; it enabled
-  nothing.
+- The `dataset` feature of `calib-targets-chessboard` is removed; beyond an
+  unused dependency it only enabled `diagnostics`, which you can enable
+  directly.
 
 ### Added
 
@@ -56,7 +61,8 @@ Rarely used public surface with no in-workspace consumers is removed.
   shipped with wrong ids. The chosen placement must now carry more evidence
   than the best of the placements searched reaches by chance (`ln` of their
   number); such frames decline instead. Diagnostics report it as the
-  `evidence_at_chance` rejection. No detection on the synthetic accuracy grid
+  `evidence_at_chance` rejection (`RejectReason::EvidenceAtChance`, also in
+  the WASM typings). No detection on the synthetic accuracy grid
   or the regression images changes except the one that was wrong.
 - **The chessboard's final wrong-label check now runs on small detections.**
   It was armed only once a detection had 40 labelled corners, so a small

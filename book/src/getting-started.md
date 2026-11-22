@@ -196,7 +196,7 @@ for c in corners:
 ```toml
 # Cargo.toml
 [dependencies]
-calib-targets = "0.16"
+calib-targets = "0.17"
 ```
 
 The `image` crate ships with `calib-targets` (default `image` feature) and is

@@ -401,6 +401,47 @@ residual of a whole cell or more; merge a ChArUco component only if a
 homography fitted to the primary predicts its corners within half a cell;
 validate a corner only against a fit that excludes it.
 
+### Gap 33 — PuzzleBoard decode under blur ends before the corner grid does — **open, measured**
+
+Synthetic renders (the accuracy suite's renderer: Gaussian lens blur
+convolved with the pixel box, `σ` the total; squares of 24 and 32 px, with and
+without a 30° perspective tilt; default parameters; the numbers in the book's
+*Under blur* table, `howto_choose_target.md`). PuzzleBoard delivers every
+inner corner up to σ/cell 0.15, about 0.62 of them at 0.2, and none at 0.25,
+where every render declines with `NotEnoughEdges` ("not enough edges
+sampled"). The plain chessboard detector on the same renders delivers its grid
+to 0.3. The corner grid that PuzzleBoard decodes on is therefore still there
+at 0.25: the limit is the edge-dot sampling or decode, not corner detection.
+At 0.2 about half of the delivered corners lie more than 1 px from the truth,
+with correct labels. No render at any level delivered a wrong label.
+
+Separately: at 16 px squares under a 30° tilt, PuzzleBoard declines with the
+same `NotEnoughEdges` on a nearly sharp render (σ/cell 0.05). Not
+investigated; it may share a cause with the blur limit or not.
+
+**What a fix must establish first.** `NotEnoughEdges` is raised when fewer
+edges than `required_edges(min_window)` (60 at the default span of 7 corners)
+survive, so three stages can lose the dots, and the measurement must say
+which before anything changes:
+
+- **Sampling** (`sample_all_edges`): whether the dot's sampling window still
+  sees the dot's contrast once the blur spreads it over a large part of the
+  window, i.e. whether the sampled bit value is still right.
+- **Bit-confidence filter** (`min_bit_confidence`, before the edge count):
+  whether the dots are read correctly but at a confidence the filter drops,
+  i.e. whether the confidence measure itself degrades with blur faster than
+  the bit's correctness does.
+- **Minimum window** (`required_edges`): whether enough edges survive in
+  parts of the board but not as one fragment spanning the minimum window.
+  The 7-corner span is the exact uniqueness floor and is not negotiable;
+  only how the surviving edges are gathered is.
+
+Per-edge measured bit correctness against the render's truth, its
+confidence, and the filter's verdict, as functions of σ/cell, separate the
+three. A fix then follows the stage that fails — e.g. a blur-aware sampling
+footprint or a confidence that tracks bit correctness — rather than a lower
+threshold that lets the same evidence through.
+
 ---
 
 ## Architectural-direction summary
