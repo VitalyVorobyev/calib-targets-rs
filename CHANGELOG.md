@@ -56,6 +56,15 @@ Rarely used public surface with no in-workspace consumers is removed.
   number); such frames decline instead. Diagnostics report it as the
   `evidence_at_chance` rejection. No detection on the synthetic accuracy grid
   or the regression images changes except the one that was wrong.
+- **The chessboard's final wrong-label check now runs on small detections.**
+  It was armed only once a detection had 40 labelled corners, so a small
+  "grid" assembled from non-board saddles (edges several times longer than
+  their neighbours on the same grid line) could be delivered unexamined; one
+  was, by `detect_chessboard` on a ChArUco board blurred past readability.
+  The check already judges an edge only where it has enough nearby edges to
+  compare with, so it now applies to every component. This covers every
+  detector built on the chessboard grid; no detection on the synthetic
+  accuracy grid or the regression images changes.
 
 ### Changed
 

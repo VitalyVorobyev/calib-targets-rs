@@ -244,6 +244,19 @@ impl Board {
         refine(base)
     }
 
+    /// Run the plain chessboard detector (default parameters, the default
+    /// corner front-end through `refine`) on a render of this board, whatever
+    /// its family: what a chessboard user gets pointing the detector at it.
+    /// The labels are relative, so a ChArUco, PuzzleBoard or marker board
+    /// scores against its own inner-corner truth like a chessboard.
+    pub fn detect_as_chessboard(
+        &self,
+        image: &Rendered,
+        refine: &dyn Fn(DetectorConfig) -> DetectorConfig,
+    ) -> Result<FamilyRun, String> {
+        detect_plain_chessboard(image, &refine(default_chess_config()))
+    }
+
     fn puzzle_spec(&self) -> PuzzleBoardSpec {
         PuzzleBoardSpec::with_origin(SQUARES_Y, SQUARES_X, SQUARE_MM as f32, 0, 0)
             .expect("valid PuzzleBoard")
@@ -277,31 +290,7 @@ impl Board {
             data: &image.pixels,
         };
         match self.family {
-            Family::Chessboard => {
-                let img = image::GrayImage::from_raw(
-                    image.width as u32,
-                    image.height as u32,
-                    image.pixels.clone(),
-                )
-                .expect("buffer matches its size");
-                let d = detect_chessboard(&img, &chess, &ChessboardParams::default())
-                    .map_err(|e| e.to_string())?;
-                Ok(FamilyRun {
-                    delivered: d
-                        .corners
-                        .iter()
-                        .map(|c| Delivered {
-                            position: c.position,
-                            covariance: c.position_covariance,
-                            grid: c.grid,
-                            claim_mm: None,
-                            id_consistent: true,
-                        })
-                        .collect(),
-                    quality: d.quality,
-                    detection: TypedDetection::Chessboard(d),
-                })
-            }
+            Family::Chessboard => detect_plain_chessboard(image, &chess),
             Family::Charuco => {
                 let mut params = CharucoParams::for_board(charuco_detector_board());
                 params.chess = chess;
@@ -377,4 +366,31 @@ impl Board {
             }
         }
     }
+}
+
+/// The plain chessboard detector with default parameters on `image`.
+fn detect_plain_chessboard(image: &Rendered, chess: &DetectorConfig) -> Result<FamilyRun, String> {
+    let img = image::GrayImage::from_raw(
+        image.width as u32,
+        image.height as u32,
+        image.pixels.clone(),
+    )
+    .expect("buffer matches its size");
+    let d =
+        detect_chessboard(&img, chess, &ChessboardParams::default()).map_err(|e| e.to_string())?;
+    Ok(FamilyRun {
+        delivered: d
+            .corners
+            .iter()
+            .map(|c| Delivered {
+                position: c.position,
+                covariance: c.position_covariance,
+                grid: c.grid,
+                claim_mm: None,
+                id_consistent: true,
+            })
+            .collect(),
+        quality: d.quality,
+        detection: TypedDetection::Chessboard(d),
+    })
 }

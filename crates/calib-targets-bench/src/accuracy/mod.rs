@@ -93,7 +93,7 @@ impl Refiner {
     }
 
     /// `cfg` with this refiner and the covariance switched on.
-    pub(crate) fn apply(self, cfg: DetectorConfig) -> DetectorConfig {
+    pub fn apply(self, cfg: DetectorConfig) -> DetectorConfig {
         let cfg = cfg.with_uncertainty(Uncertainty::Propagated {
             noise: NoiseLevel::Estimate,
         });
@@ -161,6 +161,12 @@ impl Condition {
             self.tilt_deg.to_bits(),
             self.k1.to_bits(),
         )
+    }
+
+    /// The camera and image size of this condition's geometry on `board`.
+    fn camera(&self, board: &Board) -> (Camera, [usize; 2]) {
+        let margin = QUIET_ZONE_SQUARES * self.cell_px;
+        Camera::looking_at(board.size_mm[0], board.size_mm[1], &self.pose(), margin)
     }
 
     fn seed(&self) -> u64 {
@@ -310,32 +316,51 @@ pub fn run(
     results.into_iter().flat_map(|(_, rows)| rows).collect()
 }
 
-/// Render one condition on its own: the board and the 8-bit image (the
-/// suite itself shares one supersampling across the blur levels of a
-/// geometry, bit-identically).
-pub fn render_condition(c: &Condition) -> (Board, render::Rendered) {
-    let board = Board::new(c.family);
-    let margin = QUIET_ZONE_SQUARES * c.cell_px;
-    let (camera, size) = Camera::looking_at(board.size_mm[0], board.size_mm[1], &c.pose(), margin);
-    let spec = RenderSpec {
+/// Render `c` exactly as [`run`] does when `head` leads `c`'s geometry
+/// group and `max_blur_px` is the group's widest blur: the supersampling
+/// (its jitter and its apron) is seeded from the group, the noise from `c`.
+/// Returns the board, the camera (for the truth) and the 8-bit image.
+pub fn render_in_geometry(
+    head: &Condition,
+    max_blur_px: f64,
+    c: &Condition,
+) -> (Board, Camera, render::Rendered) {
+    assert_eq!(
+        head.geometry_key(),
+        c.geometry_key(),
+        "`head` must share `c`'s geometry"
+    );
+    let board = Board::new(head.family);
+    let (camera, size) = head.camera(&board);
+    let sampled = supersample(
+        &board.scene,
+        &camera,
+        size,
+        SUPERSAMPLE,
+        max_blur_px.max(c.blur_px),
+        head.seed(),
+    );
+    let image = sampled.integrate(c.blur_px).expose(&exposure(head, c));
+    (board, camera, image)
+}
+
+/// The exposure of `c` in the geometry group led by `head`.
+fn exposure(head: &Condition, c: &Condition) -> RenderSpec {
+    RenderSpec {
         supersample: SUPERSAMPLE,
         blur_sigma_px: c.blur_px,
         noise_sigma: c.noise,
         black: BLACK,
         white: WHITE,
-        jitter_seed: c.seed(),
+        jitter_seed: head.seed(),
         noise_seed: c.seed(),
-    };
-    let image = render::integrate(&board.scene, &camera, size, &spec).expose(&spec);
-    (board, image)
+    }
 }
 
 fn run_geometry(group: &[Condition], refiners: &[Refiner], with_blur: bool) -> Vec<Row> {
     let first = group[0];
     let board = Board::new(first.family);
-    let margin = QUIET_ZONE_SQUARES * first.cell_px;
-    let (camera, size) =
-        Camera::looking_at(board.size_mm[0], board.size_mm[1], &first.pose(), margin);
+    let (camera, size) = first.camera(&board);
     let max_blur = group.iter().map(|c| c.blur_px).fold(0.0, f64::max);
     let sampled = supersample(
         &board.scene,
@@ -355,16 +380,7 @@ fn run_geometry(group: &[Condition], refiners: &[Refiner], with_blur: bool) -> V
                 blurred.len() - 1
             }
         };
-        let spec = RenderSpec {
-            supersample: SUPERSAMPLE,
-            blur_sigma_px: c.blur_px,
-            noise_sigma: c.noise,
-            black: BLACK,
-            white: WHITE,
-            jitter_seed: first.seed(),
-            noise_seed: c.seed(),
-        };
-        let image = blurred[idx].1.expose(&spec);
+        let image = blurred[idx].1.expose(&exposure(&first, c));
         for &refiner in refiners {
             let mut row = Row {
                 condition: *c,
