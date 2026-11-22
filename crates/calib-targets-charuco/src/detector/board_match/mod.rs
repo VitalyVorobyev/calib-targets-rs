@@ -136,6 +136,9 @@ trait MatchSink {
         _bits: usize,
     ) {
     }
+    /// The chosen hypothesis's evidence did not exceed what the best of the
+    /// competing hypotheses reaches by chance.
+    fn reject_chance(&mut self, _evidence: f32, _chance_level: f32) {}
     /// The chosen-vs-runner-up margin fell below the acceptance gate.
     fn reject_margin(&mut self, _margin: f32, _required: f32) {}
     /// The accepted hypothesis emitted no markers.
@@ -167,7 +170,7 @@ pub(crate) fn match_board(
 /// [`diagnostics::match_board_diag`].
 ///
 /// Runs `sample_cells` → `build_score_matrix` → `enumerate_hypotheses` →
-/// margin gate → `emit_markers` and returns the match result. Every
+/// chance and margin gates → `emit_markers` and returns the match result. Every
 /// diagnostic touchpoint is routed through `sink`; for the production path
 /// `sink` is [`NoDiag`] and the hooks compile away.
 fn match_board_core<S: MatchSink>(
@@ -202,6 +205,7 @@ fn match_board_core<S: MatchSink>(
         runner_up,
         total,
         margin,
+        chance_level,
     }) = enumerate_hypotheses(board, cells, &matrix)
     else {
         sink.reject_translation_window(cells, &samples, &matrix, bits);
@@ -215,6 +219,13 @@ fn match_board_core<S: MatchSink>(
     let cell_align = hypothesis_to_alignment(&best);
     sink.fill_cells_and_expected(board, cells, &samples, &matrix, &cell_align, bits);
 
+    // Significance before uniqueness: a placement no better than the best
+    // chance placement is not evidence of the board, however far it stands
+    // above the runner-up.
+    if best.score <= chance_level {
+        sink.reject_chance(best.score, chance_level);
+        return None;
+    }
     if margin < cfg.alignment_min_margin {
         sink.reject_margin(margin, cfg.alignment_min_margin);
         return None;

@@ -15,7 +15,10 @@
 //! - the run is deterministic: two runs serialize identically, covariances
 //!   included.
 //!
-//! A second test runs the corner-blur study's quick subset and bounds the
+//! A ChArUco guard renders the board under a blur that leaves its markers
+//! unreadable and checks that nothing wrong is delivered (a miss is fine).
+//!
+//! A further test runs the corner-blur study's quick subset and bounds the
 //! per-corner blur ([`calib_targets::blur`]) the same way (see
 //! [`BLUR_BOUNDS`]): coverage, worst error and standard-error honesty against
 //! the rendered truth up to σ/cell 0.25, and the anisotropic and defocus-disk
@@ -30,7 +33,7 @@ use calib_targets_bench::accuracy::blur::{
 use calib_targets_bench::accuracy::blur::{robust_sd, BlurScore};
 use calib_targets_bench::accuracy::families::Family;
 use calib_targets_bench::accuracy::render::Psf;
-use calib_targets_bench::accuracy::{quick_conditions, run, summarize, Refiner, Row};
+use calib_targets_bench::accuracy::{quick_conditions, run, summarize, Condition, Refiner, Row};
 
 /// `(family, refiner, min detected of the family's quick conditions — 4, or 5
 /// for the marker board — min mean recall, max RMSE px, max σ̂₀² truth)` —
@@ -171,6 +174,41 @@ fn quick_suite_holds_the_contract_and_its_accuracy() {
         serde_json::to_string(&again).expect("rows serialize"),
         "the suite is not deterministic"
     );
+}
+
+/// A ChArUco board under a blur that smears its markers below resolution
+/// (σ = 4 px on 32 px squares) delivered five wrong ids: the chessboard
+/// stage built a small grid component out of marker-interior saddles, one of
+/// its cells read as a marker with three bits wrong, and that single chance
+/// decode was accepted as the board placement. The board matcher now requires
+/// the chosen placement to beat the best of the placements it searched by
+/// chance, and the frame declines. The first condition only fixes the render:
+/// a geometry's supersampling is seeded from its first condition, exactly as
+/// in the full grid where the frame was found.
+#[test]
+fn charuco_under_unresolving_blur_delivers_no_wrong_labels() {
+    let condition = |blur_px: f64, noise: f64| Condition {
+        family: Family::Charuco,
+        cell_px: 32.0,
+        rotation_deg: 0.0,
+        tilt_deg: 0.0,
+        blur_px,
+        noise,
+        k1: 0.0,
+    };
+    let conditions = [condition(0.5, 1.0), condition(4.0, 4.0)];
+    let rows = run(&conditions, &Refiner::ALL, 2, false);
+    assert_eq!(rows.len(), 4);
+    for row in &rows {
+        let wrong = row.score.as_ref().map_or(0, |s| s.wrong_labels);
+        assert_eq!(
+            wrong,
+            0,
+            "{} {}: {wrong} wrong label(s)",
+            row.condition.label(),
+            row.refiner.label()
+        );
+    }
 }
 
 /// Per-(family, refiner) metrics of the blur quick subset:

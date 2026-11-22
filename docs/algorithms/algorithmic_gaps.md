@@ -345,18 +345,27 @@ heavy-tailed PSF; dependent on cell size and pattern.
   follow-up.
 - **Bindings** need a `GrayImageView` entry point.
 
-### Gap 32 — Wrong ChArUco labels under strong blur on the synthetic suite — **open, not yet localized**
+### Gap 32 — Small grid components of marker-interior corners under strong blur — **open**
 
-`bench accuracy` (full grid) delivers 5 wrong labels on one ChArUco
-condition: 32 px cells, no rotation or tilt, rendered blur 4 px, noise 4 gray
-levels, center-of-mass localizer. Every other condition of the grid is
-clean. A 4 px blur on a 32 px cell leaves marker cells of 4 px per bit, so
-the marker decode is the first suspect, but which stage admits the labels
-has not been measured.
+Under a blur that smears ChArUco markers below resolution (σ = 4 px on 32 px
+squares) the ChESS responses at the true X-junctions are weak, while
+marker-interior saddles about a third of a cell away fire strongly. The
+chessboard stage then builds small components out of the latter: a 10-corner
+component whose cells are not images of squares (on one grid line, a 7.7 px
+edge next to a 30 px one; axes 45° off the board's). The grid-level
+wrong-label checks did not remove it; which check skipped it, and on what
+reference, is not yet measured.
 
-**Fix.** Localize it with the debugging protocol (which corners, wrong grid
-label or wrong id, which stage) before proposing a predicate; a wrong label
-is a contract violation, not a tuning matter.
+ChArUco no longer delivers such a component: the board matcher's chance gate
+(evidence above `ln N`) refuses the single chance marker read it rested on.
+But the component itself is a grid-level false positive with only the marker
+evidence between it and the output, and ChArUco's corner validation
+cannot see it — with one or two markers, the homography it validates against
+is fitted to the same corners.
+
+**Fix.** Trace the component through `trace_topological_detection` to find
+which check it should have failed; a cell-shape consistency predicate for
+components too small for the local-reference checks is the likely shape.
 
 ---
 

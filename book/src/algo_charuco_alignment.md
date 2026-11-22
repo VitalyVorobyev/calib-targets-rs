@@ -56,17 +56,30 @@ consistent with *all* the sampled cells at once.
    the observed markers. A hypothesis with no contributing cells is
    rejected.
 
-3. **Maximum-evidence placement + margin gate.** The matcher keeps the best
-   and runner-up hypotheses and computes the margin
-   `(best − runner-up) / Σᵢ wᵢ · bits² · ln 2`, the evidence gap as a share
-   of the evidence the best placement's cells could carry. The placement is
-   accepted only when its cells favour it over chance (`best > 0`) and the
-   margin clears `alignment_min_margin`; below it, detection is **rejected
-   rather than mislabelled** — heavy bit noise or a near-symmetric layout
-   produces a near-tie, and a coin-flip alignment would risk a wrong ID.
-   Normalising by the attainable evidence keeps the gate meaningful when the
-   evidence itself is weak: two placements supported only by nearly
-   uninformative cells differ by a tiny share of what those cells could show.
+3. **Maximum-evidence placement, chance and margin gates.** The matcher
+   keeps the best and runner-up hypotheses. Two tests decide whether the
+   best is accepted; failing either, detection is **rejected rather than
+   mislabelled**.
+
+   - *Above chance.* The best placement's evidence must exceed `ln N`, where
+     `N` counts the placements that expect a marker in at least one cell.
+     Evidence is the log of a likelihood ratio against random bits; on cells
+     unrelated to the markers a placement expects, that ratio averages 1, so
+     a single placement reaches evidence `t` by chance with probability at
+     most `e^{−t}` and the best of `N` with probability at most `N · e^{−t}`.
+     Below `ln N` the winner is no stronger than the best of the placements a
+     cell of random bits supports. This is what refuses a small grid
+     component whose only "marker" is blurred texture read with a few bits
+     wrong: one such cell favours *some* of the board's markers over random
+     bits, and accepting any positive evidence would place the board on it.
+   - *Unique.* The margin `(best − runner-up) / Σᵢ wᵢ · bits² · ln 2`, the
+     evidence gap as a share of the evidence the best placement's cells could
+     carry, must clear `alignment_min_margin` — heavy bit noise or a
+     near-symmetric layout produces a near-tie, and a coin-flip alignment
+     would risk a wrong ID. Normalising by the attainable evidence keeps the
+     gate meaningful when the evidence itself is weak: two placements
+     supported only by nearly uninformative cells differ by a tiny share of
+     what those cells could show.
 
 4. **Constrained re-emit.** Under the chosen placement every cell has a
    single expected marker. The matcher emits a marker for a cell only when
@@ -83,7 +96,7 @@ blurred, tiny-marker, and large-board frames.
 
 The accepted alignment must still clear the downstream inlier floors
 `min_marker_inliers` (primary component) / `min_secondary_marker_inliers`
-(non-primary components); because the margin gate already does the real
+(non-primary components); because the chance and margin gates already do the real
 accept/reject work, `for_board` keeps these floors low.
 
 ## Cell alignment and corner alignment

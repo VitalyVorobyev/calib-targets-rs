@@ -43,6 +43,20 @@ Rarely used public surface with no in-workspace consumers is removed.
   `ChessboardDetection::corner_map`: the detection as the shared
   `TargetDetection` carrier and as a grid → position `CornerMap`.
 
+### Fixed
+
+- **ChArUco no longer places the board on a chance marker read.** The
+  board-level matcher kept the best of every board placement it scored and
+  accepted it whenever its cells favoured it over random bits. A maximum over
+  hundreds of placements routinely does: under blur that smears the markers
+  below resolution, a small grid fragment of marker-interior corners with one
+  cell read as a marker with a few bits wrong was accepted, and its corners
+  shipped with wrong ids. The chosen placement must now carry more evidence
+  than the best of the placements searched reaches by chance (`ln` of their
+  number); such frames decline instead. Diagnostics report it as the
+  `evidence_at_chance` rejection. No detection on the synthetic accuracy grid
+  or the regression images changes except the one that was wrong.
+
 ### Changed
 
 - `calib_targets_core::GRID_TRANSFORMS_D4` is now `projective-grid`'s

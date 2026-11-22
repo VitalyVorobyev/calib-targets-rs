@@ -20,7 +20,7 @@ about orientation.
 | 0 | chessboard grid detect | ChESS corners → `Vec<ChessboardDetection>` | `ChessboardDetector::detect_all` (the [chessboard pipeline](pipeline_chessboard.md)). The `min_corner_strength` floor keeps marker-bit saddles out of the grid (below). |
 | 1 | grid smoothness pre-filter | grid corners + image → cleaned corners | Per-corner position vs midpoint-averaged neighbours; a deviation over `grid_smoothness_threshold_rel × px_per_square` triggers a local ChESS redetection or a drop. |
 | 2 | marker cell enumeration | corner map → `Vec<MarkerCell>` | Per cell, require all four corners `{(i,j),(i+1,j),(i+1,j+1),(i,j+1)}`; skip incomplete cells. |
-| 3 | marker decode + alignment | cells + image → markers + alignment | Score each cell's soft bits ([ArUco bit decode](algo_aruco_decode.md)) against every `(D4 rotation, integer translation)` board hypothesis, pick the maximum-likelihood placement, and accept it through a margin gate. See [alignment](algo_charuco_alignment.md). |
+| 3 | marker decode + alignment | cells + image → markers + alignment | Score each cell's soft bits ([ArUco bit decode](algo_aruco_decode.md)) against every `(D4 rotation, integer translation)` board hypothesis, pick the maximum-likelihood placement, and accept it only above chance and through a margin gate. See [alignment](algo_charuco_alignment.md). |
 | 4 | alignment validation | markers + spec → inliers | Require `≥ min_marker_inliers` (primary component) or `≥ min_secondary_marker_inliers` (subsequent). |
 | 5 | ChArUco corner mapping | corners + alignment → IDed corners | Map each board-spec inner-corner position through the alignment; only inner-cell intersections get IDs (not marker corners). |
 | 6 | corner validation | mapped corners + markers + image → validated corners | Check each corner against its marker-predicted seed; deviation over `corner_validation_threshold_rel × px_per_square` → marker-constrained re-detection, which must land within that same distance of the seed, or drop. Re-detection uses the front end's localizer. |
@@ -59,6 +59,7 @@ detector to marker scenes:
 | `AlignmentFailed { inliers: 0 }` | Stage 4 | No decoded ID is in the layout — board-spec mismatch (`rows`, `cols`, `dictionary`, `marker_layout`) or a non-zero `first_marker` offset. |
 | `AlignmentFailed`, small but non-zero inliers | Stage 4 | Partial view or strong perspective — lower `min_marker_inliers` to what you reliably see. |
 | Small soft-matcher margin | Stage 3 (board-level matcher) | Ambiguous decodes / heavy bit noise — the margin gate is flagging a low-confidence alignment. |
+| `evidence_at_chance` rejection | Stage 3 (board-level matcher) | The markers read are no stronger than chance decodes — typically a small grid fragment whose cells are too blurred to read. Give the markers more pixels or less blur; no knob relaxes this. |
 | Corners drift off true intersections | Stage 6 | Weak alignment — verify the board pose / occlusion; check `corner_validation_threshold_rel`. |
 | Wrong corner IDs | **never** | A wrong chessboard `(i, j)` would cause this — file a bug at the chessboard layer. |
 

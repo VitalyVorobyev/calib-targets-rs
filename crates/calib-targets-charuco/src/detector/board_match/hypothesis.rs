@@ -43,7 +43,8 @@ pub struct DiagHypothesis {
     pub contributing_cells: usize,
 }
 
-/// The chosen placement, its runner-up, and the acceptance margin between them.
+/// The chosen placement, its runner-up, and the two acceptance statistics:
+/// how far the best stands above chance, and how far above the runner-up.
 pub(super) struct Selection {
     pub(super) best: DiagHypothesis,
     pub(super) runner_up: Option<DiagHypothesis>,
@@ -51,6 +52,34 @@ pub(super) struct Selection {
     pub(super) total: usize,
     /// See [`margin`].
     pub(super) margin: f32,
+    /// See [`chance_level`].
+    pub(super) chance_level: f32,
+}
+
+/// The evidence the best of `competing` placements reaches on cells that say
+/// nothing about the board: `ln(competing)`. The chosen placement must exceed
+/// it.
+///
+/// A placement's evidence is the log of a likelihood ratio `Λ` of its markers
+/// against random bits. On a cell whose content is unrelated to the marker a
+/// placement expects, `E[Λ] = 1` (each expected bit is as likely set as clear,
+/// whatever the cell shows, and the per-bit factors average to 1), so by
+/// Markov's inequality one placement reaches `ln Λ ≥ t` with probability at
+/// most `e^{−t}`, and the best of `competing` placements with probability at
+/// most `competing · e^{−t}` (union bound). Requiring the winner to clear
+/// `ln(competing)` therefore keeps the expected number of chance placements
+/// that score as well as it below one.
+///
+/// Accepting the best placement on `evidence > 0` alone would be the test for
+/// a single placement fixed in advance; the matcher instead keeps the maximum
+/// over every placement it scores, and a maximum over hundreds of chance
+/// scores can sit several nats above zero. A cell of blurred texture read as
+/// a marker with three bits wrong scored 4.6 nats among 252 placements
+/// (`ln 252 = 5.5`) on the frame that exposed this, and on a small grid
+/// component it was the only evidence there was. With one competing
+/// placement the level is `0`, the single-placement test.
+fn chance_level(competing: usize) -> f32 {
+    (competing.max(1) as f32).ln()
 }
 
 /// How decisively `best` beats the runner-up: the evidence gap between them
@@ -96,6 +125,9 @@ pub(super) fn enumerate_hypotheses(
     let mut best: Option<(DiagHypothesis, f32)> = None;
     let mut runner_up: Option<DiagHypothesis> = None;
     let mut total = 0usize;
+    // Placements that expect a marker in at least one informative cell; the
+    // others score `-inf` and cannot win.
+    let mut competing = 0usize;
 
     for rot_idx in 0..4u8 {
         let transform = GRID_TRANSFORMS_D4[rot_idx as usize];
@@ -108,6 +140,9 @@ pub(super) fn enumerate_hypotheses(
             for ty in ty_lo..=ty_hi {
                 let scored = score_hypothesis(board, matrix, &mapped, [tx, ty], rot_idx);
                 total += 1;
+                if scored.evidence.is_finite() {
+                    competing += 1;
+                }
                 let h = DiagHypothesis {
                     rotation: rot_idx,
                     translation: [tx, ty],
@@ -136,6 +171,7 @@ pub(super) fn enumerate_hypotheses(
         runner_up,
         total,
         margin: margin(best.score, best_capacity, runner_up.map(|h| h.score)),
+        chance_level: chance_level(competing),
     })
 }
 
@@ -333,6 +369,58 @@ mod tests {
         assert_eq!(margin(5.0, 11.0, None), 1.0);
         // A decisive gap between well-evidenced placements.
         assert!(margin(100.0, 110.0, Some(-20.0)) > 1.0);
+    }
+
+    /// One cell is all a small grid component may offer. Read cleanly it
+    /// places the board; read as a marker with three of its sixteen bits
+    /// wrong at low contrast — what blurred texture next to a marker reads
+    /// as — it is no better than the best of the placements a cell of random
+    /// bits would support, and the board is not placed on it.
+    #[test]
+    fn a_single_cell_places_the_board_only_above_chance() {
+        let board = CharucoBoard::new(
+            CharucoBoardSpec::new(6, 6, 1.0, 0.75, builtins::DICT_4X4_50)
+                .with_marker_layout(MarkerLayout::OpenCvCharuco),
+        )
+        .expect("valid board");
+        let code = board.spec().dictionary.codes()
+            [board.marker_id_at(Coord::new(1, 0)).expect("marker square") as usize];
+        let cells = [MarkerCell::new(
+            Coord::new(0, 0),
+            [Point2::new(0.0, 0.0); 4],
+        )];
+        let select = |samples: CellSamples| {
+            let matrix = build_score_matrix(&board, &[Some(samples)], &BoardMatchConfig::default())
+                .expect("matrix");
+            enumerate_hypotheses(&board, &cells, &matrix).expect("hypotheses")
+        };
+
+        let clean = select(marker_samples(code, 40));
+        assert!(
+            clean.best.score > clean.chance_level,
+            "a cleanly read marker must clear the chance level: {} vs {}",
+            clean.best.score,
+            clean.chance_level
+        );
+
+        let misread = select(marker_samples(code ^ 0b1000_0100_0001, 6));
+        assert!(
+            misread.best.score > 0.0,
+            "the misread cell still favours some marker over random bits"
+        );
+        assert!(
+            misread.best.score <= misread.chance_level,
+            "a three-bit misread at low contrast must not clear the chance level: {} vs {}",
+            misread.best.score,
+            misread.chance_level
+        );
+    }
+
+    #[test]
+    fn chance_level_is_the_log_of_the_competing_placements() {
+        assert_eq!(chance_level(1), 0.0);
+        assert_eq!(chance_level(0), 0.0);
+        assert!((chance_level(252) - 252f32.ln()).abs() < 1e-6);
     }
 
     #[test]

@@ -101,6 +101,13 @@ impl MatchSink for BoardMatchDiagnostics {
         fill_expected_from_board(self, board, alignment, matrix, bits);
     }
 
+    fn reject_chance(&mut self, evidence: f32, chance_level: f32) {
+        self.rejection = Some(RejectReason::EvidenceAtChance {
+            evidence,
+            chance_level,
+        });
+    }
+
     fn reject_margin(&mut self, margin: f32, required: f32) {
         self.rejection = Some(RejectReason::MarginBelowGate { margin, required });
     }
