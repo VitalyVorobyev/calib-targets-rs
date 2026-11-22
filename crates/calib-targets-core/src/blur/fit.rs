@@ -30,6 +30,15 @@ const MAX_VIF: f64 = 4.0;
 /// 8-bit step at full contrast.
 const SUPPORT_MARGIN_SIGMAS: f64 = 3.0;
 
+/// The largest blur the estimator delivers, as a fraction of the local cell:
+/// `σ = √(tr Σ / 2)` over the local scale (the side of the square of the
+/// cell's area, `√|det J|`). This is the end of the range the estimator is
+/// validated on, not a tuned threshold: up to it the synthetic suite
+/// measures no bias beyond ±0.1 % and no estimate beyond 5 standard errors
+/// of the truth; beyond it estimates turn biased low while their standard
+/// errors still claim precision.
+const MAX_SIGMA_PER_CELL: f64 = 0.3;
+
 /// The unit box's variance per axis, px².
 pub(super) const PIXEL_VAR: f64 = 1.0 / 12.0;
 
@@ -380,6 +389,13 @@ fn holds_profile(rho: f64, frame: &Frame, sigma: f64) -> bool {
     rho * frame.scale_min >= CUT * sigma + 0.5
 }
 
+/// Whether the fitted blur `√(tr Σ / 2)` is at most [`MAX_SIGMA_PER_CELL`]
+/// of the local cell.
+fn within_validated_range(frame: &Frame, theta: &Vector) -> bool {
+    let s = sigma_of(theta);
+    (0.5 * (s[0] + s[2])).max(0.0).sqrt() <= MAX_SIGMA_PER_CELL * frame.scale
+}
+
 /// The kernel's largest principal standard deviation at `theta`, px.
 fn max_sigma(theta: &Vector) -> f64 {
     eig2(sigma_of(theta)).1.sqrt()
@@ -436,7 +452,10 @@ pub(super) fn estimate(
     }
     let fit = best.ok_or(last_err)?;
     let sigma = max_sigma(&fit.theta);
-    if !holds_profile(fit.rho, &frame, sigma) || !observes_corner(pattern, &frame, sigma) {
+    if !holds_profile(fit.rho, &frame, sigma)
+        || !observes_corner(pattern, &frame, sigma)
+        || !within_validated_range(&frame, &fit.theta)
+    {
         return Err(BlurDecline::TooBlurred);
     }
     finish(&polygons, &frame, &fixed, fit, pattern)
@@ -529,4 +548,121 @@ fn finish(
             autocorrelation as f32,
         ),
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use nalgebra::{Matrix3, Point2};
+
+    use super::super::gauss_polygon::cdf;
+    use super::super::{estimate_corner_blur, BlurDecline, BlurPattern};
+    use crate::{GrayImageView, Homography};
+
+    const CELL_PX: f64 = 16.0;
+    const CORNER: [f64; 2] = [100.3, 99.6];
+    const SIZE: usize = 200;
+    /// Sub-samples per pixel per axis of the render (the pixel's unit box).
+    const SUB: usize = 4;
+
+    /// The ±1 square wave of period two cells (`+1` on even cells), blurred
+    /// by a Gaussian of `sigma` cells, at `x` cells.
+    fn blurred_wave(x: f64, sigma: f64) -> f64 {
+        (-12..12)
+            .map(|k: i32| {
+                let sign = if k.rem_euclid(2) == 0 { 1.0 } else { -1.0 };
+                let k = f64::from(k);
+                sign * (cdf((x - k) / sigma) - cdf((x - k - 1.0) / sigma))
+            })
+            .sum()
+    }
+
+    /// An infinite chessboard of `CELL_PX` squares with a corner at
+    /// [`CORNER`], blurred by an isotropic Gaussian of `lens_px`, integrated
+    /// over each pixel's unit box, with deterministic noise of about one
+    /// gray level.
+    fn render(lens_px: f64) -> Vec<u8> {
+        let sigma = lens_px / CELL_PX;
+        let mut state = 0x2545_f491_4f6c_dd1du64;
+        let mut noise = move || {
+            state = state
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            ((state >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 3.5
+        };
+        let mut out = vec![0u8; SIZE * SIZE];
+        for y in 0..SIZE {
+            for x in 0..SIZE {
+                let mut black = 0.0;
+                for sy in 0..SUB {
+                    for sx in 0..SUB {
+                        let px = x as f64 - 0.5 + (sx as f64 + 0.5) / SUB as f64;
+                        let py = y as f64 - 0.5 + (sy as f64 + 0.5) / SUB as f64;
+                        let (u, v) = ((px - CORNER[0]) / CELL_PX, (py - CORNER[1]) / CELL_PX);
+                        black += 0.5 * (1.0 + blurred_wave(u, sigma) * blurred_wave(v, sigma));
+                    }
+                }
+                black /= (SUB * SUB) as f64;
+                out[y * SIZE + x] =
+                    (220.0 - 190.0 * black + noise()).round().clamp(0.0, 255.0) as u8;
+            }
+        }
+        out
+    }
+
+    /// Every cell within reach known; black where `a + b` is even.
+    fn chessboard() -> BlurPattern {
+        let mut p = BlurPattern::new();
+        for b in -4..4 {
+            for a in -4..4 {
+                p = p.with_known_cell(a, b);
+                if (a + b) % 2 == 0 {
+                    let (x, y) = (f64::from(a), f64::from(b));
+                    p = p.with_polygon(
+                        vec![
+                            Point2::new(x, y),
+                            Point2::new(x + 1.0, y),
+                            Point2::new(x + 1.0, y + 1.0),
+                            Point2::new(x, y + 1.0),
+                        ],
+                        1.0,
+                    );
+                }
+            }
+        }
+        p
+    }
+
+    fn estimate_at(sigma_per_cell: f64) -> (f64, Result<super::super::CornerBlur, BlurDecline>) {
+        // Total σ² = lens² + the unit box's 1/12, less the render's own
+        // sub-sample variance 1/(12 SUB²).
+        let total = sigma_per_cell * CELL_PX;
+        let box_var = (1.0 - 1.0 / (SUB * SUB) as f64) / 12.0;
+        let lens = (total * total - box_var).sqrt();
+        let pixels = render(lens);
+        let image = GrayImageView {
+            width: SIZE,
+            height: SIZE,
+            data: &pixels,
+        };
+        let h = Homography::new(Matrix3::new(
+            CELL_PX, 0.0, CORNER[0], 0.0, CELL_PX, CORNER[1], 0.0, 0.0, 1.0,
+        ));
+        (total, estimate_corner_blur(&image, &chessboard(), &h))
+    }
+
+    #[test]
+    fn blur_inside_the_validated_range_is_measured() {
+        let (truth, got) = estimate_at(0.25);
+        let b = got.expect("an interior corner at σ/cell 0.25 is measured");
+        let err = f64::from(b.sigma_px) / truth - 1.0;
+        assert!(err.abs() < 0.02, "σ {} vs truth {truth}", b.sigma_px);
+    }
+
+    #[test]
+    fn blur_beyond_the_validated_range_is_declined() {
+        // An interior corner whose window would still hold the blur: the
+        // decline is the validated range's, not the window's.
+        let (_, got) = estimate_at(0.35);
+        assert_eq!(got.err(), Some(BlurDecline::TooBlurred));
+    }
 }

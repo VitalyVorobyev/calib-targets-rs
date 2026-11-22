@@ -131,7 +131,7 @@ cover:
 
 | `BlurDecline` | Meaning |
 |---|---|
-| `TooBlurred` | The blur is too wide for the known print around the corner: for some blur within three standard errors of the estimate, the largest window cannot hold the corner's blurred edges, or the corner lies within three blur widths of print that is not known (a corner at the edge of the detection). |
+| `TooBlurred` | The blur is too wide for the known print around the corner: `σ` exceeds 0.3 of the local cell (the end of the validated range, see [Limits](#limits)), the largest window cannot hold the corner's blurred edges, or the corner lies within three blur widths of print that is not known (a corner at the edge of the detection). |
 | `Unresolved` | The kernel's trace is not resolved from zero at two standard errors: `σ ± SE` would not mean anything. |
 | `SharperThanPixel` | The estimate lies below the pixel aperture (`Σ` not `⪰ I/12`): an in-camera sharpened image, a sensor aperture smaller than the pixel, or a patch that does not support the fit. |
 | `NoGeometry` | Fewer than three labelled neighbours, or a degenerate local frame. |
@@ -151,7 +151,7 @@ blur of 0.5–6 px convolved with the unit pixel, cells of 16–64 px, rotation,
 | Bias of `σ` | within ±0.1 % wherever estimates are delivered |
 | Scatter of `σ` | 0.1–0.7 % (robust SD), tracking the stated standard error |
 | Standard errors | `(σ̂ − σ_true)/SE` has SD 1.03 over 70 000 corners; 0.4 % beyond 3 SE; none beyond 4.6 SE up to `σ`/cell 0.3 |
-| Coverage | ≈ 1 up to `σ`/cell ≈ 0.2; 0.9 at 0.2–0.3 (corners at the edge of the board decline); little beyond ≈ 0.35 (`TooBlurred`) |
+| Coverage | ≈ 1 up to `σ`/cell ≈ 0.2; 0.9 at 0.25 (corners at the edge of the board decline); about half at 0.3, where the estimate straddles the limit; none beyond (`TooBlurred`) |
 | Anisotropic Gaussian (2 × 1 px, any orientation) | every entry of `Σ` within 0.2 %, major axis within 0.02° |
 | Defocus disk (radius 1–3 px) | `σ` 4–9 % above the disk's second moment (see above) |
 | Radial distortion k₁ = 0.15, 64 px cells | bias ≤ 0.1 % |
@@ -175,10 +175,17 @@ set.
 - **Lens distortion inside the patch** is not modelled: the local homography
   cannot follow curvature, which adds about 0.1 % to `σ` at k₁ = 0.15 on the
   suite.
-- **Blur above about 0.3 of a cell** is mostly declined, and what is
-  delivered there is not reliable yet (an underestimate can pass the window
-  tests on its own value); treat estimates with `σ` above 0.3 cell with
-  caution.
+- **Validated to 0.3 of a cell.** A corner whose estimated `σ` exceeds 0.3
+  of the local cell is declined (`TooBlurred`). Beyond that the estimator
+  usually declines, but not always: it is biased low there, so an estimate
+  of a wider blur can land inside the limit. With correct labels on the
+  synthetic suite (16 and 32 px cells), true blur at 0.35 and 0.4 of a cell
+  yields one delivered estimate in about 3 500 corners; at 0.5 about 3 % of
+  corners are delivered, at 0.6 about 7 %, nearly all of them 40–80 % low
+  and 5–26 standard errors from the truth. The plain chessboard detector
+  still labels corners at 0.4–0.5 of a cell on small cells (PuzzleBoard
+  detection stops near 0.2), so on a chessboard that blurred a delivered
+  `σ` near the limit may be a gross underestimate.
 - **Corners at the edge of a detection** see a smaller window and decline
   earlier.
 - Bindings (Python, C, WebAssembly) do not expose the blur yet.

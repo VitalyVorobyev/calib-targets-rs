@@ -275,7 +275,7 @@ its blur: stop it at the marker border or the nearest strong non-corner
 edge. Then re-measure on the same held-out harness. It belongs upstream, in
 `chess-corners`.
 
-### Gap 31 — Per-corner blur: ChArUco, non-Gaussian PSFs and σ/cell above ≈ 0.3 open
+### Gap 31 — Per-corner blur: ChArUco, non-Gaussian PSFs and the hole beyond σ/cell 0.3 open
 
 **What exists.** `calib_targets::blur::{chessboard_blur, puzzleboard_blur,
 marker_board_blur}` return one `Result<CornerBlur, BlurDecline>` per corner,
@@ -296,6 +296,11 @@ values); standard errors are a Bartlett HAC sandwich, Andrews bandwidth.
   the window is narrower than `5σ + ½` px. VIF is not a decline: estimates
   with VIF in the hundreds stay honest on interior corners; the SE carries
   the confounding.
+- `TooBlurred` (validated range): `√(tr Σ̂/2) > 0.3 · √|det J|` — the end
+  of the range the synthetic suite validates (`MAX_SIGMA_PER_CELL`), not a
+  fitted threshold. On the blur grid it removes every estimate above 0.3
+  and 5 of 35 201 below (all on 30°-tilted boards at 0.25, where the local
+  cell is smaller than the nominal one); no other ≤ 0.3 metric moves.
 - `TooBlurred`: the largest window cannot hold `5σ` (3–4σ windows put 4 % of
   corners beyond 3 SE), or the corner lies within the `3σ + ½` px clearance
   of unknown print, so the patch sees one side only (boundary corners: honest
@@ -324,17 +329,23 @@ heavy-tailed PSF; dependent on cell size and pattern.
 
 **Open.**
 
-- **σ/cell above ≈ 0.3**: at 0.375 coverage drops to ≈ 0.2 with −3.5 % bias,
-  and one estimate (the board's outer corner) is 6 SE low — an underestimate
-  whose own clearance admits it. Applying the window tests at σ̂ + 3 SE
-  removes it (and costs ≤ 2 points of synthetic coverage below 0.3), but on
-  real frames it declines a large share of corners whose field is honest, so
-  it is not applied. With ground-truth labels at σ/cell 0.4–0.6
-  (no detector delivers there) a few percent of corners are delivered at
-  −20 to −60 %: when the true blur exceeds what the window can hold, the
-  estimates that pass the window test are the low draws of a σ–contrast
-  valley. Needs the window tests applied to every blur the likelihood admits
-  (a constrained refit), and larger windows where the labelled grid allows.
+- **The hole beyond σ/cell 0.3.** Beyond 0.3 the estimate is biased low
+  (a σ–contrast valley: once the window cannot hold the true profile, the
+  surviving fits are its low draws), so the range rule, tested on σ̂, cannot
+  see every wide blur. Measured with labels from a sharp render of the same
+  geometry (chessboard + PuzzleBoard, cells 16/32, rotation 8/30°, tilt
+  0/30°, noise 1/4; 1 764 corners per level): delivered / beyond 5 SE /
+  worst — 0.3: 633 / 0 / −4.7 %; 0.35: 0; 0.4: 1 / 0 / −27 %; 0.5: 51 / 44 /
+  −60 %; 0.6: 128 / 127 / −80 %. The chessboard detector still labels
+  corners at 0.4–0.5 on 16 px cells (PuzzleBoard detection ends near 0.2),
+  so the hole is reachable end to end on a plain chessboard. Not closed by:
+  the window tests at σ̂ + 3 SE (the bad estimates sit 5–26 SE low, and on
+  real frames it declines honest corners); a profile test of every
+  isotropic σ ≥ 0.3 cell at the fitted geometry (no threshold separates
+  them: its excess misfit, in residual variances, spans −364 to +124 on the
+  bad estimates and starts at −5 on honest ones). Needs
+  a constrained refit of the full model at the limit, or larger windows
+  where the labelled grid allows.
 - **ChArUco**: printed geometry deviates from the nominal one, residuals are
   structured, standard errors not honest; no entry point.
 - **Non-Gaussian PSFs**: a core + tail or disk model would report a second
