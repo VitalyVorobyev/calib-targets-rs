@@ -3,12 +3,14 @@
 //! Exposes stateless detection functions that accept grayscale `&[u8]` buffers
 //! and JS config objects (deserialized via `serde-wasm-bindgen`).
 
+mod blur;
 mod detect;
 mod diagnose;
 mod gray;
 mod params;
 mod print;
 
+pub use blur::*;
 pub use detect::*;
 pub use diagnose::*;
 pub use params::*;

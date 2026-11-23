@@ -1,87 +1,73 @@
-//! Per-corner blur estimation from the known printed pattern.
+//! Per-corner blur and joint photometric refinement from the known printed pattern.
 //!
 //! Given the raw image, the ideal pattern printed around one corner (signed
 //! polygons in board units) and a starting board → image homography, the
 //! estimator fits the pixels of a patch around the corner with
 //!
 //! ```text
-//! I(p) = (1 + α d_x + β d_y) · (C + A · (1 − B_Σ(p))),
+//! I_lin(p) = (1 + α d_x + β d_y) · (C + A · (1 − B_bleed(p))),
+//! I_obs(p) = f_rad(I_lin(p)),
 //! ```
 //!
 //! where `B_Σ` is the exact blackness of the pattern blurred by a Gaussian
-//! of covariance `Σ` and integrated over the pixel's unit box, mapped through
-//! a free local homography. `Σ`, the photometry (`A`, `C`, `α`, `β`) and the
-//! eight homography entries are fitted together by Levenberg–Marquardt with
-//! analytic derivatives. The Gaussian mass of each polygon is exact (Owen's
-//! `T` function, see the book's references, `owen1956`); the pixel box is a
-//! four-point Gaussian mixture matching its moments to fourth order while
-//! the blur is under 1.3 px, a single Gaussian beyond. Homography directions
-//! the window cannot see (on a plain chessboard at half a cell, the scales
-//! along the two lines and the perspective) keep their values from the
-//! caller's homography.
+//! of covariance `Σ` and integrated over the pixel's unit box, `B_bleed` is an
+//! optional probit ink/microcapsule bleed shift `Φ(Φ⁻¹(B_Σ) + κ)`, `f_rad` is an
+//! optional radiometric tone curve ([`RadiometricModel`]), and the pattern is
+//! mapped through a free local homography `H`.
+//!
+//! [`fit_corner_photometric`] delivers the jointly refined corner position,
+//! 2×2 heteroskedasticity-and-autocorrelation-consistent (HAC) position
+//! covariance, refined local grid axes, optional surface-separated
+//! [`DisplaySurfaceModel`] covariance, and (when resolved above the pixel
+//! aperture) the [`CornerBlur`] kernel estimate. [`estimate_corner_blur`]
+//! wraps it with default options and returns `Result<CornerBlur, BlurDecline>`.
 //!
 //! # What the numbers mean
 //!
 //! `Σ` ([`CornerBlur::kernel`]) is the covariance of the Gaussian-equivalent
-//! *total* blur kernel in image pixels: lens and pixel aperture together, so
-//! a perfectly focused ideal camera still has `Σ = I/12` (the unit box). On a
-//! real lens it is the Gaussian whose blur of *this* pattern best matches
-//! the observed one: a width over the patch's spatial frequencies, not the
-//! PSF's second moment, and for a heavy-tailed PSF not additive in
-//! quadrature. [`CornerBlur::sigma_px`] is `√(tr Σ / 2)`.
+//! *total* blur kernel in image pixels: lens, target surface (e.g. e-ink
+//! microcapsules) and pixel aperture together, so a perfectly focused ideal
+//! camera still has `Σ = I/12` (the unit box). When a [`DisplaySurfaceModel`]
+//! is supplied, [`CornerPhotometricFit::camera_blur`] subtracts the projected
+//! display covariance to isolate camera-only blur. [`CornerBlur::sigma_px`] is
+//! `√(tr Σ / 2)`.
+//!
+//! # Spatially varying PSF (scatter bias correction)
+//!
+//! Under a smooth spatially varying scatter-form PSF (typical on tilted
+//! sensors), a local constant-`Σ` fit shifts every X-junction by an exact
+//! first-order divergence bias derived from `∂Σ/∂x` and `∂Σ/∂y`
+//! ([`BlurGradient::scatter_corner_bias`]). Fitting a smooth [`BlurField`] across
+//! a board's converged corners and supplying [`BlurField::gradient_at`] removes
+//! that bias without extra per-pixel parameters.
 //!
 //! # Window and declines
 //!
-//! The patch is the board square `[−ρ, ρ]²` around the corner, starting at
-//! `ρ = ½` cell. Only pixels three blur widths clear of any cell whose print
-//! the caller does not know are used. The window grows, up to two cells,
-//! while the blur cannot be told from the contrast on the patch (its variance
-//! inflated more than fourfold by the photometric parameters) or while the
-//! window is narrower than the corner's blurred edges (five standard
-//! deviations). A confounded estimate is delivered with the larger standard
-//! error that says so. The corner is declined
-//! ([`BlurDecline::TooBlurred`]) when the window it ends with cannot hold the
-//! fitted blur's edges, when the corner itself falls within the clearance of
-//! unknown print (the patch would see one side of the pattern only), or when
-//! `σ` exceeds 0.3 of the local cell (`√|det J|` of the homography at the
-//! corner). That last limit is the end of the validated range, not a tuned
-//! threshold: up to it the synthetic suite measures no bias beyond ±0.1 % and
-//! honest standard errors; beyond it the estimates that survive are biased
-//! low while their standard errors still claim precision. Because a
-//! low-biased estimate can fall back inside the limit, the rule declines most
-//! but not all corners whose true blur is beyond it (see the book's *Corner
-//! blur* page for the measured remainder). The fit that may be delivered must also
-//! beat every isotropic blur at the caller's geometry on the same pixels (a
-//! model it contains); if one does better, the fit is in a worse basin and
-//! restarts from it. A kernel estimate outside the physical domain
-//! `Σ ⪰ I/12` is declined ([`BlurDecline::SharperThanPixel`]: a sharpened
-//! image, an aperture smaller than the pixel, or a fit the patch does not
-//! support), and so is one whose trace is not resolved from zero at two
-//! standard errors ([`BlurDecline::Unresolved`]), where the linearised
-//! `σ ± SE` stops meaning anything. A miss is acceptable; a `σ` biased beyond
-//! its standard error is not.
-//!
-//! # Uncertainty
-//!
-//! Residuals of real images are spatially correlated (the misfit of the
-//! model is smooth over the blur's width, and sensors and demosaicing
-//! correlate neighbours), so the standard errors are
-//! heteroskedasticity-and-autocorrelation consistent: a sandwich with a
-//! Bartlett kernel over the pixel grid (`neweywest1987`), its width from the
-//! residuals' own lag-1 autocorrelation (`andrews1991`). [`BlurFitQuality`]
-//! reports the residual RMS and that autocorrelation so a consumer can see
-//! misfit.
+//! Fatal declines (`NoGeometry`, `PatternUnknown`, `TooFewPixels`,
+//! `NotConverged`, `Singular`, `PolarityMismatch`, `TooBlurred`) fail
+//! [`fit_corner_photometric`]. Blur-only gates ([`BlurDecline::SharperThanPixel`],
+//! [`BlurDecline::Unresolved`]) leave `blur: None` with `blur_decline: Some(why)`
+//! while still delivering the refined corner position, covariance, and axes.
 
+mod field;
 mod fit;
 mod frame;
 mod gauss_polygon;
 mod model;
+mod radiometric;
 mod solve;
+#[cfg(test)]
+mod tests;
+mod varpro;
 
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
-use crate::{GrayImageView, Homography};
+use crate::sym2::Sym2x2;
+use crate::{AxisEstimate, GrayImageView, Homography, PositionCovariance};
+
+pub use field::{BlurField, BlurGradient};
+pub use radiometric::RadiometricModel;
 
 /// Board cells the known-print region may name, either side of the corner:
 /// the window reaches two cells, plus the blur margin.
@@ -204,7 +190,7 @@ impl BlurKernel {
     /// along the major and minor axis (px) and the major axis's angle from
     /// the image `x` axis (radians, `y` down, in `(−π/2, π/2]`).
     pub fn axes(&self) -> (f32, f32, f32) {
-        crate::sym2::Sym2x2::from_f32(self.xx, self.xy, self.yy).principal_axes()
+        Sym2x2::from_f32(self.xx, self.xy, self.yy).principal_axes()
     }
 }
 
@@ -218,10 +204,10 @@ pub struct BlurFitQuality {
     pub window_cells: f32,
     /// Pixels fitted.
     pub pixels: usize,
-    /// Fitted black-to-white contrast `|A|`, gray levels.
+    /// Fitted black-to-white contrast `|A|`, linearised gray levels.
     pub contrast: f32,
-    /// Residual RMS, gray levels. Compare with the image noise; well above
-    /// it, the pattern or the Gaussian kernel does not describe the patch.
+    /// Residual RMS, observed gray levels. Compare with the image noise; well
+    /// above it, the pattern or the Gaussian kernel does not describe the patch.
     pub residual_rms: f32,
     /// Lag-1 autocorrelation of the residuals over neighbouring pixels
     /// (0 for white noise). Large values mean structured misfit; the
@@ -331,7 +317,359 @@ pub enum BlurDecline {
     PolarityMismatch,
 }
 
-/// Estimate the blur at one corner.
+/// Physical model of a discrete digital display surface (e.g. an e-ink
+/// bookreader screen) used as the calibration target.
+///
+/// Accounts for display pixel pitch quantization (`1 / (12 N_d²)` variance in
+/// board units), microcapsule/cover-glass modulation transfer (`mtf_sigma_display_px`),
+/// finite bit-depth gray levels (e.g. 16 levels for 4-bit E Ink Carta), and
+/// rasterization of curved features onto the integer display pixel lattice.
+///
+/// `#[non_exhaustive]`: construct with [`DisplaySurfaceModel::new`] or
+/// [`DisplaySurfaceModel::pocketbook_eink`].
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct DisplaySurfaceModel {
+    /// Number of physical display pixels per board cell (`square_size_px` in
+    /// `ScreenTargetMetadata`). Must be `> 0`.
+    pub display_pixels_per_cell: f64,
+    /// Intrinsic surface MTF Gaussian standard deviation in display pixels
+    /// (typically `~0.5` for e-ink microcapsules + front cover glass).
+    #[serde(default)]
+    pub mtf_sigma_display_px: f64,
+    /// Finite gray quantization levels of the display controller (`Some(16)`
+    /// for 4-bit E Ink Carta, `None` for continuous tone).
+    #[serde(default)]
+    pub gray_levels: Option<u16>,
+    /// Rasterize curved features (PuzzleBoard dots, MarkerBoard circles) onto
+    /// the integer display pixel grid with `8×8` subpixel coverage matching
+    /// `calib-targets-print`'s screen renderer.
+    #[serde(default)]
+    pub rasterize_curved_features: bool,
+}
+
+impl DisplaySurfaceModel {
+    /// Generic discrete display model with `display_pixels_per_cell` pixels per
+    /// checker square, zero surface MTF, continuous tone, and analytic curved
+    /// geometry.
+    pub fn new(display_pixels_per_cell: f64) -> Self {
+        Self {
+            display_pixels_per_cell: display_pixels_per_cell.max(1.0),
+            mtf_sigma_display_px: 0.0,
+            gray_levels: None,
+            rasterize_curved_features: false,
+        }
+    }
+
+    /// Preset tuned for an E Ink Carta / PocketBook e-reader displaying a
+    /// native-resolution screen target (`square_size_px = display_pixels_per_cell`):
+    /// `mtf_sigma_display_px = 0.5`, `gray_levels = Some(16)`, and
+    /// `rasterize_curved_features = true`.
+    pub fn pocketbook_eink(display_pixels_per_cell: f64) -> Self {
+        Self {
+            display_pixels_per_cell: display_pixels_per_cell.max(1.0),
+            mtf_sigma_display_px: 0.5,
+            gray_levels: Some(16),
+            rasterize_curved_features: true,
+        }
+    }
+
+    /// Override [`Self::mtf_sigma_display_px`] (display pixels).
+    #[must_use]
+    pub fn with_mtf_sigma_display_px(mut self, sigma_dpx: f64) -> Self {
+        self.mtf_sigma_display_px = sigma_dpx.max(0.0);
+        self
+    }
+
+    /// Override [`Self::gray_levels`].
+    #[must_use]
+    pub fn with_gray_levels(mut self, levels: Option<u16>) -> Self {
+        self.gray_levels = levels;
+        self
+    }
+
+    /// Override [`Self::rasterize_curved_features`].
+    #[must_use]
+    pub fn with_rasterize_curved_features(mut self, rasterize: bool) -> Self {
+        self.rasterize_curved_features = rasterize;
+        self
+    }
+
+    /// Project the isotropic display-plane blur variance `(1/12 + mtf²) / N_d²`
+    /// through the local board-to-image Jacobian `[j_u, j_v]` (each column
+    /// `[dx/dq, dy/dq]` in px/cell) to yield the foreshortened anisotropic
+    /// display covariance `Σ_display` in image px².
+    pub fn image_covariance(&self, jacobian_cols: [[f64; 2]; 2]) -> BlurKernel {
+        let nd = self.display_pixels_per_cell.max(1.0);
+        let mtf = self.mtf_sigma_display_px.max(0.0);
+        let factor = (1.0 / 12.0 + mtf * mtf) / (nd * nd);
+        let [ju, jv] = jacobian_cols;
+        BlurKernel::new(
+            (factor * (ju[0] * ju[0] + jv[0] * jv[0])) as f32,
+            (factor * (ju[0] * ju[1] + jv[0] * jv[1])) as f32,
+            (factor * (ju[1] * ju[1] + jv[1] * jv[1])) as f32,
+        )
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_puzzle_dot_diameter_rel() -> f64 {
+    1.0 / 3.0
+}
+
+/// Options controlling per-corner joint photometric + blur refinement
+/// ([`fit_corner_photometric`]).
+///
+/// `#[non_exhaustive]`: construct with [`PhotometricFitOptions::default`].
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct PhotometricFitOptions {
+    /// Camera radiometric tone-response model. Default: `Linear`.
+    #[serde(default)]
+    pub radiometric: RadiometricModel,
+    /// Jointly estimate a probit ink/microcapsule bleed parameter `κ`.
+    /// Default: `false`. Note: best used with a known tone curve (`Linear`,
+    /// `Srgb`, or `FixedGamma`) rather than `FreeGamma` since both modulate
+    /// black-vs-white area symmetry.
+    #[serde(default)]
+    pub fit_ink_bleed: bool,
+    /// Optional physical target display surface (e.g. PocketBook e-ink).
+    #[serde(default)]
+    pub display: Option<DisplaySurfaceModel>,
+    /// Known spatial blur gradient `(∂Σ/∂x, ∂Σ/∂y)` at this corner for
+    /// analytic scatter-PSF corner bias removal.
+    #[serde(default)]
+    pub known_blur_gradient: Option<BlurGradient>,
+    /// Eliminate linear contrast & black level `(A, C)` via Golub–Pereyra
+    /// Variable Projection when `radiometric` is `Linear`. Default: `true`.
+    #[serde(default = "default_true")]
+    pub use_varpro: bool,
+}
+
+impl Default for PhotometricFitOptions {
+    fn default() -> Self {
+        Self {
+            radiometric: RadiometricModel::Linear,
+            fit_ink_bleed: false,
+            display: None,
+            known_blur_gradient: None,
+            use_varpro: true,
+        }
+    }
+}
+
+impl PhotometricFitOptions {
+    /// Set [`Self::radiometric`].
+    #[must_use]
+    pub fn with_radiometric(mut self, radiometric: RadiometricModel) -> Self {
+        self.radiometric = radiometric;
+        self
+    }
+
+    /// Enable or disable [`Self::fit_ink_bleed`].
+    #[must_use]
+    pub fn with_fit_ink_bleed(mut self, fit_ink_bleed: bool) -> Self {
+        self.fit_ink_bleed = fit_ink_bleed;
+        self
+    }
+
+    /// Attach a [`DisplaySurfaceModel`].
+    #[must_use]
+    pub fn with_display(mut self, display: DisplaySurfaceModel) -> Self {
+        self.display = Some(display);
+        self
+    }
+
+    /// Supply a known [`BlurGradient`] for scatter-PSF corner bias removal.
+    #[must_use]
+    pub fn with_known_blur_gradient(mut self, gradient: BlurGradient) -> Self {
+        self.known_blur_gradient = Some(gradient);
+        self
+    }
+
+    /// Enable or disable Golub–Pereyra VarPro `(A, C)` elimination.
+    #[must_use]
+    pub fn with_use_varpro(mut self, use_varpro: bool) -> Self {
+        self.use_varpro = use_varpro;
+        self
+    }
+}
+
+/// Options controlling board-wide photometric corner refinement.
+///
+/// `#[non_exhaustive]`: construct with [`BoardPhotometricOptions::default`].
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct BoardPhotometricOptions {
+    /// Per-corner photometric fitting options.
+    #[serde(default)]
+    pub fit: PhotometricFitOptions,
+    /// Printed PuzzleBoard edge-dot diameter as a fraction of the square side.
+    /// Default: `1.0 / 3.0`.
+    #[serde(default = "default_puzzle_dot_diameter_rel")]
+    pub puzzle_dot_diameter_rel: f64,
+    /// Fit a smooth 2-D [`BlurField`] across converged corners in Pass 1 and
+    /// remove each corner's spatial scatter-PSF divergence bias in Pass 2 when
+    /// `fit.known_blur_gradient` is `None`. Default: `true`.
+    #[serde(default = "default_true")]
+    pub two_pass_scatter_correction: bool,
+}
+
+impl Default for BoardPhotometricOptions {
+    fn default() -> Self {
+        Self {
+            fit: PhotometricFitOptions::default(),
+            puzzle_dot_diameter_rel: default_puzzle_dot_diameter_rel(),
+            two_pass_scatter_correction: true,
+        }
+    }
+}
+
+impl BoardPhotometricOptions {
+    /// Set [`Self::fit`].
+    #[must_use]
+    pub fn with_fit(mut self, fit: PhotometricFitOptions) -> Self {
+        self.fit = fit;
+        self
+    }
+
+    /// Override [`Self::puzzle_dot_diameter_rel`].
+    #[must_use]
+    pub fn with_puzzle_dot_diameter_rel(mut self, rel: f64) -> Self {
+        self.puzzle_dot_diameter_rel = rel;
+        self
+    }
+
+    /// Enable or disable [`Self::two_pass_scatter_correction`].
+    #[must_use]
+    pub fn with_two_pass_scatter_correction(mut self, enabled: bool) -> Self {
+        self.two_pass_scatter_correction = enabled;
+        self
+    }
+}
+
+/// Full per-corner result from [`fit_corner_photometric`].
+///
+/// Delivers refined sub-pixel position, HAC position covariance, refined local
+/// grid axes, goodness-of-fit diagnostics, and (when resolved above the pixel
+/// aperture) [`Self::blur`]. If only blur validation declines
+/// (`SharperThanPixel` or `Unresolved`), [`Self::blur`] is `None` with
+/// [`Self::blur_decline`] set while geometry fields remain valid and usable.
+#[non_exhaustive]
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct CornerPhotometricFit {
+    /// Refined sub-pixel corner position in image coordinates, px.
+    pub position: Point2<f32>,
+    /// 2×2 HAC covariance of [`Self::position`], px².
+    pub position_covariance: PositionCovariance,
+    /// Refined local board axes `(axis_u, axis_v)` with delta-method standard
+    /// errors in radians.
+    pub axes: [AxisEstimate; 2],
+    /// Resolved blur estimate (`None` when [`Self::blur_decline`] is `Some`).
+    pub blur: Option<CornerBlur>,
+    /// Reason `blur` was declined on an otherwise converged geometric fit.
+    pub blur_decline: Option<BlurDecline>,
+    /// Projected display surface blur `Σ_display` in image px², when a
+    /// [`DisplaySurfaceModel`] was provided.
+    pub display_blur: Option<BlurKernel>,
+    /// Patch residual & contrast diagnostics.
+    pub fit: BlurFitQuality,
+    /// Estimated encoding gamma when [`RadiometricModel::FreeGamma`] was used.
+    pub gamma: Option<f32>,
+    /// Estimated ink/microcapsule bleed in board cells (`κ · σ / scale`) when
+    /// `fit_ink_bleed` was enabled.
+    pub ink_bleed_cells: Option<f32>,
+    /// Additive scatter-PSF corner correction `[Δx, Δy]` (px) applied to the
+    /// constant-`Σ` fitted corner (`position = raw + scatter_correction_px`).
+    pub scatter_correction_px: Option<[f32; 2]>,
+}
+
+impl CornerPhotometricFit {
+    /// Convert `(blur, blur_decline)` into the standalone `Result<CornerBlur, BlurDecline>`
+    /// returned by [`estimate_corner_blur`].
+    pub fn blur_result(&self) -> Result<CornerBlur, BlurDecline> {
+        match (self.blur, self.blur_decline) {
+            (Some(b), _) => Ok(b),
+            (None, Some(why)) => Err(why),
+            (None, None) => Err(BlurDecline::Unresolved),
+        }
+    }
+
+    /// Return `Σ_camera = Σ_total − Σ_display` (eigenvalues clamped `>= 0`) when
+    /// `blur` succeeded, or `None` if `blur` declined. When no display model was
+    /// set, returns `blur.kernel`.
+    pub fn camera_blur(&self) -> Option<BlurKernel> {
+        let total = self.blur?.kernel;
+        let Some(disp) = self.display_blur else {
+            return Some(total);
+        };
+        let mut s = Sym2x2::new(
+            f64::from(total.xx) - f64::from(disp.xx),
+            f64::from(total.xy) - f64::from(disp.xy),
+            f64::from(total.yy) - f64::from(disp.yy),
+        );
+        let (lo, _) = s.eigenvalues();
+        if lo < 0.0 {
+            s.xx -= lo;
+            s.yy -= lo;
+        }
+        Some(BlurKernel::new(s.xx as f32, s.xy as f32, s.yy as f32))
+    }
+
+    /// Apply a spatial [`BlurGradient`] scatter-PSF correction to this converged
+    /// fit in place, shifting [`Self::position`] and updating
+    /// [`Self::scatter_correction_px`].
+    pub fn apply_scatter_correction(&mut self, gradient: &BlurGradient) {
+        let Some(bias) = gradient
+            .scatter_corner_bias(f64::from(self.axes[0].angle), f64::from(self.axes[1].angle))
+        else {
+            return;
+        };
+        let corr = [-bias[0] as f32, -bias[1] as f32];
+        if corr[0].is_finite() && corr[1].is_finite() {
+            let prev = self.scatter_correction_px.unwrap_or([0.0, 0.0]);
+            self.position.x =
+                (f64::from(self.position.x) - f64::from(prev[0]) + f64::from(corr[0])) as f32;
+            self.position.y =
+                (f64::from(self.position.y) - f64::from(prev[1]) + f64::from(corr[1])) as f32;
+            self.scatter_correction_px = Some(corr);
+        }
+    }
+}
+
+/// Output of a board-wide photometric corner refinement pass.
+///
+/// `#[non_exhaustive]`: construct via [`Self::new`].
+#[non_exhaustive]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BoardPhotometricRefinement {
+    /// Per-corner photometric fit results in input corner order.
+    pub corners: Vec<Result<CornerPhotometricFit, BlurDecline>>,
+    /// Smooth 2-D blur surface fitted across converged corners (`None` if no
+    /// corner produced a resolved [`CornerBlur`]).
+    pub blur_field: Option<BlurField>,
+}
+
+impl BoardPhotometricRefinement {
+    /// Construct from per-corner results and optional board-wide blur field.
+    pub fn new(
+        corners: Vec<Result<CornerPhotometricFit, BlurDecline>>,
+        blur_field: Option<BlurField>,
+    ) -> Self {
+        Self {
+            corners,
+            blur_field,
+        }
+    }
+}
+
+/// Estimate the blur at one corner with default linear options.
 ///
 /// `image` is the raw image the corner was found in, at its original
 /// resolution (resampling adds blur of its own); `pattern` the print around
@@ -343,5 +681,25 @@ pub fn estimate_corner_blur(
     pattern: &BlurPattern,
     board_to_image: &Homography<f64>,
 ) -> Result<CornerBlur, BlurDecline> {
-    fit::estimate(image, pattern, board_to_image)
+    fit_corner_photometric(
+        image,
+        pattern,
+        board_to_image,
+        &PhotometricFitOptions::default(),
+    )?
+    .blur_result()
+}
+
+/// Jointly refine corner position, covariance, local board axes, photometry,
+/// and blur covariance at one corner.
+///
+/// See module docs for the generative pixel model, decline separation, and
+/// optional display/scatter extensions.
+pub fn fit_corner_photometric(
+    image: &GrayImageView<'_>,
+    pattern: &BlurPattern,
+    board_to_image: &Homography<f64>,
+    options: &PhotometricFitOptions,
+) -> Result<CornerPhotometricFit, BlurDecline> {
+    fit::fit_photometric(image, pattern, board_to_image, options)
 }

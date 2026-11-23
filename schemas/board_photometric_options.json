@@ -1,0 +1,204 @@
+{
+  "$defs": {
+    "BlurGradient": {
+      "description": "First-order spatial gradient of the blur covariance `Σ(x, y)` in pixels²\nper pixel.\n\n`#[non_exhaustive]`: construct with `BlurGradient::new`.",
+      "properties": {
+        "d_sigma_dx": {
+          "description": "`∂Σ/∂x` as `(∂Σxx/∂x, ∂Σxy/∂x, ∂Σyy/∂x)`, px²/px.",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        },
+        "d_sigma_dy": {
+          "description": "`∂Σ/∂y` as `(∂Σxx/∂y, ∂Σxy/∂y, ∂Σyy/∂y)`, px²/px.",
+          "items": {
+            "format": "float",
+            "type": "number"
+          },
+          "maxItems": 3,
+          "minItems": 3,
+          "type": "array"
+        }
+      },
+      "required": [
+        "d_sigma_dx",
+        "d_sigma_dy"
+      ],
+      "type": "object"
+    },
+    "DisplaySurfaceModel": {
+      "description": "Physical model of a discrete digital display surface (e.g. an e-ink\nbookreader screen) used as the calibration target.\n\nAccounts for display pixel pitch quantization (`1 / (12 N_d²)` variance in\nboard units), microcapsule/cover-glass modulation transfer (`mtf_sigma_display_px`),\nfinite bit-depth gray levels (e.g. 16 levels for 4-bit E Ink Carta), and\nrasterization of curved features onto the integer display pixel lattice.\n\n`#[non_exhaustive]`: construct with `DisplaySurfaceModel::new` or\n`DisplaySurfaceModel::pocketbook_eink`.",
+      "properties": {
+        "display_pixels_per_cell": {
+          "description": "Number of physical display pixels per board cell (`square_size_px` in\n`ScreenTargetMetadata`). Must be `> 0`.",
+          "format": "double",
+          "type": "number"
+        },
+        "gray_levels": {
+          "default": null,
+          "description": "Finite gray quantization levels of the display controller (`Some(16)`\nfor 4-bit E Ink Carta, `None` for continuous tone).",
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0,
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "mtf_sigma_display_px": {
+          "default": 0.0,
+          "description": "Intrinsic surface MTF Gaussian standard deviation in display pixels\n(typically `~0.5` for e-ink microcapsules + front cover glass).",
+          "format": "double",
+          "type": "number"
+        },
+        "rasterize_curved_features": {
+          "default": false,
+          "description": "Rasterize curved features (PuzzleBoard dots, MarkerBoard circles) onto\nthe integer display pixel grid with `8×8` subpixel coverage matching\n`calib-targets-print`'s screen renderer.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "display_pixels_per_cell"
+      ],
+      "type": "object"
+    },
+    "PhotometricFitOptions": {
+      "description": "Options controlling per-corner joint photometric + blur refinement\n(`fit_corner_photometric`).\n\n`#[non_exhaustive]`: construct with `PhotometricFitOptions::default`.",
+      "properties": {
+        "display": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DisplaySurfaceModel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional physical target display surface (e.g. PocketBook e-ink)."
+        },
+        "fit_ink_bleed": {
+          "default": false,
+          "description": "Jointly estimate a probit ink/microcapsule bleed parameter `κ`.\nDefault: `false`. Note: best used with a known tone curve (`Linear`,\n`Srgb`, or `FixedGamma`) rather than `FreeGamma` since both modulate\nblack-vs-white area symmetry.",
+          "type": "boolean"
+        },
+        "known_blur_gradient": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BlurGradient"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Known spatial blur gradient `(∂Σ/∂x, ∂Σ/∂y)` at this corner for\nanalytic scatter-PSF corner bias removal."
+        },
+        "radiometric": {
+          "$ref": "#/$defs/RadiometricModel",
+          "default": "linear",
+          "description": "Camera radiometric tone-response model. Default: `Linear`."
+        },
+        "use_varpro": {
+          "default": true,
+          "description": "Eliminate linear contrast & black level `(A, C)` via Golub–Pereyra\nVariable Projection when `radiometric` is `Linear`. Default: `true`.",
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "RadiometricModel": {
+      "description": "Radiometric tone-response model relating linear scene irradiance `I_lin`\n(on `[0, 255]`) to observed image gray levels `I_obs`.\n\nThe default is `RadiometricModel::Linear`, which adds zero free\nparameters and keeps contrast `(A, C)` strictly linear for VarPro\nelimination.",
+      "oneOf": [
+        {
+          "const": "linear",
+          "description": "Linear camera response (`I_obs = I_lin`). Default.",
+          "type": "string"
+        },
+        {
+          "const": "srgb",
+          "description": "Standard IEC 61966-2-1 sRGB encoding transfer curve applied to `I_lin`.",
+          "type": "string"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Known power-law encoding gamma: `I_obs = 255 · (I_lin / 255)^(1 / gamma)`.",
+          "properties": {
+            "fixed_gamma": {
+              "properties": {
+                "gamma": {
+                  "description": "Encoding gamma (`> 0`, e.g. `2.2`).",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "gamma"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "fixed_gamma"
+          ],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "description": "Jointly fit a free power-law encoding gamma alongside geometry and blur.",
+          "properties": {
+            "free_gamma": {
+              "properties": {
+                "initial_gamma": {
+                  "description": "Starting gamma seed (`> 0`, e.g. `2.2`).",
+                  "format": "double",
+                  "type": "number"
+                }
+              },
+              "required": [
+                "initial_gamma"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "free_gamma"
+          ],
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Options controlling board-wide photometric corner refinement.\n\n`#[non_exhaustive]`: construct with `BoardPhotometricOptions::default`.",
+  "properties": {
+    "fit": {
+      "$ref": "#/$defs/PhotometricFitOptions",
+      "default": {
+        "display": null,
+        "fit_ink_bleed": false,
+        "known_blur_gradient": null,
+        "radiometric": "linear",
+        "use_varpro": true
+      },
+      "description": "Per-corner photometric fitting options."
+    },
+    "puzzle_dot_diameter_rel": {
+      "default": 0.3333333333333333,
+      "description": "Printed PuzzleBoard edge-dot diameter as a fraction of the square side.\nDefault: `1.0 / 3.0`.",
+      "format": "double",
+      "type": "number"
+    },
+    "two_pass_scatter_correction": {
+      "default": true,
+      "description": "Fit a smooth 2-D `BlurField` across converged corners in Pass 1 and\nremove each corner's spatial scatter-PSF divergence bias in Pass 2 when\n`fit.known_blur_gradient` is `None`. Default: `true`.",
+      "type": "boolean"
+    }
+  },
+  "title": "BoardPhotometricOptions",
+  "type": "object"
+}

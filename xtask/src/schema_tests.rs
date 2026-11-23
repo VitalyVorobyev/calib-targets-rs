@@ -14,6 +14,9 @@ use calib_targets_charuco::{
     CharucoAdvancedTuning, CharucoBoard, CharucoBoardSpec, CharucoParams, MarkerLayout,
 };
 use calib_targets_chessboard::{ChessboardAdvancedTuning, ChessboardParams};
+use calib_targets_core::blur::{
+    BoardPhotometricOptions, DisplaySurfaceModel, PhotometricFitOptions, RadiometricModel,
+};
 use calib_targets_core::{default_chess_config, DetectorConfig};
 use calib_targets_marker::{
     CellCoords, CirclePolarity, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
@@ -830,6 +833,94 @@ fn checked_in_printable_documents_validate() {
         seen += 1;
     }
     assert!(seen >= 9, "expected the printable fixtures, found {seen}");
+}
+
+// ── BoardPhotometricOptions (board_photometric_options.json) ──────────────────
+
+#[test]
+fn board_photometric_options_accepts_defaults_and_presets() {
+    assert_valid(
+        "board_photometric_options.json",
+        "default",
+        &BoardPhotometricOptions::default(),
+    );
+    let eink = BoardPhotometricOptions::default().with_fit(
+        PhotometricFitOptions::default()
+            .with_radiometric(RadiometricModel::Srgb)
+            .with_display(DisplaySurfaceModel::pocketbook_eink(8.0)),
+    );
+    assert_valid("board_photometric_options.json", "pocketbook_eink", &eink);
+
+    for (name, val) in [
+        ("empty object defaults", json!({})),
+        (
+            "fixed_gamma",
+            json!({"fit": {"radiometric": {"fixed_gamma": {"gamma": 2.2}}}}),
+        ),
+        (
+            "full preset with gradient",
+            json!({
+                "fit": {
+                    "radiometric": {"free_gamma": {"initial_gamma": 2.2}},
+                    "use_varpro": false,
+                    "fit_ink_bleed": true,
+                    "display": {
+                        "display_pixels_per_cell": 12.0,
+                        "mtf_sigma_display_px": 0.5,
+                        "gray_levels": 16,
+                        "rasterize_curved_features": true
+                    },
+                    "known_blur_gradient": {
+                        "d_sigma_dx": [0.01, -0.002, 0.005],
+                        "d_sigma_dy": [-0.003, 0.004, 0.01]
+                    }
+                },
+                "two_pass_scatter_correction": false,
+                "puzzle_dot_diameter_rel": 0.35
+            }),
+        ),
+    ] {
+        assert_valid("board_photometric_options.json", name, &val);
+        let parsed: BoardPhotometricOptions = serde_json::from_value(val)
+            .unwrap_or_else(|e| panic!("serde deserialize failed for {name}: {e}"));
+        assert_valid("board_photometric_options.json", name, &parsed);
+    }
+}
+
+#[test]
+fn board_photometric_options_rejects_invalid_documents() {
+    for (what, bad) in [
+        (
+            "bad radiometric string",
+            json!({"fit": {"radiometric": "gamma22"}}),
+        ),
+        (
+            "unknown radiometric variant",
+            json!({"fit": {"radiometric": {"piecewise": {"gamma": 2.2}}}}),
+        ),
+        (
+            "fixed_gamma missing gamma",
+            json!({"fit": {"radiometric": {"fixed_gamma": {}}}}),
+        ),
+        (
+            "display missing display_pixels_per_cell",
+            json!({"fit": {"display": {"mtf_sigma_display_px": 0.5}}}),
+        ),
+        (
+            "negative gray_levels",
+            json!({"fit": {"display": {"display_pixels_per_cell": 8.0, "gray_levels": -1}}}),
+        ),
+        (
+            "wrong blur gradient tuple length",
+            json!({"fit": {"known_blur_gradient": {"d_sigma_dx": [0.1, 0.2], "d_sigma_dy": [0.0, 0.0, 0.0]}}}),
+        ),
+        (
+            "non-boolean two_pass_scatter_correction",
+            json!({"two_pass_scatter_correction": "yes"}),
+        ),
+    ] {
+        assert_rejected("board_photometric_options.json", what, &bad);
+    }
 }
 
 #[test]

@@ -15,10 +15,11 @@ categories = ["computer-vision", "science"]
 [features]
 # Opt-in: derive `schemars::JsonSchema` for the serde-serializable config types
 # so a JSON Schema of the configs can be generated (`cargo xtask emit-schemas`).
-schemars = ["chess-corners/schemars"]
+schemars = ["dep:schemars", "chess-corners/schemars"]
 tracing = ["projective-grid/tracing"]
 
 [dependencies]
+schemars = { workspace = true, optional = true }
 chess-corners = { workspace = true }
 libm = { workspace = true }
 projective-grid = { workspace = true }

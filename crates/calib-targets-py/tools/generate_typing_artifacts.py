@@ -144,6 +144,11 @@ def _render_core_stub(
         "default_puzzleboard_params": "dict[str, Any]",
         "render_target_bundle": "dict[str, Any]",
         "write_target_bundle": "dict[str, Any]",
+        "refine_chessboard_corners": "dict[str, Any]",
+        "refine_charuco_corners": "dict[str, Any]",
+        "refine_puzzleboard_corners": "dict[str, Any]",
+        "refine_marker_board_corners": "dict[str, Any]",
+        "charuco_blur": "list[dict[str, Any]]",
     }
 
     for func_name, func_sig in functions:
