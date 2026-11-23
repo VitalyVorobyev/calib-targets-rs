@@ -321,11 +321,9 @@ fn any_cardinal_fill_edge_ok<V: SquareAttachPolicy>(
     policy: &V,
     cell_size: f32,
 ) -> bool {
-    let mut found_any = false;
     for (di, dj) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
         let neigh = (pos.0 + di, pos.1 + dj);
         if let Some(&n_idx) = labelled.get(&neigh) {
-            found_any = true;
             let ctx = FillEdgeCtx {
                 candidate_idx: c_idx,
                 neighbour_idx: n_idx,
@@ -340,7 +338,7 @@ fn any_cardinal_fill_edge_ok<V: SquareAttachPolicy>(
             }
         }
     }
-    !found_any
+    false
 }
 
 #[cfg(test)]
@@ -417,5 +415,71 @@ mod tests {
         assert_eq!(grow.labelled.get(&(1, 1)), Some(&4));
         assert_eq!(stats.attached_indices, vec![4]);
         assert_eq!(stats.attached_cells, vec![(1, 1)]);
+    }
+
+    #[test]
+    fn fill_pass_rejects_diagonal_only_cell() {
+        struct RejectAllEdges;
+        impl SquareAttachPolicy for RejectAllEdges {
+            fn is_eligible(&self, _idx: usize) -> bool {
+                true
+            }
+            fn required_label_at(&self, _i: i32, _j: i32) -> Option<u8> {
+                None
+            }
+            fn label_of(&self, _idx: usize) -> Option<u8> {
+                None
+            }
+            fn accept_candidate(
+                &self,
+                _idx: usize,
+                _at: (i32, i32),
+                _prediction: Point2<f32>,
+                _neighbours: &[LabelledNeighbour],
+            ) -> Admit {
+                Admit::Accept
+            }
+            fn edge_ok(&self, _c: usize, _n: usize, _ac: (i32, i32), _an: (i32, i32)) -> bool {
+                false
+            }
+        }
+
+        // Two diagonal-only corners around (0, 0): (1, 1) and (-1, -1) are
+        // unlabelled? No, place labelled corners at (0, 0) and (2, 0) and
+        // diagonally adjacent to (1, 1) only: label (-1, 0), (1, 0) etc.?
+        // Specifically: label (0, 0), (1, 0), (0, 1) -> bbox is 0..=1, 0..=1.
+        // Wait: (1, 1) would have cardinal neighbours (1, 0) and (0, 1).
+        // Put labelled corners at (0, 0), (2, 0), (0, 2), (2, 2).
+        // Then cell (1, 1) is an interior bbox cell whose ONLY labelled
+        // neighbours are diagonal!
+        let s = 20.0_f32;
+        let positions = vec![
+            Point2::new(0.0, 0.0),
+            Point2::new(2.0 * s, 0.0),
+            Point2::new(0.0, 2.0 * s),
+            Point2::new(2.0 * s, 2.0 * s),
+            Point2::new(s, s), // candidate at (1, 1)
+        ];
+        let labelled = HashMap::from([((0, 0), 0), ((2, 0), 1), ((0, 2), 2), ((2, 2), 3)]);
+        let by_corner = HashMap::from([(0, (0, 0)), (1, (2, 0)), (2, (0, 2)), (3, (2, 2))]);
+        let mut grow = GrowResult {
+            labelled,
+            by_corner,
+            ambiguous: Default::default(),
+            holes: Default::default(),
+            axis_i: nalgebra::Vector2::new(1.0, 0.0),
+            axis_j: nalgebra::Vector2::new(0.0, 1.0),
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
+        };
+        let stats = fill_grid_holes(
+            &positions,
+            &mut grow,
+            s,
+            &FillParams::default(),
+            &RejectAllEdges,
+        );
+        assert_eq!(stats.added, 0);
+        assert!(!grow.labelled.contains_key(&(1, 1)));
     }
 }

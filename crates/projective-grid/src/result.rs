@@ -389,7 +389,24 @@ fn canonicalize_to_image_axes(entries: &mut [GridEntry]) -> bool {
     let new_vu = if swap { vv } else { vu };
     let new_vv = if swap { vu } else { vv };
     let flip_u = new_vu.0 < 0.0;
-    let flip_v = new_vv.1 < 0.0;
+    let mut flip_v = new_vv.1 < 0.0;
+
+    // Enforce right-handedness (`det([u, v]) >= 0` in image y-down coords)
+    // so strong perspective shear cannot flip handedness into a reflection
+    // and break downstream C4 consumers.
+    let eff_vu = if flip_u {
+        (-new_vu.0, -new_vu.1)
+    } else {
+        new_vu
+    };
+    let eff_vv = if flip_v {
+        (-new_vv.0, -new_vv.1)
+    } else {
+        new_vv
+    };
+    if eff_vu.0 * eff_vv.1 - eff_vu.1 * eff_vv.0 < 0.0 {
+        flip_v = !flip_v;
+    }
 
     if !swap && !flip_u && !flip_v {
         return false;
@@ -589,5 +606,34 @@ mod tests {
         let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
         let report = ConsistencyReport::new(true, grid, make_identity_fit(), vec![rejected]);
         assert_eq!(report.rejected()[0].source_index, 5);
+    }
+
+    #[test]
+    fn normalize_preserves_right_handedness_under_perspective_shear() {
+        // Right-handed sheared axes where `|vu.x| < |vv.x|` triggers a swap:
+        // vu = (5.0, 1.0), vv = (5.1, 8.6), det(vu, vv) = +37.9 > 0.
+        // Without a handedness guard, swapping u <-> v without flipping one
+        // axis produces det < 0 (a reflection outside C4).
+        let entries = vec![
+            mk_entry(0, 0, 100.0, 100.0),
+            mk_entry(1, 0, 105.0, 101.0),
+            mk_entry(0, 1, 105.1, 108.6),
+            mk_entry(1, 1, 110.1, 109.6),
+        ];
+        let mut grid = LabelledGrid::new(LatticeKind::Square, entries, None);
+        grid.normalize();
+        let by_coord: HashMap<(i32, i32), Point2<f32>> = grid
+            .entries()
+            .iter()
+            .map(|e| ((e.coord.u, e.coord.v), e.image_position))
+            .collect();
+        let o = by_coord[&(0, 0)];
+        let du = by_coord[&(1, 0)] - o;
+        let dv = by_coord[&(0, 1)] - o;
+        let det = du.x * dv.y - du.y * dv.x;
+        assert!(
+            det > 0.0,
+            "normalized square grid must be right-handed, got det={det}"
+        );
     }
 }

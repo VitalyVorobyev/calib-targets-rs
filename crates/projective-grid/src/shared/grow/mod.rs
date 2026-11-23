@@ -146,10 +146,11 @@ pub(crate) fn choose_unambiguous<V: SquareAttachPolicy>(
     if candidates.len() >= 2 {
         let (_, d0) = candidates[0];
         let (_, d1) = candidates[1];
-        if d0 <= f32::EPSILON {
+        if d1 <= f32::EPSILON {
             return CandidateChoice::Ambiguous;
         }
-        if d1 / d0 < ambiguity_factor {
+        let denom = d0.max(f32::EPSILON);
+        if d1 / denom < ambiguity_factor {
             return CandidateChoice::Ambiguous;
         }
     }
@@ -351,5 +352,53 @@ mod tests {
         let pred = predict_from_neighbours((5, 4), &[neighbour], u, v, s, &labelled, &positions);
         assert!((pred.x - (100.0 + s)).abs() < 1e-3);
         assert!((pred.y - 100.0).abs() < 1e-3);
+    }
+
+    #[test]
+    fn choose_unambiguous_accepts_exact_zero_error_with_distant_second() {
+        struct AcceptAll;
+        impl SquareAttachPolicy for AcceptAll {
+            fn is_eligible(&self, _idx: usize) -> bool {
+                true
+            }
+            fn required_label_at(&self, _i: i32, _j: i32) -> Option<u8> {
+                None
+            }
+            fn label_of(&self, _idx: usize) -> Option<u8> {
+                None
+            }
+            fn accept_candidate(
+                &self,
+                _idx: usize,
+                _at: (i32, i32),
+                _prediction: Point2<f32>,
+                _neighbours: &[LabelledNeighbour],
+            ) -> Admit {
+                Admit::Accept
+            }
+        }
+        let positions = vec![Point2::new(10.0, 10.0), Point2::new(25.0, 10.0)];
+        let candidates = vec![(0, 0.0_f32), (1, 15.0_f32)];
+        let choice = choose_unambiguous(
+            &candidates,
+            2.0,
+            Point2::new(10.0, 10.0),
+            &positions,
+            &AcceptAll,
+            (1, 0),
+            &[],
+        );
+        assert!(matches!(choice, CandidateChoice::Unique(0)));
+        let tied = vec![(0, 0.0_f32), (1, 0.0_f32)];
+        let tied_choice = choose_unambiguous(
+            &tied,
+            2.0,
+            Point2::new(10.0, 10.0),
+            &positions,
+            &AcceptAll,
+            (1, 0),
+            &[],
+        );
+        assert!(matches!(tied_choice, CandidateChoice::Ambiguous));
     }
 }

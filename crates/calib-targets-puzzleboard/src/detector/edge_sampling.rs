@@ -54,8 +54,15 @@ pub(crate) fn sample_all_edges(
     // Again we record the anchor as local `(r, c)` and let the decoder
     // transform the `(-1, 0)` / `(0, -1)` lookup offsets together with
     // the edge orientation.
+    let mut is_inlier = vec![false; corners.len()];
+    for &i in inliers {
+        if let Some(slot) = is_inlier.get_mut(i) {
+            *slot = true;
+        }
+    }
+
     for (idx, lc) in corners.iter().enumerate() {
-        if !inliers.contains(&idx) {
+        if !is_inlier[idx] {
             continue;
         }
         let Some(grid) = lc.grid else {
@@ -77,8 +84,8 @@ pub(crate) fn sample_all_edges(
                     [
                         top_left.position,
                         top_right.position,
-                        lc.position,
                         right.position,
+                        lc.position,
                     ],
                     [
                         lc.position,
@@ -491,5 +498,67 @@ mod tests {
         let fallback = sample_edge_bit_with_candidates(&view, p0, p1, &[], 255.0, 0.0, 0.01);
         assert_eq!(legacy.0, fallback.0);
         assert!((legacy.1 - fallback.1).abs() <= f32::EPSILON);
+    }
+
+    #[test]
+    fn sample_all_edges_handles_inlier_mask_and_bounds() {
+        // 3x3 corner grid at spacing 10 px inside a 40x40 image:
+        // cell rows 0..2, cols 0..2 centered at x=15,25, y=15,25.
+        let width = 40usize;
+        let height = 40usize;
+        let mut data = vec![128u8; width * height];
+        for y in 0..height {
+            for x in 0..width {
+                let ci = (x as i32 - 10).div_euclid(10);
+                let cj = (y as i32 - 10).div_euclid(10);
+                let bright = (ci + cj).rem_euclid(2) == 0;
+                data[y * width + x] = if bright { 230 } else { 25 };
+            }
+        }
+        // Place a bright (bit=1) dot at horizontal edge between (0, 1) and (1, 1) -> (15, 20).
+        for dy in -2..=2 {
+            for dx in -2..=2 {
+                data[(20 + dy) as usize * width + (15 + dx) as usize] = 240;
+            }
+        }
+        // Place a dark (bit=0) dot at vertical edge between (1, 0) and (1, 1) -> (20, 15).
+        for dy in -2..=2 {
+            for dx in -2..=2 {
+                data[(15 + dy) as usize * width + (20 + dx) as usize] = 15;
+            }
+        }
+        let view = GrayImageView {
+            width,
+            height,
+            data: &data,
+        };
+        let mut corners = Vec::new();
+        for v in 0..=2 {
+            for u in 0..=2 {
+                corners.push(
+                    LabeledCorner::new(
+                        Point2::new((10 + u * 10) as f32, (10 + v * 10) as f32),
+                        1.0,
+                    )
+                    .with_grid(calib_targets_core::Coord::new(u, v)),
+                );
+            }
+        }
+        // Include corner (0, 1) at idx 3 and (1, 0) at idx 1, exclude corner (1, 1) at idx 4,
+        // and include an out-of-range inlier index to verify bounds safety.
+        let inliers = [0usize, 1, 2, 3, 5, 6, 7, 8, 999];
+        let edges = sample_all_edges(&view, &corners, &inliers, 0.12);
+        let h_edge = edges
+            .iter()
+            .find(|e| e.orientation == EdgeOrientation::Horizontal && e.row == 1 && e.col == 0)
+            .expect("horizontal edge at (row=1, col=0)");
+        assert_eq!(h_edge.bit, 1);
+        let v_edge = edges
+            .iter()
+            .find(|e| e.orientation == EdgeOrientation::Vertical && e.row == 0 && e.col == 1)
+            .expect("vertical edge at (row=0, col=1)");
+        assert_eq!(v_edge.bit, 0);
+        // Corner (1, 1) (idx=4) is excluded from `inliers`, so its anchored edges must be absent.
+        assert!(!edges.iter().any(|e| e.row == 1 && e.col == 1));
     }
 }

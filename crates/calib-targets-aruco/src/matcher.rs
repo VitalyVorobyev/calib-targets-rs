@@ -92,13 +92,18 @@ impl Matcher {
                     hamming: h,
                 };
                 match best {
-                    None => best = Some(m),
+                    None => {
+                        if m.hamming == 0 {
+                            return Some(m);
+                        }
+                        best = Some(m);
+                    }
                     Some(prev) => {
                         if m.hamming < prev.hamming {
-                            best = Some(m);
                             if m.hamming == 0 {
-                                return best;
+                                return Some(m);
                             }
+                            best = Some(m);
                         }
                     }
                 }

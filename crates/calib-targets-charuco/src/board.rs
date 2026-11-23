@@ -136,6 +136,9 @@ pub enum CharucoBoardError {
         /// Number of codes available in the dictionary.
         available: usize,
     },
+    /// The embedded chessboard detector configuration is invalid.
+    #[error("invalid chessboard configuration: {0}")]
+    Chessboard(#[from] calib_targets_chessboard::ChessboardParamsError),
 }
 
 /// Errors from loading a board specification via [`load_board_spec_any`].

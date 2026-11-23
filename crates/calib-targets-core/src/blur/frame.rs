@@ -79,12 +79,18 @@ impl Frame {
 
     pub(super) fn to_board(&self, x: f64, y: f64) -> [f64; 2] {
         let v = self.inverse * Vector3::new(x, y, 1.0);
+        if !v.z.is_finite() || v.z.abs() <= 1e-12 {
+            return [f64::NAN, f64::NAN];
+        }
         [v.x / v.z, v.y / v.z]
     }
 
     pub(super) fn to_image(&self, q: [f64; 2]) -> [f64; 2] {
         let h = &self.h;
         let w = h[6] * q[0] + h[7] * q[1] + 1.0;
+        if !w.is_finite() || w.abs() <= 1e-12 {
+            return [f64::NAN, f64::NAN];
+        }
         [
             self.c0[0] + self.scale * (h[0] * q[0] + h[1] * q[1] + h[2]) / w,
             self.c0[1] + self.scale * (h[3] * q[0] + h[4] * q[1] + h[5]) / w,
@@ -158,7 +164,7 @@ pub(super) fn select_pixels(
     for y in y0..=y1 {
         for x in x0..=x1 {
             let q = frame.to_board(x as f64, y as f64);
-            if q[0].abs() > rho || q[1].abs() > rho || !in_support(pattern, q, m) {
+            if !(q[0].abs() <= rho && q[1].abs() <= rho) || !in_support(pattern, q, m) {
                 continue;
             }
             let v = image.data[y as usize * image.width + x as usize];
@@ -191,4 +197,24 @@ pub(super) fn pixel_bounds(pixels: &[Pixel]) -> [f64; 4] {
         b[3] = b[3].max(y);
     }
     b
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn frame_horizon_guards_return_nan_instead_of_inf() {
+        let f = Frame {
+            c0: [0.0, 0.0],
+            scale: 10.0,
+            scale_min: 10.0,
+            h: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.5, 0.0],
+            inverse: Matrix3::new(1.0, 0.0, 0.0, 0.0, 1.0, 0.0, -0.5, 0.0, 1.0),
+        };
+        let b = f.to_board(2.0, 1.0); // v.z == 0
+        assert!(b[0].is_nan() && b[1].is_nan());
+        let p = f.to_image([-2.0, 1.0]); // w == 0
+        assert!(p[0].is_nan() && p[1].is_nan());
+    }
 }

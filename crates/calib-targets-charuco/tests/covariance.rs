@@ -135,10 +135,21 @@ fn a_repaired_corner_is_re_measured_with_a_covariance() {
         let Some(k) = corners.iter().position(|r| r.position == c.position) else {
             continue;
         };
-        // 6 px: past the validation threshold (0.08 × 60 px), well inside the
-        // re-detection window.
+        // Actual local pitch in the image (e.g. from an adjacent corner in the
+        // reference grid): shift by 0.12 × local_pitch so the perturbation is
+        // strictly past the 0.08 × local_pitch validation threshold while
+        // staying well inside the 0.24 × local_pitch re-detection window.
+        let pitch = reference
+            .corners
+            .iter()
+            .filter_map(|other| {
+                let d = (other.grid.u - c.grid.u).abs() + (other.grid.v - c.grid.v).abs();
+                (d == 1).then(|| (other.position - c.position).norm())
+            })
+            .next()
+            .unwrap_or(60.0);
         let mut moved = corners.clone();
-        moved[k].position.y -= 6.0;
+        moved[k].position.y -= 0.12 * pitch;
         let result = detector
             .detect_with_corners(&view(&img), &moved)
             .expect("detection with one corner moved");

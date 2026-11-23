@@ -108,6 +108,25 @@ const TOPO_FRONTIER_CURV_TOL: f32 = 0.30;
 /// neighbour pair has degree 3 and is spared.
 const TOPO_FRONTIER_MAX_DEGREE: usize = 2;
 
+/// Maximum consecutive edge length ratio on a small or sparse component before
+/// treating the shared vertex as a gross topological kink. Perspective changes
+/// consecutive cell lengths gradually; only skipped-corner / saddle jumps
+/// exceed `2.0×`.
+const TOPO_GROSS_CONT_RATIO: f32 = 2.0;
+
+/// Maximum turning angle (degrees) between consecutive collinear edges sharing
+/// a vertex. True grids stay smoothly collinear; false saddle bridges bend
+/// sharply past `45°`.
+const TOPO_GROSS_CONT_ANGLE_DEG: f32 = 45.0;
+
+/// Maximum opposing-side length ratio in a complete `2×2` quad cell. Strong
+/// perspective stays well below `2.0×` across a single cell; false saddle
+/// quads collapse on one side and stretch past `2.0×`.
+const TOPO_GROSS_CELL_OPPOSITE_RATIO: f32 = 2.0;
+
+/// Maximum opposing-side angle (degrees) in a complete `2×2` quad cell.
+const TOPO_GROSS_CELL_OPPOSITE_ANGLE_DEG: f32 = 45.0;
+
 /// Lattice-orientation drops — a **parity invariant**, not a tolerance.
 ///
 /// The map from lattice coordinates to image positions is a homography, and a
@@ -358,6 +377,104 @@ where
     // edge — invisible to the first-order overlong / off-axis tests above —
     // as a second-order kink in the otherwise-smooth grid-line spacing.
     drop.extend(frontier_curvature_drops(labelled, &position_of));
+
+    // Criterion 5: scale-free gross local continuation & quad-cell sanity
+    // (Gap 32). Arms regardless of component size so small 6–9 corner false
+    // grids below `TOPO_MIN_LOCAL_SAMPLES` / `TOPO_MIN_GLOBAL_SAMPLES` cannot
+    // slip through unjudged.
+    drop.extend(gross_local_shape_drops(labelled, &position_of));
+
+    drop
+}
+
+fn vec_angle_deg(a: Vector2<f32>, b: Vector2<f32>) -> Option<f32> {
+    let an = a.norm();
+    let bn = b.norm();
+    if !an.is_finite() || !bn.is_finite() || an <= f32::EPSILON || bn <= f32::EPSILON {
+        return None;
+    }
+    let cos = (a.dot(&b) / (an * bn)).clamp(-1.0, 1.0);
+    Some(cos.acos().to_degrees())
+}
+
+fn vec_length_ratio(a: Vector2<f32>, b: Vector2<f32>) -> Option<f32> {
+    let an = a.norm();
+    let bn = b.norm();
+    if !an.is_finite() || !bn.is_finite() {
+        return None;
+    }
+    let lo = an.min(bn);
+    if lo <= f32::EPSILON {
+        return None;
+    }
+    Some(an.max(bn) / lo)
+}
+
+fn gross_local_shape_drops<F>(
+    labelled: &HashMap<(i32, i32), usize>,
+    position_of: F,
+) -> HashSet<usize>
+where
+    F: Fn(usize) -> Point2<f32>,
+{
+    let mut drop: HashSet<usize> = HashSet::new();
+
+    for (&(i, j), &idx) in labelled {
+        let p_cur = position_of(idx);
+        let mut kinked = false;
+        for (di, dj) in [(1i32, 0i32), (0, 1)] {
+            if let (Some(&prev_idx), Some(&next_idx)) = (
+                labelled.get(&(i - di, j - dj)),
+                labelled.get(&(i + di, j + dj)),
+            ) {
+                let e1 = p_cur - position_of(prev_idx);
+                let e2 = position_of(next_idx) - p_cur;
+                let bad_ratio = vec_length_ratio(e1, e2).is_none_or(|r| r > TOPO_GROSS_CONT_RATIO);
+                let bad_angle = vec_angle_deg(e1, e2).is_none_or(|a| a > TOPO_GROSS_CONT_ANGLE_DEG);
+                if bad_ratio || bad_angle {
+                    kinked = true;
+                    break;
+                }
+            }
+        }
+        if kinked {
+            drop.insert(idx);
+            continue;
+        }
+
+        let mut adjacent_cells = 0u32;
+        let mut valid_cells = 0u32;
+        for (ci, cj) in [(i, j), (i - 1, j), (i - 1, j - 1), (i, j - 1)] {
+            let (Some(&tl), Some(&tr), Some(&br), Some(&bl)) = (
+                labelled.get(&(ci, cj)),
+                labelled.get(&(ci + 1, cj)),
+                labelled.get(&(ci + 1, cj + 1)),
+                labelled.get(&(ci, cj + 1)),
+            ) else {
+                continue;
+            };
+            adjacent_cells += 1;
+            let p_tl = position_of(tl);
+            let p_tr = position_of(tr);
+            let p_br = position_of(br);
+            let p_bl = position_of(bl);
+            let top = p_tr - p_tl;
+            let bottom = p_br - p_bl;
+            let left = p_bl - p_tl;
+            let right = p_br - p_tr;
+            let cell_ok = [(top, bottom), (left, right)].into_iter().all(|(a, b)| {
+                vec_length_ratio(a, b).is_some_and(|r| r <= TOPO_GROSS_CELL_OPPOSITE_RATIO)
+                    && vec_angle_deg(a, b)
+                        .is_some_and(|ang| ang <= TOPO_GROSS_CELL_OPPOSITE_ANGLE_DEG)
+            });
+            if cell_ok {
+                valid_cells += 1;
+            }
+        }
+        if adjacent_cells > 0 && valid_cells == 0 {
+            drop.insert(idx);
+        }
+    }
 
     drop
 }
@@ -1008,5 +1125,76 @@ mod tests {
             !drop.contains(&supported),
             "degree-3 member must be spared: {drop:?}"
         );
+    }
+
+    #[test]
+    fn gross_local_shape_drops_catches_small_false_grid() {
+        // 8-corner component (< TOPO_MIN_LOCAL_SAMPLES = 5): one 2x2 quad stretched
+        // with a 3x opposing-side ratio and a 3x consecutive edge jump.
+        let cells = [
+            (0, 0, 0.0, 0.0),
+            (1, 0, 10.0, 0.0),
+            (2, 0, 40.0, 0.0),
+            (3, 0, 50.0, 0.0),
+            (0, 1, 0.0, 10.0),
+            (1, 1, 10.0, 10.0),
+            (2, 1, 20.0, 10.0),
+            (3, 1, 50.0, 10.0),
+        ];
+        let (labelled, pos) = grid_from(&cells);
+        let drop = topological_wrong_label_drops(&labelled, |idx| pos[idx], 10.0);
+        assert!(
+            !drop.is_empty(),
+            "small false grid with 3x jump/quad ratio must be caught: {drop:?}"
+        );
+        assert!(drop.contains(&labelled[&(1, 0)]));
+        assert!(drop.contains(&labelled[&(2, 0)]));
+    }
+
+    #[test]
+    fn gross_local_shape_drops_preserves_tilted_projective_grid() {
+        // Clean tilted planar 4x4 grid via projective transform (ratio ~1.3x, angle ~15 deg).
+        let mut cells = Vec::new();
+        for j in 0..4 {
+            for i in 0..4 {
+                let x = i as f32 * 40.0;
+                let y = j as f32 * 40.0;
+                let w = 1.0 + 0.002 * x + 0.001 * y;
+                cells.push((i, j, (x * 1.1 + y * 0.1) / w, (y * 1.05 - x * 0.05) / w));
+            }
+        }
+        let (labelled, pos) = grid_from(&cells);
+        let drop = gross_local_shape_drops(&labelled, |idx| pos[idx]);
+        assert!(drop.is_empty(), "tilted projective grid dropped: {drop:?}");
+    }
+
+    #[test]
+    fn gross_local_shape_drops_spares_neighbors_sharing_valid_quads() {
+        // 4x4 uniform grid with corner (3, 3) displaced far enough to distort quad
+        // (2, 2)..=(3, 3) past 2x opposite-side ratio: (3, 3) has no valid adjacent
+        // quad and drops, while interior neighbors sharing valid quads are preserved.
+        let mut cells = Vec::new();
+        for j in 0..4 {
+            for i in 0..4 {
+                let (x, y) = if (i, j) == (3, 3) {
+                    (250.0, 130.0)
+                } else {
+                    (i as f32 * 30.0, j as f32 * 30.0)
+                };
+                cells.push((i, j, x, y));
+            }
+        }
+        let (labelled, pos) = grid_from(&cells);
+        let drop = gross_local_shape_drops(&labelled, |idx| pos[idx]);
+        assert!(
+            drop.contains(&labelled[&(3, 3)]),
+            "outlier (3, 3) must drop"
+        );
+        for &keep in &[(1, 1), (2, 1), (1, 2), (2, 2)] {
+            assert!(
+                !drop.contains(&labelled[&keep]),
+                "{keep:?} shares valid adjacent quads and must be spared"
+            );
+        }
     }
 }

@@ -31,17 +31,12 @@ pub struct CharucoDetectDiagnostics {
     /// One entry per chessboard connected component the detector tried
     /// to match.
     pub components: Vec<ComponentDiagnostics>,
-    /// Total number of markers decoded out of candidate cells, **before**
-    /// alignment-based inlier filtering, summed across the components that
-    /// contributed to the returned [`crate::CharucoDetection`].
-    ///
-    /// `raw_marker_count - result.markers.len()` is the number of raw
-    /// marker decodings rejected by the alignment stage.
+    /// Total number of markers emitted by the board-level matcher across the
+    /// components that contributed to the returned [`crate::CharucoDetection`].
     pub raw_marker_count: usize,
-    /// Raw decodings whose id mapped to a valid board position that
-    /// **disagreed** with the chosen alignment — a self-consistency
-    /// wrong-id count. It excludes pure dictionary-noise decodings whose id
-    /// did not correspond to any marker on this board.
+    /// Emitted markers whose ID disagreed with the marker expected by the
+    /// winning board alignment at that cell — a self-consistency check over
+    /// the emitted markers.
     pub raw_marker_wrong_id_count: usize,
 }
 
@@ -74,10 +69,9 @@ pub enum ComponentOutcome {
         markers: usize,
         /// Number of ChArUco corners in the component's detection.
         charuco_corners: usize,
-        /// Raw markers decoded for this component before alignment-based
-        /// inlier filtering.
+        /// Number of markers emitted for this component.
         raw_marker_count: usize,
-        /// Raw decodings for this component whose id disagreed with the
+        /// Emitted markers for this component whose ID disagreed with the
         /// chosen alignment.
         raw_marker_wrong_id_count: usize,
     },

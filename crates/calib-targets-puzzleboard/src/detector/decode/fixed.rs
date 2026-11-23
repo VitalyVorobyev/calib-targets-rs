@@ -445,7 +445,7 @@ fn demote_into_runner(
 /// observations off the board.
 fn scan(
     logical: &[PuzzleBoardObservedEdge],
-    physical: Option<(&[PuzzleBoardObservedEdge], &SoftLlConfig)>,
+    physical: Option<(&[PuzzleBoardObservedEdge], Option<&SoftLlConfig>)>,
     geometry: CodeGeometry<'_>,
     board: BoardRect,
     transforms: &[GridTransform],
@@ -458,7 +458,7 @@ fn scan(
     if logical_conf <= 0.0 {
         return None;
     }
-    let soft_cfg = physical.map(|(_, cfg)| cfg);
+    let soft_cfg = physical.and_then(|(_, cfg)| cfg);
     let physical_edges = physical.map(|(edges, _)| edges);
     if let Some(edges) = physical_edges {
         if edges.is_empty() || edges.iter().map(|e| e.confidence).sum::<f32>() <= 0.0 {
@@ -576,7 +576,7 @@ pub(crate) fn decode_fixed_hard(
 ) -> Option<DecodeOutcome> {
     let voted = scan(
         logical,
-        None,
+        Some((observed, None)),
         geometry,
         board,
         transforms,
@@ -633,7 +633,7 @@ pub(crate) fn decode_fixed_soft(
 ) -> Option<DecodeOutcome> {
     let voted = scan(
         logical,
-        Some((observed, cfg)),
+        Some((observed, Some(cfg))),
         geometry,
         board,
         transforms,

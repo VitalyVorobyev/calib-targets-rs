@@ -21,7 +21,7 @@ use projective_grid::{expert::lattice::predict_grid_position, LatticeKind};
 /// - Vertical: `0.5 * (P(i,j-1) + P(i,j+1))`
 ///
 /// If the deviation from the average prediction exceeds
-/// `threshold_rel * px_per_square`, the corner is re-detected near the
+/// `threshold_rel * local_pitch`, the corner is re-detected near the
 /// predicted position using [`Redetector::locate`].  If re-detection
 /// fails, the corner is snapped to the predicted position (never removed).
 pub(crate) fn smooth_grid_corners(
@@ -35,17 +35,12 @@ pub(crate) fn smooth_grid_corners(
         return;
     }
 
-    let threshold_px = threshold_rel * px_per_square;
-    let threshold_sq = threshold_px * threshold_px;
-    let roi_half_px = (threshold_px * 3.0)
-        .round()
-        .max(8.0)
-        .min(px_per_square * 0.5) as i32;
+    // Collect flagged corners in deterministic coordinate order (don't mutate
+    // during evaluation).
+    let mut flagged: Vec<(Coord, Point2<f32>, i32)> = Vec::new();
 
-    // Collect flagged corners (don't mutate during iteration).
-    let mut flagged: Vec<(Coord, Point2<f32>)> = Vec::new();
-
-    let keys: Vec<Coord> = corner_map.keys().copied().collect();
+    let mut keys: Vec<Coord> = corner_map.keys().copied().collect();
+    keys.sort_unstable();
     for gc in &keys {
         let pos = corner_map[gc];
 
@@ -55,10 +50,15 @@ pub(crate) fn smooth_grid_corners(
             continue;
         };
 
+        let local_pitch = local_corner_pitch(corner_map, *gc, pos, px_per_square);
+        let threshold_px = threshold_rel * local_pitch;
+        let threshold_sq = threshold_px * threshold_px;
+
         let dx = pos.x - predicted.x;
         let dy = pos.y - predicted.y;
         if dx * dx + dy * dy > threshold_sq {
-            flagged.push((*gc, predicted));
+            let roi_half_px = (threshold_px * 3.0).round().max(8.0).min(local_pitch * 0.5) as i32;
+            flagged.push((*gc, predicted, roi_half_px));
         }
     }
 
@@ -69,7 +69,7 @@ pub(crate) fn smooth_grid_corners(
         );
     }
 
-    for (gc, predicted) in flagged {
+    for (gc, predicted, roi_half_px) in flagged {
         // Only the position feeds the corner map (marker sampling); output
         // corners keep their measured position, so no covariance is needed.
         match redetector.locate(image, predicted, roi_half_px) {
@@ -88,6 +88,47 @@ pub(crate) fn smooth_grid_corners(
                 corner_map.insert(gc, predicted);
             }
         }
+    }
+}
+
+/// Estimate local image pitch at `gc` from immediate grid neighbours.
+///
+/// Prefers opposing-neighbour spans `0.5 * ||P(+1) - P(-1)||` along each axis
+/// so a displaced corner at `gc` cannot shrink or inflate its own pitch scale,
+/// falling back to adjacent cardinal distances and finally `fallback_px`.
+fn local_corner_pitch(
+    corner_map: &CornerMap,
+    gc: Coord,
+    pos: Point2<f32>,
+    fallback_px: f32,
+) -> f32 {
+    let mut sum = 0.0_f32;
+    let mut count = 0usize;
+    for (di, dj) in [(1, 0), (0, 1)] {
+        let fwd = corner_map.get(&Coord::new(gc.u + di, gc.v + dj));
+        let bwd = corner_map.get(&Coord::new(gc.u - di, gc.v - dj));
+        match (fwd, bwd) {
+            (Some(&pf), Some(&pb)) => {
+                let d = 0.5 * (pf - pb).norm();
+                if d.is_finite() && d > 0.0 {
+                    sum += d;
+                    count += 1;
+                }
+            }
+            (Some(&p), None) | (None, Some(&p)) => {
+                let d = (p - pos).norm();
+                if d.is_finite() && d > 0.0 {
+                    sum += d;
+                    count += 1;
+                }
+            }
+            (None, None) => {}
+        }
+    }
+    if count > 0 {
+        sum / count as f32
+    } else {
+        fallback_px
     }
 }
 

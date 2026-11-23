@@ -116,11 +116,11 @@ pub enum DetectError {
     #[error(transparent)]
     MarkerBoardDetect(#[from] marker::MarkerBoardDetectError),
 
-    /// Invalid chessboard or marker-board detector parameters.
-    ///
-    /// Both [`chessboard::ChessboardDetector::new`] and
-    /// [`marker::MarkerBoardDetector::new`] validate their
-    /// [`chessboard::ChessboardParams`] and surface this on a bad value.
+    /// Invalid marker-board detector parameters.
+    #[error(transparent)]
+    MarkerBoardParams(#[from] marker::MarkerBoardParamsError),
+
+    /// Invalid chessboard detector parameters.
     #[error(transparent)]
     ChessboardParams(#[from] chessboard::ChessboardParamsError),
 
@@ -162,6 +162,7 @@ impl DetectError {
             | Self::CharucoBoard(_)
             | Self::PuzzleBoardSpec(_)
             | Self::PuzzlePoleSpec(_)
+            | Self::MarkerBoardParams(_)
             | Self::ChessboardParams(_) => false,
         }
     }

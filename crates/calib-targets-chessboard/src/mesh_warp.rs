@@ -20,6 +20,9 @@ pub enum MeshWarpError {
     /// The homography estimator failed for at least one cell.
     #[error("homography estimation failed for at least one cell")]
     HomographyFailed,
+    /// `px_per_square` is not finite and strictly positive.
+    #[error("px_per_square must be finite and > 0")]
+    InvalidScale,
 }
 
 // ---- Mesh warp rectification ----
@@ -93,6 +96,9 @@ impl RectifiedMeshView {
         cj: usize,
         p_cell: Point2<f32>,
     ) -> Option<Point2<f32>> {
+        if ci >= self.cells_x || cj >= self.cells_y {
+            return None;
+        }
         let idx = cj.checked_mul(self.cells_x)?.checked_add(ci)?;
         let cell = *self.cells.get(idx)?;
         if !cell.valid {
@@ -146,6 +152,10 @@ pub fn rectify_mesh_from_grid(
     inliers: &[usize],
     px_per_square: f32,
 ) -> Result<RectifiedMeshView, MeshWarpError> {
+    if !px_per_square.is_finite() || px_per_square <= 0.0 {
+        return Err(MeshWarpError::InvalidScale);
+    }
+
     // 1) Build map: (u,v) -> image point
     let map = build_corners_to_pix_map(corners, inliers);
     if map.len() < 4 {
@@ -185,12 +195,12 @@ pub fn rectify_mesh_from_grid(
 
     let s = px_per_square;
 
-    // Rectified cell corner coordinates (in pixels within the cell)
+    // Rectified cell corner coordinates (in pixels within the cell, TL, TR, BR, BL)
     let cell_rect = [
         Point2::new(0.0, 0.0),
         Point2::new(s, 0.0),
-        Point2::new(0.0, s),
         Point2::new(s, s),
+        Point2::new(0.0, s),
     ];
 
     let mut valid_cells = 0usize;
@@ -218,7 +228,8 @@ pub fn rectify_mesh_from_grid(
                 continue;
             };
 
-            let img_quad = [p00, p10, p01, p11];
+            // Keep TL, TR, BR, BL winding to match `cell_rect`.
+            let img_quad = [p00, p10, p11, p01];
 
             let Some(h) = estimate_homography_rect_to_img(&cell_rect, &img_quad) else {
                 return Err(MeshWarpError::HomographyFailed);
@@ -262,7 +273,9 @@ pub fn rectify_mesh_from_grid(
             if cell.valid {
                 let p_cell = Point2::new(x_local, y_local);
                 let p_img = cell.h_img_from_cellrect.apply(p_cell);
-                out[y * out_w + x] = sample_bilinear_u8(src, p_img.x, p_img.y);
+                if p_img.x.is_finite() && p_img.y.is_finite() {
+                    out[y * out_w + x] = sample_bilinear_u8(src, p_img.x, p_img.y);
+                }
             }
         }
     }
@@ -281,4 +294,77 @@ pub fn rectify_mesh_from_grid(
         valid_cells,
         cells,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_corners() -> Vec<LabeledCorner> {
+        // 3x2 cells => 4x3 corners.
+        let mut corners = Vec::new();
+        for j in 0..3 {
+            for i in 0..4 {
+                let x = 20.0 + i as f32 * 12.0 + j as f32 * 1.5;
+                let y = 15.0 + j as f32 * 14.0 - i as f32 * 0.5;
+                corners
+                    .push(LabeledCorner::new(Point2::new(x, y), 1.0).with_grid(Coord::new(i, j)));
+            }
+        }
+        corners
+    }
+
+    #[test]
+    fn cell_rect_to_img_rejects_oob_x_instead_of_wrapping() {
+        let img = vec![128u8; 100 * 100];
+        let view = GrayImageView {
+            width: 100,
+            height: 100,
+            data: &img,
+        };
+        let corners = test_corners();
+        let inliers: Vec<usize> = (0..corners.len()).collect();
+        let mesh = rectify_mesh_from_grid(&view, &corners, &inliers, 16.0).expect("mesh");
+        assert_eq!(mesh.cells_x, 3);
+        assert_eq!(mesh.cells_y, 2);
+        // Previously `cell_rect_to_img(cells_x, 0, ...)` aliased cell (0, 1).
+        assert!(mesh
+            .cell_rect_to_img(mesh.cells_x, 0, Point2::new(8.0, 8.0))
+            .is_none());
+        assert!(mesh
+            .cell_rect_to_img(0, mesh.cells_y, Point2::new(8.0, 8.0))
+            .is_none());
+    }
+
+    #[test]
+    fn invalid_scale_is_rejected_and_corners_round_trip() {
+        let img = vec![200u8; 100 * 100];
+        let view = GrayImageView {
+            width: 100,
+            height: 100,
+            data: &img,
+        };
+        let corners = test_corners();
+        let inliers: Vec<usize> = (0..corners.len()).collect();
+        assert!(matches!(
+            rectify_mesh_from_grid(&view, &corners, &inliers, 0.0),
+            Err(MeshWarpError::InvalidScale)
+        ));
+        assert!(matches!(
+            rectify_mesh_from_grid(&view, &corners, &inliers, f32::NAN),
+            Err(MeshWarpError::InvalidScale)
+        ));
+
+        let mesh = rectify_mesh_from_grid(&view, &corners, &inliers, 16.0).expect("mesh");
+        let cell_corners = mesh.cell_corners_img(1, 1).expect("cell (1, 1)");
+        let expected = [
+            corners[4 + 1].position,     // TL: (1, 1)
+            corners[4 + 2].position,     // TR: (2, 1)
+            corners[2 * 4 + 2].position, // BR: (2, 2)
+            corners[2 * 4 + 1].position, // BL: (1, 2)
+        ];
+        for (got, want) in cell_corners.iter().zip(&expected) {
+            assert!((got - want).norm() < 1e-3, "got {got:?} vs want {want:?}");
+        }
+    }
 }

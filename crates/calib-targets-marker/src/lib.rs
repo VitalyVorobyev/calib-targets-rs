@@ -69,7 +69,7 @@ pub use coords::{CellCoords, CellOffset};
 pub use detector::MarkerBoardDetector;
 #[cfg(feature = "diagnostics")]
 pub use diagnostics::MarkerBoardDiagnostics;
-pub use error::MarkerBoardDetectError;
+pub use error::{MarkerBoardDetectError, MarkerBoardParamsError};
 pub use types::{
     CircleMatch, CircleMatchParams, MarkerBoardCorner, MarkerBoardDetection, MarkerBoardParams,
     MarkerBoardSpec, MarkerCircleSpec,

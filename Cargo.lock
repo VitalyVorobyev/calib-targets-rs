@@ -483,7 +483,6 @@ dependencies = [
  "criterion",
  "env_logger",
  "image",
- "log",
  "nalgebra",
  "projective-grid",
  "schemars",

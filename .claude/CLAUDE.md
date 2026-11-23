@@ -100,7 +100,8 @@ Changes that can move a label also take the regression gate + bless protocol in
 - Quad / homography corner order: **TL, TR, BR, BL** (clockwise) in both
   source and destination spaces. Never use self-crossing order; per-cell mesh
   warps must keep the same winding in rect and image space.
-- Pixel sampling: use `x + 0.5`, `y + 0.5` for pixel centers consistently.
+- Pixel sampling: pixel centers sit at integer coordinates `(x, y)` (with pixel
+  area box `[x - 0.5, x + 0.5) × [y - 0.5, y + 0.5)`).
 
 **Grid labels are non-negative.** Every detector that returns
 `LabeledCorner { grid: Some(i, j) }` MUST rebase `(i, j)` so the labelled

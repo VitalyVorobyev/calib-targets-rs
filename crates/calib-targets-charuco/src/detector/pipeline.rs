@@ -133,6 +133,7 @@ use tracing::instrument;
 #[derive(Debug)]
 pub struct CharucoDetector {
     board: CharucoBoard,
+    chessboard: ChessDetector,
     params: CharucoParams,
 }
 
@@ -140,7 +141,12 @@ impl CharucoDetector {
     /// Create a detector from parameters (board spec lives in `params.board`).
     pub fn new(params: CharucoParams) -> Result<Self, CharucoBoardError> {
         let board = CharucoBoard::new(params.board)?;
-        Ok(Self { board, params })
+        let chessboard = ChessDetector::new(params.chessboard.clone())?;
+        Ok(Self {
+            board,
+            chessboard,
+            params,
+        })
     }
 
     /// The marker sampling geometry: the printed marker's size and border
@@ -327,27 +333,7 @@ impl CharucoDetector {
             self.params.px_per_square,
             self.params.min_marker_inliers
         );
-        // ChArUco runs on the topological grid builder (the workspace default;
-        // the `min_corner_strength` floor in `CharucoParams::for_board` keeps
-        // marker-bit saddles out of the grid, and the marker-decode stages
-        // downstream of grid construction are builder-agnostic).
-        //
-        // `ChessboardParams::validate` (called by `ChessboardDetector::new`)
-        // accepts every configuration the public surface can express, so the
-        // `Err` arm below is currently unreachable. It is kept total — mapping
-        // onto `ChessboardNotDetected` rather than unwrapping — so that if the
-        // chessboard detector ever adds a real validation, a rejected
-        // `chessboard` configuration surfaces as a typed detection failure here
-        // instead of a panic.
-        let chess_params = self.params.chessboard.clone();
-        let detector = match ChessDetector::new(chess_params) {
-            Ok(detector) => detector,
-            Err(e) => {
-                warn!("chessboard configuration rejected: {e}");
-                return Err(CharucoDetectError::ChessboardNotDetected);
-            }
-        };
-        let components = detector.detect_all(corners);
+        let components = self.chessboard.detect_all(corners);
 
         if components.is_empty() {
             warn!(
@@ -486,12 +472,13 @@ impl CharucoDetector {
         } = match matched {
             Some((markers, alignment)) => {
                 let count = markers.len();
+                let wrong = count_emitted_wrong_ids(&self.board, &markers, &alignment);
                 ComponentMatch {
                     markers,
                     alignment,
                     raw_counts: RawMarkerCounts {
                         raw_marker_count: count,
-                        raw_marker_wrong_id_count: 0,
+                        raw_marker_wrong_id_count: wrong,
                     },
                 }
             }
@@ -625,6 +612,32 @@ impl PipelineSink for DiagCollector {
         self.diagnostics.raw_marker_count = raw_counts.raw_marker_count;
         self.diagnostics.raw_marker_wrong_id_count = raw_counts.raw_marker_wrong_id_count;
     }
+}
+
+fn count_emitted_wrong_ids(
+    board: &CharucoBoard,
+    markers: &[MarkerDetection],
+    alignment: &CharucoAlignment,
+) -> usize {
+    markers
+        .iter()
+        .filter(|m| {
+            let (gc0_u, gc0_v) = match m.rotation & 3 {
+                1 => (m.gc.u - 1, m.gc.v),
+                2 => (m.gc.u - 1, m.gc.v - 1),
+                3 => (m.gc.u, m.gc.v - 1),
+                _ => (m.gc.u, m.gc.v),
+            };
+            let mut min_u = i32::MAX;
+            let mut min_v = i32::MAX;
+            for (di, dj) in [(0, 0), (1, 0), (1, 1), (0, 1)] {
+                let bc = alignment.map(gc0_u + di, gc0_v + dj);
+                min_u = min_u.min(bc.u);
+                min_v = min_v.min(bc.v);
+            }
+            board.marker_id_at(calib_targets_core::Coord::new(min_u, min_v)) != Some(m.id)
+        })
+        .count()
 }
 
 #[cfg(test)]

@@ -63,8 +63,8 @@
 use calib_targets_core::{log_sigmoid, Coord, GridAlignment, GridTransform};
 
 use crate::code_maps::{
-    horizontal_edge_bit, vertical_edge_bit, EdgeOrientation, PuzzleBoardObservedEdge,
-    EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS, EDGE_MAP_B_ROWS,
+    EdgeOrientation, PuzzleBoardObservedEdge, EDGE_MAP_A_COLS, EDGE_MAP_A_ROWS, EDGE_MAP_B_COLS,
+    EDGE_MAP_B_ROWS,
 };
 
 mod fixed;
@@ -142,14 +142,21 @@ pub(crate) fn match_stats(
     observed: &[PuzzleBoardObservedEdge],
     alignment: &GridAlignment,
 ) -> MatchStats {
+    match_stats_with_geometry(observed, alignment, &CodeGeometry::master())
+}
+
+/// Score `observed` against an arbitrary cyclic code geometry under a decided
+/// `alignment`.
+pub(crate) fn match_stats_with_geometry(
+    observed: &[PuzzleBoardObservedEdge],
+    alignment: &GridAlignment,
+    geometry: &CodeGeometry<'_>,
+) -> MatchStats {
     let mut matched = 0usize;
     let mut matched_weight = 0.0f32;
     for e in observed {
         let l = transform_edge_lookup(e, alignment);
-        let expected = match l.orientation {
-            EdgeOrientation::Horizontal => horizontal_edge_bit(l.lookup_row, l.lookup_col),
-            EdgeOrientation::Vertical => vertical_edge_bit(l.lookup_row, l.lookup_col),
-        };
+        let expected = geometry.expected_bit(l.orientation, l.lookup_row, l.lookup_col);
         if expected == e.bit {
             matched += 1;
             matched_weight += e.confidence;
@@ -345,12 +352,11 @@ pub(crate) struct HardRunnerUp {
 /// is not even the best-supported hypothesis. (The previous formulation reached
 /// the same verdict arithmetically, by letting the margin saturate to `0`.)
 ///
-/// On acceptance, the soft winner's runner-up diagnostic fields are overwritten
-/// with the matched-count competitor (so consumers see the uniqueness margin,
-/// not the soft-score gap), and `score_best` / `weighted_score` (the soft score)
-/// are preserved.
+/// On acceptance, all soft-LL runner-up fields (`score_runner_up`,
+/// `score_margin`, `runner_up_origin_*`, `runner_up_transform`) and
+/// `score_best` / `weighted_score` are preserved intact.
 fn apply_soft_uniqueness_gate(
-    mut winner: DecodeOutcome,
+    winner: DecodeOutcome,
     edges_observed: usize,
     matched_top2: (u32, i32, i32, GridTransform, Option<HardRunnerUp>),
 ) -> Option<DecodeOutcome> {
@@ -366,22 +372,6 @@ fn apply_soft_uniqueness_gate(
     let competitor_matched = runner.map_or(0, |r| r.matched);
     if !passes_uniqueness_gate(edges_observed, best_matched, competitor_matched) {
         return None;
-    }
-    // Surface the matched-count uniqueness margin in the runner-up diagnostics
-    // (overwriting the soft-score-gap runner-up populated by the LL finalizer).
-    match runner {
-        Some(c) => {
-            winner.score_runner_up = Some(c.matched as f32);
-            winner.runner_up_origin_row = Some(c.master_row);
-            winner.runner_up_origin_col = Some(c.master_col);
-            winner.runner_up_transform = Some(c.transform);
-        }
-        None => {
-            winner.score_runner_up = None;
-            winner.runner_up_origin_row = None;
-            winner.runner_up_origin_col = None;
-            winner.runner_up_transform = None;
-        }
     }
     Some(winner)
 }

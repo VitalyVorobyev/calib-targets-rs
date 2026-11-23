@@ -88,7 +88,7 @@ pub(crate) fn detect_hex_oriented3_topological_all(
         if labelled.len() < 4 {
             continue;
         }
-        match build_hex_component_solution(labelled, features, &positions, params) {
+        match build_hex_component_solution(labelled, features, &positions, dimensions, params) {
             Some(out) => component_outputs.push(out),
             None => continue,
         }
@@ -169,6 +169,7 @@ fn build_hex_component_solution(
     labelled: &std::collections::HashMap<Coord, usize>,
     features: &[crate::feature::OrientedFeature<3>],
     positions: &[Point2<f32>],
+    dimensions: Option<GridDimensions>,
     params: &DetectionParams,
 ) -> Option<ComponentOutput> {
     let mut kept: Vec<(Coord, usize)> = labelled.iter().map(|(&c, &idx)| (c, idx)).collect();
@@ -177,6 +178,7 @@ fn build_hex_component_solution(
     }
     // Deterministic order before the fit (HashMap iteration is unordered).
     kept.sort_by_key(|&(c, idx)| (c, idx));
+    crate::lattice::rebase::rebase_slice_to_origin(&mut kept, |item| &mut item.0);
 
     let fit_result = hex_fit_with_residual_drop(&mut kept, features, positions, params)?;
     let FitComponentResult {
@@ -184,6 +186,16 @@ fn build_hex_component_solution(
         fit,
         over_threshold,
     } = fit_result;
+
+    if let Some(dims) = dimensions {
+        let max_u = entries_out.iter().map(|e| e.coord.u).max().unwrap_or(0);
+        let max_v = entries_out.iter().map(|e| e.coord.v).max().unwrap_or(0);
+        let span_u = usize::try_from(max_u).ok().and_then(|v| v.checked_add(1))?;
+        let span_v = usize::try_from(max_v).ok().and_then(|v| v.checked_add(1))?;
+        if span_u > dims.width || span_v > dims.height {
+            return None;
+        }
+    }
 
     let kept_source_indices: HashSet<usize> = kept
         .iter()
@@ -240,6 +252,7 @@ fn hex_fit_with_residual_drop(
     if kept.len() < 4 {
         return None;
     }
+    crate::lattice::rebase::rebase_slice_to_origin(kept, |item| &mut item.0);
     let refit = fit_component(kept, &two, positions, LatticeKind::Hex, params).ok()?;
     Some(FitComponentResult {
         entries: refit.entries,

@@ -87,8 +87,13 @@ pub fn extend_via_local_homography<V: SquareAttachPolicy>(
 
             // Per-candidate trust gate: worst residual on the K supports.
             let mut max_resid: f32 = 0.0;
+            let mut finite_supports = true;
             for k in 0..grid_pts.len() {
                 let pred = h.apply(grid_pts[k]);
+                if !pred.x.is_finite() || !pred.y.is_finite() {
+                    finite_supports = false;
+                    break;
+                }
                 let dx = pred.x - img_pts[k].x;
                 let dy = pred.y - img_pts[k].y;
                 let r = (dx * dx + dy * dy).sqrt();
@@ -97,12 +102,15 @@ pub fn extend_via_local_homography<V: SquareAttachPolicy>(
                 }
                 all_residuals.push(r);
             }
-            if max_resid > max_residual_px {
+            if !finite_supports || !max_resid.is_finite() || max_resid > max_residual_px {
                 continue;
             }
 
             // Predict the candidate cell position.
             let pred = h.apply(Point2::new(cell.0 as f32, cell.1 as f32));
+            if !pred.x.is_finite() || !pred.y.is_finite() {
+                continue;
+            }
 
             // Parity gate + candidate collection.
             let required_label = policy.required_label_at(cell.0, cell.1);

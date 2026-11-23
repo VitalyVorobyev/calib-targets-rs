@@ -62,7 +62,7 @@ pub(super) fn emit_markers(
 
         let m = MarkerDetection::new(expected_id, gc, rot, hamming, observed_code, corners_rect)
             .with_scores(
-                sigmoid01(s / samples_bit_count(samp) as f32),
+                (s / samples_bit_count(samp) as f32).exp().clamp(0.0, 1.0),
                 samp.border_black_fraction,
             )
             .with_corners_img(cell.corners_img);
@@ -80,7 +80,7 @@ fn read_code(s: &CellSamples) -> u64 {
     for by in 0..bits {
         for bx in 0..bits {
             let mean = s.mean_grid[(s.border_bits + by) * s.cells_per_side + s.border_bits + bx];
-            if mean < s.otsu_threshold {
+            if mean <= s.otsu_threshold {
                 code |= 1 << (by * bits + bx);
             }
         }
@@ -90,10 +90,6 @@ fn read_code(s: &CellSamples) -> u64 {
 
 fn samples_bit_count(s: &CellSamples) -> usize {
     (s.bits_per_side * s.bits_per_side).max(1)
-}
-
-fn sigmoid01(x: f32) -> f32 {
-    1.0 / (1.0 + (-x).exp())
 }
 
 fn rotate_gc_top_left(gc0: Coord, rot: u8) -> Coord {

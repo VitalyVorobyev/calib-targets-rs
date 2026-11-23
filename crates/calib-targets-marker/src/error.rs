@@ -1,5 +1,48 @@
 //! Typed failure modes of the marker-board detector.
 
+use calib_targets_chessboard::ChessboardParamsError;
+
+/// Invalid configuration supplied to [`crate::MarkerBoardDetector::new`].
+#[non_exhaustive]
+#[derive(Debug, thiserror::Error)]
+pub enum MarkerBoardParamsError {
+    /// The embedded chessboard detector parameters were invalid.
+    #[error(transparent)]
+    Chessboard(#[from] ChessboardParamsError),
+    /// Board dimensions must have at least 2×2 inner corners.
+    #[error("invalid marker board dimensions {rows}×{cols}: both must be >= 2")]
+    InvalidBoardDimensions {
+        /// Configured inner-corner row count.
+        rows: u32,
+        /// Configured inner-corner column count.
+        cols: u32,
+    },
+    /// Optional square size must be finite and strictly positive when provided.
+    #[error("invalid marker board cell_size: must be finite and > 0")]
+    InvalidCellSize,
+    /// Circle diameter relative to square side must lie in `(0, 1]`.
+    #[error("invalid circle_diameter_rel: must be finite and in (0, 1]")]
+    InvalidCircleDiameter,
+    /// One of the expected circle markers lies outside the `0..=cols × 0..=rows` square grid.
+    #[error("circle marker at ({i}, {j}) lies outside {cols}×{rows} inner-corner board squares (0..={cols} × 0..={rows})")]
+    CircleOutOfBounds {
+        /// Circle column index.
+        i: i32,
+        /// Circle row index.
+        j: i32,
+        /// Board inner-corner column count.
+        cols: u32,
+        /// Board inner-corner row count.
+        rows: u32,
+    },
+    /// Two expected circle markers occupy the same board square.
+    #[error("duplicate circle marker cell coordinates in board spec")]
+    DuplicateCircleCells,
+    /// One or more [`crate::CircleScoreParams`] fields are invalid or non-finite.
+    #[error("invalid circle_score parameters")]
+    InvalidCircleScoreParams,
+}
+
 /// Errors returned by the marker-board detector.
 ///
 /// The detector reports "no board here" as a typed `Err` rather than a bare

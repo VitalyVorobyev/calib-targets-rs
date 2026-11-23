@@ -67,8 +67,10 @@ pub(crate) fn apply_boosters_with_directional_edge_scale(
 /// A candidate must be supported by an L-shaped triplet of labels: two
 /// perpendicular cardinal neighbours plus their shared diagonal. This gives
 /// an independent parallelogram prediction for the missing point and an
-/// expected vector for both incident edges. The support set is snapshotted
-/// before the pass, so a recovered corner can never trigger a recovery chain.
+/// expected vector for both incident edges. Only corners in `trusted_support`
+/// (the pre-booster topological-walk core) may supply that L-triplet, which
+/// prevents both recovery chains and `axis_aware -> geometry_only` frontier
+/// chaining.
 #[cfg_attr(
     feature = "tracing",
     tracing::instrument(
@@ -83,6 +85,7 @@ pub(crate) fn apply_geometry_only_recovery(
     grow: &mut GrowResult,
     cell_size: f32,
     blacklist: &HashSet<usize>,
+    trusted_support: &HashSet<usize>,
     params: &ChessboardParams,
 ) -> BoosterResult {
     let tuning = params.effective_tuning();
@@ -96,11 +99,10 @@ pub(crate) fn apply_geometry_only_recovery(
     }
 
     let positions: Vec<Point2<f32>> = corners.iter().map(|corner| corner.position).collect();
-    let trusted_indices: HashSet<usize> = grow.labelled.values().copied().collect();
     let validator = GeometryOnlyFillValidator {
         corners,
         blacklist,
-        trusted_indices: &trusted_indices,
+        trusted_indices: trusted_support,
         cell_size,
         tolerance_rel: tuning.geometry_recovery_tol_rel,
         step_tol: tuning.step_tol,
@@ -703,11 +705,14 @@ mod tests {
             rebase_i_mod2: 0,
             rebase_j_mod2: 0,
         };
+        let empty = HashSet::new();
+        let trusted: HashSet<usize> = grow.labelled.values().copied().collect();
         let result = apply_geometry_only_recovery(
             &mut corners,
             &mut grow,
             20.0,
-            &HashSet::new(),
+            &empty,
+            &trusted,
             &ChessboardParams::default(),
         );
         assert_eq!(result.added, 1);
@@ -720,14 +725,56 @@ mod tests {
         grow.labelled.remove(&(1, 1));
         grow.by_corner.remove(&3);
         corners[0].stage = CornerStage::NoCluster { max_d_deg: 40.0 };
+        let trusted_after: HashSet<usize> = grow.labelled.values().copied().collect();
         let result = apply_geometry_only_recovery(
             &mut corners,
             &mut grow,
             20.0,
-            &HashSet::new(),
+            &empty,
+            &trusted_after,
             &ChessboardParams::default(),
         );
         assert_eq!(result.added, 0);
         assert!(!grow.by_corner.contains_key(&0));
+    }
+
+    #[test]
+    fn geometry_only_recovery_ignores_untrusted_booster_support() {
+        let axis_u = 0.0_f32;
+        let axis_v = std::f32::consts::FRAC_PI_2;
+        let mut corners = vec![
+            make_corner(0, 100.0, 100.0, axis_u, axis_v, ClusterLabel::Canonical),
+            make_corner(1, 120.0, 100.0, axis_u, axis_v, ClusterLabel::Swapped),
+            make_corner(2, 100.0, 120.0, axis_u, axis_v, ClusterLabel::Swapped),
+            make_corner(3, 120.0, 120.0, axis_u, axis_v, ClusterLabel::Canonical),
+        ];
+        corners[0].stage = CornerStage::NoCluster { max_d_deg: 40.0 };
+
+        let mut grow = GrowResult {
+            labelled: [((1, 0), 1), ((0, 1), 2), ((1, 1), 3)]
+                .into_iter()
+                .collect(),
+            by_corner: [(1, (1, 0)), (2, (0, 1)), (3, (1, 1))]
+                .into_iter()
+                .collect(),
+            ambiguous: Default::default(),
+            holes: Default::default(),
+            axis_i: nalgebra::Vector2::new(1.0, 0.0),
+            axis_j: nalgebra::Vector2::new(0.0, 1.0),
+            rebase_i_mod2: 0,
+            rebase_j_mod2: 0,
+        };
+        let empty = HashSet::new();
+        let trusted = HashSet::from([2usize, 3usize]);
+        let result = apply_geometry_only_recovery(
+            &mut corners,
+            &mut grow,
+            20.0,
+            &empty,
+            &trusted,
+            &ChessboardParams::default(),
+        );
+        assert_eq!(result.added, 0);
+        assert!(!grow.labelled.contains_key(&(0, 0)));
     }
 }

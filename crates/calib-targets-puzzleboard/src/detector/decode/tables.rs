@@ -120,6 +120,29 @@ impl CodeGeometry<'_> {
             "V pattern table must hold exactly one byte per V long class"
         );
     }
+
+    /// Expected code bit for a lookup `(lookup_row, lookup_col)` and orientation
+    /// under this cyclic code geometry.
+    #[inline]
+    pub(crate) fn expected_bit(
+        &self,
+        orientation: EdgeOrientation,
+        lookup_row: i32,
+        lookup_col: i32,
+    ) -> u8 {
+        match orientation {
+            EdgeOrientation::Horizontal => {
+                let row = lookup_row.rem_euclid(self.h_long as i32) as usize;
+                let col = lookup_col.rem_euclid(3) as u32;
+                (self.h_patterns[row] >> col) & 1
+            }
+            EdgeOrientation::Vertical => {
+                let col = lookup_col.rem_euclid(self.v_long as i32) as usize;
+                let row = lookup_row.rem_euclid(3) as u32;
+                (self.v_patterns[col] >> row) & 1
+            }
+        }
+    }
 }
 
 /// One observation with its lookup cell resolved into a given D4 frame.
