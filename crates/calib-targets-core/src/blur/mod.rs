@@ -49,11 +49,13 @@
 //! [`BlurDecline::Unresolved`]) leave `blur: None` with `blur_decline: Some(why)`
 //! while still delivering the refined corner position, covariance, and axes.
 
+mod defocus;
 mod field;
 mod fit;
 mod frame;
 mod gauss_polygon;
 mod model;
+mod patch_residual;
 mod radiometric;
 mod solve;
 #[cfg(test)]
@@ -66,7 +68,9 @@ use serde::{Deserialize, Serialize};
 use crate::sym2::Sym2x2;
 use crate::{AxisEstimate, GrayImageView, Homography, PositionCovariance};
 
+pub use defocus::{DefocusPrediction, ThinLensDefocusModel};
 pub use field::{BlurField, BlurGradient};
+pub use patch_residual::{PatchEval, PatchEvalInput, PatchPixel, PatchResidual};
 pub use radiometric::RadiometricModel;
 
 /// Board cells the known-print region may name, either side of the corner:
@@ -171,6 +175,7 @@ impl Default for BlurPattern {
 /// `#[non_exhaustive]`: construct with [`BlurKernel::new`].
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct BlurKernel {
     /// `Σxx`, px².
     pub xx: f32,

@@ -4,9 +4,13 @@
 
 use calib_targets::aruco::resolve_dictionary;
 use calib_targets::blur::{
-    chessboard_blur, marker_board_blur, puzzleboard_blur, BlurDecline, CornerBlur,
+    charuco_blur, chessboard_blur, marker_board_blur, puzzleboard_blur, refine_charuco_corners,
+    refine_chessboard_corners, refine_marker_board_corners, refine_puzzleboard_corners,
+    BlurDecline, BoardPhotometricOptions, BoardPhotometricRefinement, CornerBlur,
 };
-use calib_targets::charuco::{CharucoBoardSpec, CharucoDetector, CharucoParams, MarkerLayout};
+use calib_targets::charuco::{
+    CharucoBoardSpec, CharucoDetection, CharucoDetector, CharucoParams, MarkerLayout,
+};
 use calib_targets::chessboard::{ChessboardDetection, ChessboardParams};
 use calib_targets::core::GrayImageView;
 use calib_targets::detect::{default_chess_config, detect_chessboard, DetectorConfig};
@@ -107,12 +111,12 @@ pub struct FamilyRun {
 }
 
 /// A family's own detection result.
+#[derive(Clone)]
 enum TypedDetection {
     Chessboard(ChessboardDetection),
     PuzzleBoard(PuzzleBoardDetection),
     MarkerBoard(MarkerBoardDetection),
-    /// ChArUco has no per-corner blur entry point yet.
-    Charuco,
+    Charuco(CharucoDetection),
 }
 
 /// A family's board: its print description, scene and truth.
@@ -213,7 +217,7 @@ impl Board {
 
     /// The per-corner blur of `run` on `image` through the facade's
     /// [`calib_targets::blur`] entry point for the family, in
-    /// `run.delivered` order; `None` for ChArUco, which has none.
+    /// `run.delivered` order.
     pub fn corner_blur(
         &self,
         image: &Rendered,
@@ -226,9 +230,50 @@ impl Board {
         };
         match &run.detection {
             TypedDetection::Chessboard(d) => Some(chessboard_blur(&img, d)),
+            TypedDetection::Charuco(d) => Some(charuco_blur(&img, &self.charuco_spec(), d)),
             TypedDetection::PuzzleBoard(d) => Some(puzzleboard_blur(&img, d)),
             TypedDetection::MarkerBoard(d) => Some(marker_board_blur(&img, &self.marker_spec(), d)),
-            TypedDetection::Charuco => None,
+        }
+    }
+
+    /// Jointly refine corner positions and photometry on `run` using `options`,
+    /// returning the updated [`FamilyRun`] and [`BoardPhotometricRefinement`].
+    pub fn refine_run(
+        &self,
+        image: &Rendered,
+        run: &FamilyRun,
+        options: &BoardPhotometricOptions,
+    ) -> (FamilyRun, BoardPhotometricRefinement) {
+        let img = GrayImageView {
+            width: image.width,
+            height: image.height,
+            data: &image.pixels,
+        };
+        match &run.detection {
+            TypedDetection::Chessboard(d) => {
+                let mut d = d.clone();
+                let refinement = refine_chessboard_corners(&img, &mut d, options);
+                (run_from_chessboard(d), refinement)
+            }
+            TypedDetection::Charuco(d) => {
+                let mut d = d.clone();
+                let spec = self.charuco_spec();
+                let board = CharucoDetector::new(CharucoParams::for_board(spec))
+                    .expect("valid ChArUco board");
+                let refinement = refine_charuco_corners(&img, &spec, &mut d, options);
+                (run_from_charuco(d, &board), refinement)
+            }
+            TypedDetection::PuzzleBoard(d) => {
+                let mut d = d.clone();
+                let refinement = refine_puzzleboard_corners(&img, &mut d, options);
+                (run_from_puzzleboard(d), refinement)
+            }
+            TypedDetection::MarkerBoard(d) => {
+                let mut d = d.clone();
+                let refinement =
+                    refine_marker_board_corners(&img, &self.marker_spec(), &mut d, options);
+                (run_from_marker_board(d), refinement)
+            }
         }
     }
 
@@ -261,6 +306,10 @@ impl Board {
             .expect("valid PuzzleBoard")
     }
 
+    fn charuco_spec(&self) -> CharucoBoardSpec {
+        charuco_detector_board()
+    }
+
     fn marker_spec(&self) -> MarkerBoardSpec {
         let TargetSpec::MarkerBoard(t) = &self.target else {
             unreachable!("marker_spec on a non-marker board")
@@ -291,92 +340,32 @@ impl Board {
         match self.family {
             Family::Chessboard => detect_plain_chessboard(image, &chess),
             Family::Charuco => {
-                let mut params = CharucoParams::for_board(charuco_detector_board());
+                let mut params = CharucoParams::for_board(self.charuco_spec());
                 params.chess = chess;
                 let detector = CharucoDetector::new(params).map_err(|e| e.to_string())?;
                 let d = detector.detect(&view).map_err(|e| e.to_string())?;
-                let board = detector.board();
-                Ok(FamilyRun {
-                    delivered: d
-                        .corners
-                        .iter()
-                        .map(|c| Delivered {
-                            position: c.position,
-                            covariance: c.position_covariance,
-                            grid: c.grid,
-                            claim_mm: Some(c.target_position),
-                            id_consistent: board
-                                .charuco_object_xy(c.id)
-                                .is_some_and(|p| (p - c.target_position).norm() < 1e-3),
-                        })
-                        .collect(),
-                    quality: d.quality,
-                    detection: TypedDetection::Charuco,
-                })
+                Ok(run_from_charuco(d, &detector))
             }
             Family::PuzzleBoard => {
                 let mut params = PuzzleBoardParams::for_board(self.puzzle_spec());
                 params.chess = chess;
                 let detector = PuzzleBoardDetector::new(params).map_err(|e| e.to_string())?;
                 let d = detector.detect(&view).map_err(|e| e.to_string())?;
-                let cell = SQUARE_MM as f32;
-                Ok(FamilyRun {
-                    delivered: d
-                        .corners
-                        .iter()
-                        .map(|c| {
-                            let from_id = Point2::new(
-                                (c.id % PUZZLE_MASTER_PERIOD as u32) as f32 * cell,
-                                (c.id / PUZZLE_MASTER_PERIOD as u32) as f32 * cell,
-                            );
-                            Delivered {
-                                position: c.position,
-                                covariance: c.position_covariance,
-                                grid: c.grid,
-                                claim_mm: Some(c.target_position),
-                                id_consistent: (from_id - c.target_position).norm() < 1e-3,
-                            }
-                        })
-                        .collect(),
-                    quality: d.quality,
-                    detection: TypedDetection::PuzzleBoard(d),
-                })
+                Ok(run_from_puzzleboard(d))
             }
             Family::MarkerBoard => {
                 let mut params = MarkerBoardParams::for_board(self.marker_spec());
                 params.chess = chess;
                 let detector = MarkerBoardDetector::new(params).map_err(|e| e.to_string())?;
                 let d = detector.detect(&view).map_err(|e| e.to_string())?;
-                Ok(FamilyRun {
-                    delivered: d
-                        .corners
-                        .iter()
-                        .map(|c| Delivered {
-                            position: c.position,
-                            covariance: c.position_covariance,
-                            grid: c.grid,
-                            claim_mm: c.target_position,
-                            id_consistent: true,
-                        })
-                        .collect(),
-                    quality: d.quality,
-                    detection: TypedDetection::MarkerBoard(d),
-                })
+                Ok(run_from_marker_board(d))
             }
         }
     }
 }
 
-/// The plain chessboard detector with default parameters on `image`.
-fn detect_plain_chessboard(image: &Rendered, chess: &DetectorConfig) -> Result<FamilyRun, String> {
-    let img = calib_targets::core::GrayImageView {
-        width: image.width,
-        height: image.height,
-        data: &image.pixels,
-    };
-    let d =
-        detect_chessboard(&img, chess, &ChessboardParams::default()).map_err(|e| e.to_string())?;
-    Ok(FamilyRun {
+fn run_from_chessboard(d: ChessboardDetection) -> FamilyRun {
+    FamilyRun {
         delivered: d
             .corners
             .iter()
@@ -390,5 +379,81 @@ fn detect_plain_chessboard(image: &Rendered, chess: &DetectorConfig) -> Result<F
             .collect(),
         quality: d.quality,
         detection: TypedDetection::Chessboard(d),
-    })
+    }
+}
+
+fn run_from_charuco(d: CharucoDetection, detector: &CharucoDetector) -> FamilyRun {
+    let board = detector.board();
+    FamilyRun {
+        delivered: d
+            .corners
+            .iter()
+            .map(|c| Delivered {
+                position: c.position,
+                covariance: c.position_covariance,
+                grid: c.grid,
+                claim_mm: Some(c.target_position),
+                id_consistent: board
+                    .charuco_object_xy(c.id)
+                    .is_some_and(|p| (p - c.target_position).norm() < 1e-3),
+            })
+            .collect(),
+        quality: d.quality,
+        detection: TypedDetection::Charuco(d),
+    }
+}
+
+fn run_from_puzzleboard(d: PuzzleBoardDetection) -> FamilyRun {
+    let cell = SQUARE_MM as f32;
+    FamilyRun {
+        delivered: d
+            .corners
+            .iter()
+            .map(|c| {
+                let from_id = Point2::new(
+                    (c.id % PUZZLE_MASTER_PERIOD as u32) as f32 * cell,
+                    (c.id / PUZZLE_MASTER_PERIOD as u32) as f32 * cell,
+                );
+                Delivered {
+                    position: c.position,
+                    covariance: c.position_covariance,
+                    grid: c.grid,
+                    claim_mm: Some(c.target_position),
+                    id_consistent: (from_id - c.target_position).norm() < 1e-3,
+                }
+            })
+            .collect(),
+        quality: d.quality,
+        detection: TypedDetection::PuzzleBoard(d),
+    }
+}
+
+fn run_from_marker_board(d: MarkerBoardDetection) -> FamilyRun {
+    FamilyRun {
+        delivered: d
+            .corners
+            .iter()
+            .map(|c| Delivered {
+                position: c.position,
+                covariance: c.position_covariance,
+                grid: c.grid,
+                claim_mm: c.target_position,
+                id_consistent: true,
+            })
+            .collect(),
+        quality: d.quality,
+        detection: TypedDetection::MarkerBoard(d),
+    }
+}
+
+/// The plain chessboard detector with default parameters on `image`.
+fn detect_plain_chessboard(image: &Rendered, chess: &DetectorConfig) -> Result<FamilyRun, String> {
+    let img = calib_targets::core::GrayImageView {
+        width: image.width,
+        height: image.height,
+        data: &image.pixels,
+    };
+    let d =
+        detect_chessboard(&img, chess, &ChessboardParams::default()).map_err(|e| e.to_string())?;
+    Ok(run_from_chessboard(d))
 }

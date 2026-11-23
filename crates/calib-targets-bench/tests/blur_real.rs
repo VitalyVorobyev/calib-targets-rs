@@ -148,3 +148,73 @@ fn sharpened_photograph_is_declined_as_sharper_than_the_pixel() {
         blur.len()
     );
 }
+
+/// `puzzleboard/foreshortened.png`, tracked unsharpened PuzzleBoard image with
+/// perspective foreshortening and ~2 px optical/lens blur.
+///
+/// Measured: 354 corners decoded; `puzzleboard_blur` covers 354/354 (1.00)
+/// with smooth second-difference spread (`z` spread `0.90`, σ spread
+/// `0.0623 px`); `refine_puzzleboard_corners` converges on all 354/354 corners
+/// and cuts `local_residual_rms_px` from `0.2014 px` to `0.1211 px`.
+/// Bounds: corners `>= 300`, blur coverage `>= 0.90`, `z` spread in
+/// `[0.5, 1.35]`, `σ` spread `<= 0.10 px`, photometric convergence `>= 0.95`,
+/// and improved `local_residual_rms_px`.
+#[test]
+fn foreshortened_puzzleboard_has_smooth_blur_and_improves_rms() {
+    use calib_targets::blur::{refine_puzzleboard_corners, BoardPhotometricOptions};
+
+    let img = load_gray("puzzleboard/foreshortened.png");
+    let view = gray_view(&img);
+    let spec = PuzzleBoardSpec::new(10, 10, 5.0).expect("board spec");
+    let mut detection = detect_puzzleboard_best(&view, &PuzzleBoardParams::sweep_for_board(&spec))
+        .expect("foreshortened puzzleboard decodes");
+    let n_corners = detection.corners.len();
+    assert!(n_corners >= 300, "unexpectedly few corners: {n_corners}");
+
+    let blur = puzzleboard_blur(&view, &detection);
+    let estimates: HashMap<(i32, i32), CornerBlur> = detection
+        .corners
+        .iter()
+        .zip(&blur)
+        .filter_map(|(c, b)| b.as_ref().ok().map(|b| ((c.grid.u, c.grid.v), *b)))
+        .collect();
+    let coverage = estimates.len() as f64 / n_corners as f64;
+    let (z, px) = second_differences(&estimates);
+    let z_spread = robust_sd(&z).expect("second differences");
+    let px_spread = robust_sd(&px).expect("second differences");
+
+    let rms_before = detection
+        .quality
+        .local_residual_rms_px
+        .expect("baseline local_residual_rms_px");
+    let refinement =
+        refine_puzzleboard_corners(&view, &mut detection, &BoardPhotometricOptions::default());
+    let converged = refinement.corners.iter().filter(|r| r.is_ok()).count();
+    let rms_after = detection
+        .quality
+        .local_residual_rms_px
+        .expect("refined local_residual_rms_px");
+
+    assert_eq!(
+        detection.corners.len(),
+        n_corners,
+        "photometric refinement must not drop corners"
+    );
+    assert!(coverage >= 0.90, "coverage {coverage:.2}");
+    assert!(
+        (0.5..=1.35).contains(&z_spread),
+        "second-difference z spread {z_spread:.2}"
+    );
+    assert!(
+        px_spread <= 0.10,
+        "σ second-difference spread {px_spread:.4} px"
+    );
+    assert!(
+        converged * 100 >= n_corners * 95,
+        "only {converged}/{n_corners} corners converged"
+    );
+    assert!(
+        rms_after < rms_before,
+        "expected photometric refinement to reduce local_residual_rms_px ({rms_before:.4} -> {rms_after:.4})"
+    );
+}

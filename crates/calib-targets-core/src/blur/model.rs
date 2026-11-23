@@ -140,7 +140,7 @@ impl LocalHomography<'_> {
 }
 
 /// A polygon mapped to the image and whitened for one evaluation pass.
-struct PassPolygon {
+pub(super) struct PassPolygon {
     /// Whitened vertices `L⁻¹ v`.
     w: Vec<[f64; 2]>,
     edges: Vec<PassEdge>,
@@ -188,7 +188,7 @@ pub(super) struct Model<'a> {
     pub blur_gradient: Option<BlurGradient>,
 }
 
-struct ScatterPass {
+pub(super) struct ScatterPass {
     g1: [f64; 3],
     g2: [f64; 3],
     div: [f64; 2],
@@ -198,7 +198,7 @@ struct ScatterPass {
 }
 
 impl ScatterPass {
-    fn new(grad: BlurGradient, l: [f64; 3], linv: [f64; 3], dls: [[f64; 3]; 3]) -> Self {
+    pub(super) fn new(grad: BlurGradient, l: [f64; 3], linv: [f64; 3], dls: [[f64; 3]; 3]) -> Self {
         let g1 = grad.d_sigma_dx.map(f64::from);
         let g2 = grad.d_sigma_dy.map(f64::from);
         Self {
@@ -257,7 +257,7 @@ pub(super) fn cholesky2(s: [f64; 3]) -> Option<[f64; 3]> {
 impl Model<'_> {
     /// Build the per-pass polygon data at `theta`, or `None` when `Σ_c` is
     /// not positive definite.
-    fn pass_polygons(&self, theta: &Vector) -> Option<(Vec<PassPolygon>, [f64; 3])> {
+    pub(super) fn pass_polygons(&self, theta: &Vector) -> Option<(Vec<PassPolygon>, [f64; 3])> {
         let sv = self.box_model.shift_var();
         let s = sigma_of(theta);
         let l = cholesky2([s[0] - sv, s[1], s[2] - sv])?;
@@ -474,7 +474,7 @@ impl Model<'_> {
         (b, dt12)
     }
 
-    fn sample_pixel(
+    pub(super) fn sample_pixel(
         &self,
         polys: &[PassPolygon],
         scatter: Option<&ScatterPass>,
@@ -534,7 +534,7 @@ impl Model<'_> {
     }
 
     /// `∂(l11, l21, l22)/∂(Σxx, Σxy, Σyy)` at `Σ_c`.
-    fn dl_dsigma(l: [f64; 3]) -> [[f64; 3]; 3] {
+    pub(super) fn dl_dsigma(l: [f64; 3]) -> [[f64; 3]; 3] {
         let [l11, l21, l22] = l;
         [
             [0.5 / l11, 0.0, 0.0],
