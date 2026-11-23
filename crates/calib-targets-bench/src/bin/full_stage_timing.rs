@@ -579,13 +579,13 @@ fn measure_card(
 
         // ---- corner detection (shared by both kinds) ----
         for _ in 0..warmup {
-            let _ = detect_corners(&img, chess_cfg);
+            let _ = detect_corners(&view, chess_cfg);
         }
         let mut cd = Vec::with_capacity(repeats);
         let mut corners: Vec<ChessCorner> = Vec::new();
         for _ in 0..repeats {
             let start = Instant::now();
-            corners = detect_corners(&img, chess_cfg);
+            corners = detect_corners(&view, chess_cfg);
             cd.push(elapsed_ms(start));
         }
         let raw_corners = corners.len();

@@ -6,7 +6,7 @@
 
 use axum::extract::State;
 use axum::Json;
-use calib_targets::detect::detect_corners;
+use calib_targets::detect::{detect_corners, gray_view};
 use calib_targets_bench::diagnose::diagnose_topological;
 use calib_targets_bench::runner::load_entry_image;
 use serde::Deserialize;
@@ -55,7 +55,7 @@ pub async fn diagnose(
     let value = tokio::task::spawn_blocking(move || -> Result<serde_json::Value, ApiError> {
         let img = load_entry_image(&abs)?;
         let fed = calib_targets_bench::runner::fed_image(&img, &entry, k)?;
-        let corners = detect_corners(&fed, &chess_cfg);
+        let corners = detect_corners(&gray_view(&fed), &chess_cfg);
         let diagnosis = diagnose_topological(&params, &corners);
         Ok(json!({ "kind": "topological", "diagnosis": diagnosis }))
     })

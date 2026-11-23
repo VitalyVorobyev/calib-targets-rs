@@ -6,7 +6,7 @@ use std::path::Path;
 use std::process::ExitCode;
 
 use calib_targets::chessboard::ChessboardAdvancedTuning;
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_bench::dataset::{Dataset, DatasetEntry, ImageKind};
 use calib_targets_bench::diagnose::TopologicalDiagnosis;
 use calib_targets_bench::workspace_root;
@@ -75,7 +75,7 @@ pub(crate) fn cmd_diagnose(args: DiagnoseArgs) -> ExitCode {
     // fits orientation; `--orientation-method` still selects only which
     // fit to run.
     chess_cfg.orientation_method = Some(args.orientation_method.into());
-    let corners = detect_corners(&upscaled, &chess_cfg);
+    let corners = detect_corners(&gray_view(&upscaled), &chess_cfg);
     // The topological builder is the only builder; always run its diagnosis.
     let _ = (sub_idx, base_path);
     diagnose_topological(&args, &upscaled, &corners)

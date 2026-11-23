@@ -60,7 +60,7 @@ mod types;
 use crate::corner::{ChessCorner, CornerAug};
 #[cfg(feature = "diagnostics")]
 use crate::corner::{ClusterLabel, CornerStage};
-use calib_targets_core::{axis_estimate_to_next, AxisEstimate};
+use calib_targets_core::AxisEstimate;
 #[cfg(feature = "diagnostics")]
 use projective_grid::diagnostics::trace::{
     build_grid_topological_trace, TopologicalTrace, TopologicalTraceError,
@@ -176,13 +176,7 @@ fn build_oriented_features(
         .zip(axes.iter())
         .enumerate()
         .map(|(i, (&pos, axes))| {
-            OrientedFeature::new(
-                PointFeature::new(i, pos),
-                [
-                    axis_estimate_to_next(axes[0]),
-                    axis_estimate_to_next(axes[1]),
-                ],
-            )
+            OrientedFeature::new(PointFeature::new(i, pos), [axes[0].into(), axes[1].into()])
         })
         .collect()
 }

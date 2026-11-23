@@ -17,11 +17,10 @@ doc = false
 
 [dependencies]
 # The Python bindings expose the full detector surface, including the
-# chessboard `*_with_diagnostics` entry points, so they enable `diagnostics`
-# unconditionally (the bindings have no Cargo feature of their own).
-calib-targets = { workspace = true, features = ["image", "diagnostics"] }
+# diagnostics entry points, so they enable `diagnostics` unconditionally
+# (the bindings have no Cargo feature of their own).
+calib-targets = { workspace = true, features = ["diagnostics"] }
 chess-corners = { workspace = true, features = ["rayon"] }
-image.workspace = true
 numpy.workspace = true
 pyo3 = { workspace = true, features = ["extension-module", "abi3-py310"] }
 serde = { workspace = true, features = ["derive"] }

@@ -52,7 +52,7 @@ rust-version = "1.91"
 too_many_arguments = "deny"
 
 [workspace.dependencies]
-calib-targets = { version = "0.17", path = "crates/calib-targets" }
+calib-targets = { version = "0.17", path = "crates/calib-targets", default-features = false }
 calib-targets-aruco = { version = "0.17", path = "crates/calib-targets-aruco" }
 calib-targets-charuco = { version = "0.17", path = "crates/calib-targets-charuco" }
 calib-targets-chessboard = { version = "0.17", path = "crates/calib-targets-chessboard" }
@@ -114,7 +114,6 @@ thiserror = "2"
 tokio = "1"
 tower-http = "0.6"
 tracing = "0.1"
-tracing-log = "0.2"
 tracing-subscriber = "0.3"
 wasm-bindgen = "0.2"
 js-sys = "0.3"

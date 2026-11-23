@@ -1,11 +1,12 @@
 use crate::circle_score::CircleCandidate;
 use crate::detect::{detect_circles_via_square_warp, top_k_by_polarity};
+#[cfg(feature = "diagnostics")]
 use crate::diagnostics::MarkerBoardDiagnostics;
 use crate::error::{MarkerBoardDetectError, MarkerBoardParamsError};
 use crate::match_circles::{
     corner_frame, resolve_board_frame_with_bounds, BoardCornerBounds, FrameSearch,
 };
-use crate::types::{MarkerBoardDetection, MarkerBoardParams};
+use crate::types::{CircleMatch, MarkerBoardDetection, MarkerBoardParams};
 
 use nalgebra::Point2;
 
@@ -14,6 +15,102 @@ use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector as ChessD
 use calib_targets_core::{
     Coord, GrayImageView, GridAlignment, LabeledCorner, TargetDetection, TargetKind,
 };
+
+trait MarkerDiagSink {
+    fn save_raw_candidates(&mut self, _candidates: &[CircleCandidate]) -> Vec<CircleCandidate> {
+        Vec::new()
+    }
+
+    fn remap_matched_indices(
+        &self,
+        _matches: &mut [CircleMatch],
+        _candidates: &[CircleCandidate],
+        _raw_candidates: &[CircleCandidate],
+    ) {
+    }
+
+    fn collect_input_inliers(
+        &self,
+        _corners: &[calib_targets_chessboard::ChessboardCorner],
+    ) -> Vec<usize> {
+        Vec::new()
+    }
+
+    fn record_failure(&mut self, _raw_candidates: Vec<CircleCandidate>, _frame: FrameSearch) {}
+
+    fn record_result(
+        &mut self,
+        _inliers: Vec<usize>,
+        _circle_candidates: Vec<CircleCandidate>,
+        _frame: FrameSearch,
+    ) {
+    }
+}
+
+struct NoMarkerDiag;
+
+impl MarkerDiagSink for NoMarkerDiag {}
+
+#[cfg(feature = "diagnostics")]
+#[derive(Default)]
+struct MarkerDiagCollector {
+    diagnostics: MarkerBoardDiagnostics,
+}
+
+#[cfg(feature = "diagnostics")]
+impl MarkerDiagSink for MarkerDiagCollector {
+    fn save_raw_candidates(&mut self, candidates: &[CircleCandidate]) -> Vec<CircleCandidate> {
+        candidates.to_vec()
+    }
+
+    fn remap_matched_indices(
+        &self,
+        matches: &mut [CircleMatch],
+        candidates: &[CircleCandidate],
+        raw_candidates: &[CircleCandidate],
+    ) {
+        for m in matches {
+            if let Some(idx) = m.matched_index {
+                let target_cell = candidates[idx].cell;
+                m.matched_index = raw_candidates.iter().position(|c| c.cell == target_cell);
+            }
+        }
+    }
+
+    fn collect_input_inliers(
+        &self,
+        corners: &[calib_targets_chessboard::ChessboardCorner],
+    ) -> Vec<usize> {
+        corners.iter().map(|c| c.input_index).collect()
+    }
+
+    fn record_failure(&mut self, raw_candidates: Vec<CircleCandidate>, frame: FrameSearch) {
+        self.diagnostics = MarkerBoardDiagnostics {
+            inliers: Vec::new(),
+            circle_candidates: raw_candidates,
+            circle_matches: frame.matches,
+            alignment_inliers: frame.inliers,
+            alignment_runner_up_inliers: frame.runner_up_inliers,
+            alignment_ambiguous: frame.ambiguous,
+        };
+    }
+
+    fn record_result(
+        &mut self,
+        inliers: Vec<usize>,
+        circle_candidates: Vec<CircleCandidate>,
+        frame: FrameSearch,
+    ) {
+        self.diagnostics = MarkerBoardDiagnostics {
+            inliers,
+            circle_candidates,
+            circle_matches: frame.matches,
+            alignment_inliers: frame.inliers,
+            alignment_runner_up_inliers: frame.runner_up_inliers,
+            alignment_ambiguous: frame.ambiguous,
+        };
+    }
+}
 
 /// Marker board detector: chessboard + three circle markers.
 pub struct MarkerBoardDetector {
@@ -95,7 +192,7 @@ impl MarkerBoardDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<MarkerBoardDetection, MarkerBoardDetectError> {
-        self.detect_inner(image, corners).0
+        self.detect_inner(image, corners, &mut NoMarkerDiag)
     }
 
     /// [`Self::detect`] + per-call diagnostics.
@@ -142,17 +239,17 @@ impl MarkerBoardDetector {
         Result<MarkerBoardDetection, MarkerBoardDetectError>,
         MarkerBoardDiagnostics,
     ) {
-        self.detect_inner(image, corners)
+        let mut collector = MarkerDiagCollector::default();
+        let result = self.detect_inner(image, corners, &mut collector);
+        (result, collector.diagnostics)
     }
 
-    fn detect_inner(
+    fn detect_inner<S: MarkerDiagSink>(
         &self,
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
-    ) -> (
-        Result<MarkerBoardDetection, MarkerBoardDetectError>,
-        MarkerBoardDiagnostics,
-    ) {
+        sink: &mut S,
+    ) -> Result<MarkerBoardDetection, MarkerBoardDetectError> {
         // `detect`, not `detect_all`: a marker board is localised by its three
         // circle markers, which realistically sit inside a single connected
         // grid component — so the largest component is the only one that can
@@ -163,10 +260,7 @@ impl MarkerBoardDetector {
         // board split into two fragments is still fully recoverable there.
         // This asymmetry is deliberate; do not "fix" it into `detect_all`.
         let Some(chess) = self.chessboard_detector.detect(corners) else {
-            return (
-                Err(MarkerBoardDetectError::ChessboardNotDetected),
-                MarkerBoardDiagnostics::default(),
-            );
+            return Err(MarkerBoardDetectError::ChessboardNotDetected);
         };
         let corner_map = chess.corner_map();
         let roi = self
@@ -181,7 +275,8 @@ impl MarkerBoardDetector {
             &self.params.circle_score,
             roi,
         );
-        let raw_candidates = candidates.clone();
+        let raw_candidate_count = candidates.len();
+        let raw_candidates = sink.save_raw_candidates(&candidates);
 
         let max_per = self.params.match_params.max_candidates_per_polarity;
         if max_per > 0 && !candidates.is_empty() {
@@ -202,21 +297,15 @@ impl MarkerBoardDetector {
         );
         // Remap `matched_index` from the truncated candidate slice back into
         // `raw_candidates` so diagnostics expose all scored hypotheses consistently.
-        for m in &mut frame.matches {
-            if let Some(idx) = m.matched_index {
-                let target_cell = candidates[idx].cell;
-                m.matched_index = raw_candidates.iter().position(|c| c.cell == target_cell);
-            }
-        }
+        sink.remap_matched_indices(&mut frame.matches, &candidates, &raw_candidates);
 
         let Some(alignment) = frame.alignment else {
-            // Counted before the vectors move into the diagnostics struct.
+            // Counted before `frame` moves into the diagnostics sink.
             let matched = frame
                 .matches
                 .iter()
                 .filter(|m| m.matched_index.is_some())
                 .count();
-            let candidate_count = raw_candidates.len();
             let error = if frame.ambiguous {
                 MarkerBoardDetectError::AlignmentAmbiguous {
                     inliers: frame.inliers,
@@ -225,68 +314,53 @@ impl MarkerBoardDetector {
             } else {
                 MarkerBoardDetectError::AlignmentFailed {
                     matched,
-                    candidates: candidate_count,
+                    candidates: raw_candidate_count,
                 }
             };
-            return (
-                Err(error),
-                MarkerBoardDiagnostics {
-                    inliers: Vec::new(),
-                    circle_candidates: raw_candidates,
-                    circle_matches: frame.matches,
-                    alignment_inliers: frame.inliers,
-                    alignment_runner_up_inliers: frame.runner_up_inliers,
-                    alignment_ambiguous: frame.ambiguous,
-                },
-            );
+            sink.record_failure(raw_candidates, frame);
+            return Err(error);
         };
 
-        self.result_from_chessboard(chess, raw_candidates, frame, corner_frame(alignment))
+        self.result_from_chessboard(
+            chess,
+            raw_candidate_count,
+            raw_candidates,
+            frame,
+            corner_frame(alignment),
+            sink,
+        )
     }
 
-    fn result_from_chessboard(
+    fn result_from_chessboard<S: MarkerDiagSink>(
         &self,
         chess: ChessboardDetection,
+        raw_candidate_count: usize,
         circle_candidates: Vec<CircleCandidate>,
         frame: FrameSearch,
         alignment: GridAlignment,
-    ) -> (
-        Result<MarkerBoardDetection, MarkerBoardDetectError>,
-        MarkerBoardDiagnostics,
-    ) {
+        sink: &mut S,
+    ) -> Result<MarkerBoardDetection, MarkerBoardDetectError> {
         // The parallel input-index list the diagnostics expose as `inliers`.
-        let inliers: Vec<usize> = chess.corners.iter().map(|c| c.input_index).collect();
+        let inliers = sink.collect_input_inliers(&chess.corners);
         let mut detection = relabel_as_marker(chess.to_target_detection());
         let inliers = self.apply_board_frame(&mut detection, inliers, alignment);
-        let diagnostics = MarkerBoardDiagnostics {
-            inliers,
-            circle_candidates,
-            circle_matches: frame.matches,
-            alignment_inliers: frame.inliers,
-            alignment_runner_up_inliers: frame.runner_up_inliers,
-            alignment_ambiguous: frame.ambiguous,
-        };
         if detection.corners.is_empty() {
-            let matched = diagnostics
-                .circle_matches
+            let matched = frame
+                .matches
                 .iter()
                 .filter(|m| m.matched_index.is_some())
                 .count();
-            return (
-                Err(MarkerBoardDetectError::AlignmentFailed {
-                    matched,
-                    candidates: diagnostics.circle_candidates.len(),
-                }),
-                diagnostics,
-            );
+            sink.record_result(inliers, circle_candidates, frame);
+            return Err(MarkerBoardDetectError::AlignmentFailed {
+                matched,
+                candidates: raw_candidate_count,
+            });
         }
-        (
-            Ok(MarkerBoardDetection::from_target_detection(
-                detection,
-                Some(alignment),
-            )),
-            diagnostics,
-        )
+        sink.record_result(inliers, circle_candidates, frame);
+        Ok(MarkerBoardDetection::from_target_detection(
+            detection,
+            Some(alignment),
+        ))
     }
 
     /// Relabel every corner into the board frame, keep only the ones that are
@@ -318,32 +392,44 @@ impl MarkerBoardDetector {
             .cell_size
             .filter(|s| s.is_finite() && *s > 0.0);
 
+        let transform_corner = |mut corner: LabeledCorner| -> Option<LabeledCorner> {
+            // INVARIANT: every corner reaching this stage came from the
+            // chessboard detector with a grid coordinate.
+            let grid = alignment.apply(corner.grid?);
+            if !((0..cols).contains(&grid.u) && (0..rows).contains(&grid.v)) {
+                return None;
+            }
+            corner.grid = Some(grid);
+            corner.id = (grid.v as u32)
+                .checked_mul(self.params.board.cols)
+                .and_then(|base| base.checked_add(grid.u as u32));
+            if let Some(size) = cell_size {
+                // Inner corner `(u, v)` sits one full square in from the
+                // board's outer corner, which is where board space starts —
+                // the same origin the printable spec's `resolved_points`
+                // measures from.
+                corner.target_position = Some(Point2::new(
+                    (grid.u + 1) as f32 * size,
+                    (grid.v + 1) as f32 * size,
+                ));
+            }
+            Some(corner)
+        };
+
+        if inliers.is_empty() {
+            let mut kept: Vec<LabeledCorner> = std::mem::take(&mut detection.corners)
+                .into_iter()
+                .filter_map(transform_corner)
+                .collect();
+            kept.sort_by_key(|corner| corner.grid.map(|g| (g.v, g.u)));
+            detection.corners = kept;
+            return Vec::new();
+        }
+
         let mut kept: Vec<(LabeledCorner, usize)> = std::mem::take(&mut detection.corners)
             .into_iter()
             .zip(inliers)
-            .filter_map(|(mut corner, input_index)| {
-                // INVARIANT: every corner reaching this stage came from the
-                // chessboard detector with a grid coordinate.
-                let grid = alignment.apply(corner.grid?);
-                if !((0..cols).contains(&grid.u) && (0..rows).contains(&grid.v)) {
-                    return None;
-                }
-                corner.grid = Some(grid);
-                corner.id = (grid.v as u32)
-                    .checked_mul(self.params.board.cols)
-                    .and_then(|base| base.checked_add(grid.u as u32));
-                if let Some(size) = cell_size {
-                    // Inner corner `(u, v)` sits one full square in from the
-                    // board's outer corner, which is where board space starts —
-                    // the same origin the printable spec's `resolved_points`
-                    // measures from.
-                    corner.target_position = Some(Point2::new(
-                        (grid.u + 1) as f32 * size,
-                        (grid.v + 1) as f32 * size,
-                    ));
-                }
-                Some((corner, input_index))
-            })
+            .filter_map(|(corner, input_index)| Some((transform_corner(corner)?, input_index)))
             .collect();
 
         kept.sort_by_key(|(corner, _)| corner.grid.map(|g| (g.v, g.u)));
@@ -524,6 +610,7 @@ mod tests {
         ));
     }
 
+    #[cfg(feature = "diagnostics")]
     #[test]
     fn empty_post_filter_corners_return_alignment_failed_preserving_diagnostics() {
         let det = detector();
@@ -557,15 +644,23 @@ mod tests {
             runner_up_inliers: 0,
             ambiguous: false,
         };
-        let (res, diags) =
-            det.result_from_chessboard(chess, vec![cand; 4], frame, GridAlignment::IDENTITY);
+        let mut collector = MarkerDiagCollector::default();
+        let res = det.result_from_chessboard(
+            chess,
+            4,
+            vec![cand; 4],
+            frame,
+            GridAlignment::IDENTITY,
+            &mut collector,
+        );
         assert!(matches!(
             res,
             Err(MarkerBoardDetectError::AlignmentFailed { candidates: 4, .. })
         ));
-        assert_eq!(diags.circle_candidates.len(), 4);
+        assert_eq!(collector.diagnostics.circle_candidates.len(), 4);
     }
 
+    #[cfg(feature = "diagnostics")]
     #[test]
     fn pre_truncation_circle_candidates_are_preserved_in_diagnostics() {
         // 6×8 inner corners = 7×9 squares (31+ squares of each colour, meeting
@@ -618,7 +713,7 @@ mod tests {
         // yet diagnostics must preserve all 3 pre-truncation candidates.
         params.match_params.max_candidates_per_polarity = 1;
         let det = MarkerBoardDetector::new(params).expect("valid params");
-        let (res, diags) = det.detect_inner(&view, &corners);
+        let (res, diags) = det.diagnose_with_corners(&view, &corners);
         assert!(
             diags.circle_candidates.len() >= 3,
             "expected all >=3 raw candidates before truncation, got {}",

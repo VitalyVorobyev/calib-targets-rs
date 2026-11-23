@@ -11,7 +11,7 @@ description = "Internal regression / performance harness for the chessboard grid
 # The `diagnose` subcommand and the stage-timing binaries read the detectors'
 # opt-in diagnostics, so the bench enables the `diagnostics` feature. The grid
 # `cell_size` comes from the stable `ChessboardDetection`.
-calib-targets = { workspace = true, features = ["tracing", "diagnostics"] }
+calib-targets = { workspace = true, features = ["image", "tracing", "diagnostics"] }
 calib-targets-chessboard = { workspace = true, features = ["tracing", "diagnostics"] }
 calib-targets-core = { workspace = true }
 # `full_stage_timing` builds the regression-matching ChESS config directly

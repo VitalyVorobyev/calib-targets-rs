@@ -58,7 +58,7 @@ pub(crate) fn detect_puzzlepole(
     let mut params = params_from_py(params)?;
     apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
 
-    let result = py.detach(move || detect::detect_puzzlepole(&img, &params));
+    let result = py.detach(move || detect::detect_puzzlepole(&img.view(), &params));
     detection_result_to_py(py, result)
 }
 
@@ -86,7 +86,8 @@ pub(crate) fn detect_puzzlepole_with_corners(
     let corners = chess_corners_from_py(corners)?;
     let params = params_from_py(params)?;
 
-    let result = py.detach(move || detect::detect_puzzlepole_with_corners(&img, &corners, &params));
+    let result =
+        py.detach(move || detect::detect_puzzlepole_with_corners(&img.view(), &corners, &params));
     detection_result_to_py(py, result)
 }
 
@@ -118,8 +119,49 @@ pub(crate) fn detect_puzzlepole_best(
         )?);
     }
 
-    let result = py.detach(move || detect::detect_puzzlepole_best(&img, &params_vec));
+    let result = py.detach(move || detect::detect_puzzlepole_best(&img.view(), &params_vec));
     detection_result_to_py(py, result)
+}
+
+/// Detect a PuzzlePole and additionally return the decode diagnostics payload.
+#[pyfunction]
+#[pyo3(signature = (image, *, chess_cfg=None, params))]
+pub(crate) fn diagnose_puzzlepole(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    chess_cfg: Option<&Bound<'_, PyAny>>,
+    params: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let img = gray_image_from_py(image)?;
+    let mut params = params_from_py(params)?;
+    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
+
+    let (result, diagnostics) =
+        py.detach(move || detect::diagnose_puzzlepole(&img.view(), &params));
+    let payload = crate::diagnostics_payload(result, diagnostics)?;
+    json_to_py(py, &payload)
+}
+
+/// `diagnose_puzzlepole` on a pre-detected corner cloud.
+///
+/// `params.chess` is not read: `corners` is taken as given. See
+/// `detect_puzzlepole_with_corners` for the `corners` shape.
+#[pyfunction]
+#[pyo3(signature = (image, corners, *, params))]
+pub(crate) fn diagnose_puzzlepole_with_corners(
+    py: Python<'_>,
+    image: &Bound<'_, PyAny>,
+    corners: &Bound<'_, PyAny>,
+    params: &Bound<'_, PyAny>,
+) -> PyResult<Py<PyAny>> {
+    let img = gray_image_from_py(image)?;
+    let corners = chess_corners_from_py(corners)?;
+    let params = params_from_py(params)?;
+
+    let (result, diagnostics) =
+        py.detach(move || detect::diagnose_puzzlepole_with_corners(&img.view(), &corners, &params));
+    let payload = crate::diagnostics_payload(result, diagnostics)?;
+    json_to_py(py, &payload)
 }
 
 /// Multi-config sweep preset for a pole.

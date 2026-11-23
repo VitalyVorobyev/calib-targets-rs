@@ -21,7 +21,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let spec = PuzzleBoardSpec::master(1.0)?;
     let params = PuzzleBoardParams::for_board(spec);
 
-    match detect::detect_puzzleboard(&img, &params) {
+    match detect::detect_puzzleboard(&detect::gray_view(&img), &params) {
         Ok(found) => println!(
             "detected {} labelled corners at master origin ({}, {}) \
              (mean confidence {:.3}, bit-error rate {:.3})",

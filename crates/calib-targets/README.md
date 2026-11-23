@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chess_cfg = detect::default_chess_config();
     let params = ChessboardParams::default();
 
-    match detect::detect_chessboard(&img, &chess_cfg, &params) {
+    match detect::detect_chessboard(&detect::gray_view(&img), &chess_cfg, &params) {
         Ok(det) => println!("labelled {} corners", det.corners.len()),
         Err(err) => println!("no board: {err}"),
     }
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Inputs (every helper)
 
-- `image::GrayImage` (or a `GrayImageView` on the detector traits).
+- `&GrayImageView` (convert an `image::GrayImage` with `detect::gray_view(&img)` when feature `image` is enabled).
 - A `*Params` config struct (`ChessboardParams`, `CharucoParams`,
   `PuzzleBoardParams`, `MarkerBoardParams`). Use `::default()` for
   chessboard, `::for_board(spec)` when a layout is required (constructors

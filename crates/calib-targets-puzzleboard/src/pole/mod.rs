@@ -71,22 +71,28 @@ pub const MIN_AXIAL_SQUARES: u32 = 4;
 /// strip explicitly — which is how two poles are made distinguishable.
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct PuzzlePoleSpec {
     /// Pieces around the circumference. One of
     /// [`periods::SUPPORTED_PERIODS`].
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4, max = 501)))]
     pub circumference_squares: u32,
     /// Master row the wrapped strip starts at — the seam, and `theta = 0`.
+    #[cfg_attr(feature = "schemars", schemars(range(max = 500)))]
     pub start_row: u32,
     /// Master column the pole's axial window starts at.
     ///
     /// This is what makes one pole different from another: two poles cut from
     /// disjoint column windows share no corner, so a corner's ID identifies its
     /// pole as well as its place on it. See [`PuzzlePoleSpec::distinct_poles`].
+    #[cfg_attr(feature = "schemars", schemars(range(max = 500)))]
     pub axial_start_col: u32,
     /// Pieces along the cylinder axis. The pole is `axial_squares + 1` corner
     /// columns tall.
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4, max = 500)))]
     pub axial_squares: u32,
     /// Physical size of one piece, in millimetres.
+    #[cfg_attr(feature = "schemars", schemars(extend("exclusiveMinimum" = 0.0)))]
     pub cell_size_mm: f32,
 }
 

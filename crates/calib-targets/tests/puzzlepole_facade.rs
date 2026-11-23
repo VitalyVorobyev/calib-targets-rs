@@ -17,6 +17,8 @@
 //! functions, the sweep preset and the correspondence output are wired to the
 //! detector correctly.
 
+#![cfg(feature = "image")]
+
 use calib_targets::detect;
 use calib_targets::printable::{
     render_target_bundle, PageSize, PrintableTargetDocument, PuzzleBoardTargetSpec, TargetSpec,
@@ -56,8 +58,9 @@ fn the_facade_decodes_a_pole_and_yields_correspondences() {
     let spec = pole();
     let img = render_flat_strip(&spec);
 
-    let found = detect::detect_puzzlepole(&img, &PuzzlePoleParams::for_pole(spec))
-        .expect("the wrap strip must decode as the pole it is");
+    let found =
+        detect::detect_puzzlepole(&detect::gray_view(&img), &PuzzlePoleParams::for_pole(spec))
+            .expect("the wrap strip must decode as the pole it is");
     assert!(
         found.corners.len() > 40,
         "only {} corners decoded",
@@ -91,9 +94,12 @@ fn the_facade_decodes_a_pole_and_yields_correspondences() {
 #[test]
 fn ids_are_unique_and_agree_with_the_grid() {
     let spec = pole();
-    let found =
-        detect::detect_puzzlepole(&render_flat_strip(&spec), &PuzzlePoleParams::for_pole(spec))
-            .expect("decode");
+    let strip = render_flat_strip(&spec);
+    let found = detect::detect_puzzlepole(
+        &detect::gray_view(&strip),
+        &PuzzlePoleParams::for_pole(spec),
+    )
+    .expect("decode");
 
     let mut ids: Vec<u32> = found.corners.iter().map(|c| c.id).collect();
     let before = ids.len();
@@ -113,9 +119,10 @@ fn ids_are_unique_and_agree_with_the_grid() {
 fn the_sweep_finds_at_least_what_a_single_config_does() {
     let spec = pole();
     let img = render_flat_strip(&spec);
+    let view = detect::gray_view(&img);
     let single =
-        detect::detect_puzzlepole(&img, &PuzzlePoleParams::for_pole(spec)).expect("single");
-    let swept = detect::detect_puzzlepole_best(&img, &PuzzlePoleParams::sweep_for_pole(&spec))
+        detect::detect_puzzlepole(&view, &PuzzlePoleParams::for_pole(spec)).expect("single");
+    let swept = detect::detect_puzzlepole_best(&view, &PuzzlePoleParams::sweep_for_pole(&spec))
         .expect("sweep");
     assert!(
         swept.corners.len() >= single.corners.len(),
@@ -130,7 +137,7 @@ fn the_raw_buffer_entry_point_agrees_with_the_image_one() {
     let spec = pole();
     let img = render_flat_strip(&spec);
     let params = PuzzlePoleParams::for_pole(spec);
-    let from_image = detect::detect_puzzlepole(&img, &params).expect("image");
+    let from_image = detect::detect_puzzlepole(&detect::gray_view(&img), &params).expect("image");
     let from_bytes =
         detect::detect_puzzlepole_from_gray_u8(img.width(), img.height(), img.as_raw(), &params)
             .expect("bytes");
@@ -144,9 +151,12 @@ fn a_pole_detection_projects_onto_the_generic_carrier() {
     use calib_targets::core::TargetKind;
 
     let spec = pole();
-    let found =
-        detect::detect_puzzlepole(&render_flat_strip(&spec), &PuzzlePoleParams::for_pole(spec))
-            .expect("decode");
+    let strip = render_flat_strip(&spec);
+    let found = detect::detect_puzzlepole(
+        &detect::gray_view(&strip),
+        &PuzzlePoleParams::for_pole(spec),
+    )
+    .expect("decode");
     let generic = found.target_detection();
     assert_eq!(generic.kind, TargetKind::PuzzlePole);
     assert_eq!(generic.corners.len(), found.corners.len());
@@ -190,7 +200,7 @@ fn the_printable_strip_with_its_overlap_is_refused() {
         .expect("decode PNG")
         .to_luma8();
 
-    match detect::detect_puzzlepole(&img, &PuzzlePoleParams::for_pole(spec)) {
+    match detect::detect_puzzlepole(&detect::gray_view(&img), &PuzzlePoleParams::for_pole(spec)) {
         Err(calib_targets::detect::DetectError::PuzzlePoleDetect(
             PuzzlePoleDetectError::InconsistentPosition { .. },
         )) => {}

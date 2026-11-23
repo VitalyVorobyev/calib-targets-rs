@@ -63,13 +63,14 @@ fn bench_full(c: &mut Criterion) {
         // ~40 px/cell keeps the 30×30 image under 1500 px/side while leaving
         // ChESS corners detectable at the ~12 px/cell lower bound.
         let img = render_puzzleboard_gray(n, n, 40);
+        let view = detect::gray_view(&img);
         let params = params_for(n, n);
-        match detect::detect_puzzleboard(&img, &params) {
+        match detect::detect_puzzleboard(&view, &params) {
             Ok(_) => {
                 group.throughput(Throughput::Elements(1));
                 group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
                     b.iter(|| {
-                        let _ = detect::detect_puzzleboard(&img, &params);
+                        let _ = detect::detect_puzzleboard(&view, &params);
                     });
                 });
             }
@@ -83,14 +84,15 @@ fn bench_fixed_board(c: &mut Criterion) {
     let mut group = c.benchmark_group("puzzleboard/fixed_board");
     for &n in SIZES {
         let img = render_puzzleboard_gray(n, n, 40);
+        let view = detect::gray_view(&img);
         let mut params = params_for(n, n);
         params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
-        match detect::detect_puzzleboard(&img, &params) {
+        match detect::detect_puzzleboard(&view, &params) {
             Ok(_) => {
                 group.throughput(Throughput::Elements(1));
                 group.bench_with_input(BenchmarkId::from_parameter(n), &n, |b, _| {
                     b.iter(|| {
-                        let _ = detect::detect_puzzleboard(&img, &params);
+                        let _ = detect::detect_puzzleboard(&view, &params);
                     });
                 });
             }

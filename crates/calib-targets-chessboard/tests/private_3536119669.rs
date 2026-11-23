@@ -8,7 +8,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::{ChessboardDetector, ChessboardParams};
 use image::GenericImageView;
 
@@ -138,7 +138,7 @@ fn assert_rejects_false_labels() {
                 .find_map(|&(t, s, coords)| (t == target_idx && s == snap_idx).then_some(coords))
                 .unwrap_or(&[]);
             let snap = load_snap(target_idx, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg);
+            let corners = detect_corners(&gray_view(&snap), &chess_cfg);
             let Some(detection) = detector.detect(&corners) else {
                 continue;
             };

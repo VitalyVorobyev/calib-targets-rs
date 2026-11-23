@@ -84,7 +84,7 @@ fn bench_all(c: &mut Criterion) {
         .iter()
         .filter_map(|s| {
             let img = load_image(&s.image)?;
-            let corners = detect_corners(&img, &cfg);
+            let corners = detect_corners(&gray_view(&img), &cfg);
             let spec = PuzzleBoardSpec::with_origin(
                 s.rows,
                 s.cols,
@@ -106,8 +106,9 @@ fn bench_all(c: &mut Criterion) {
     let mut corners_group = c.benchmark_group("puzzleboard/synthetic/corners");
     for (label, img, _, _) in &fixtures {
         corners_group.bench_with_input(BenchmarkId::from_parameter(label), img, |b, img| {
+            let view = gray_view(img);
             b.iter(|| {
-                let out = detect_corners(img, &cfg);
+                let out = detect_corners(&view, &cfg);
                 criterion::black_box(out)
             });
         });

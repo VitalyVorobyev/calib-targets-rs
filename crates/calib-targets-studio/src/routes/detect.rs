@@ -333,16 +333,22 @@ async fn detect_board_family(
                     );
                     let result = if sweep {
                         let configs = calib_targets::charuco::CharucoParams::sweep_for_board(&spec);
-                        calib_targets::detect::detect_charuco_best(&fed, &configs)
-                            .map_err(|e| ApiError::BadRequest(e.to_string()))?
+                        calib_targets::detect::detect_charuco_best(
+                            &calib_targets::detect::gray_view(&fed),
+                            &configs,
+                        )
+                        .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     } else {
                         let mut cparams = calib_targets::charuco::CharucoParams::for_board(spec);
                         cparams.chessboard =
                             merge_params_over(&cparams.chessboard, &params_override)?;
                         // The charuco grid runs on the topological default (`for_board`);
                         // ChessboardParams overrides flow straight through.
-                        calib_targets::detect::detect_charuco(&fed, &cparams)
-                            .map_err(|e| ApiError::BadRequest(e.to_string()))?
+                        calib_targets::detect::detect_charuco(
+                            &calib_targets::detect::gray_view(&fed),
+                            &cparams,
+                        )
+                        .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     };
                     let corners = result
                         .corners
@@ -373,15 +379,21 @@ async fn detect_board_family(
                     let result = if sweep {
                         let configs =
                             calib_targets::puzzleboard::PuzzleBoardParams::sweep_for_board(&spec);
-                        calib_targets::detect::detect_puzzleboard_best(&fed, &configs)
-                            .map_err(|e| ApiError::BadRequest(e.to_string()))?
+                        calib_targets::detect::detect_puzzleboard_best(
+                            &calib_targets::detect::gray_view(&fed),
+                            &configs,
+                        )
+                        .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     } else {
                         let mut pparams =
                             calib_targets::puzzleboard::PuzzleBoardParams::for_board(spec);
                         pparams.chessboard =
                             merge_params_over(&pparams.chessboard, &params_override)?;
-                        calib_targets::detect::detect_puzzleboard(&fed, &pparams)
-                            .map_err(|e| ApiError::BadRequest(e.to_string()))?
+                        calib_targets::detect::detect_puzzleboard(
+                            &calib_targets::detect::gray_view(&fed),
+                            &pparams,
+                        )
+                        .map_err(|e| ApiError::BadRequest(e.to_string()))?
                     };
                     let corners = result
                         .corners

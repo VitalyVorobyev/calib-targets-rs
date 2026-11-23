@@ -15,7 +15,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
     let configs = PuzzleBoardParams::sweep_for_board(&spec);
-    let result = detect::detect_puzzleboard_best(&img, &configs)?;
+    let result = detect::detect_puzzleboard_best(&detect::gray_view(&img), &configs)?;
 
     println!(
         "best of {} configs: {} corners, mean-confidence={:.3}",

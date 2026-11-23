@@ -52,7 +52,7 @@ env_logger = { workspace = true, optional = true }
 [dev-dependencies]
 image.workspace = true
 tempfile.workspace = true
-calib-targets = { path = "../calib-targets" }
+calib-targets = { path = "../calib-targets", default-features = false, features = ["image"] }
 criterion.workspace = true
 
 [[example]]

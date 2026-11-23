@@ -44,6 +44,8 @@ fn release_archive_builds_extracts_and_runs() {
             .arg("run")
             .arg("-p")
             .arg("calib-targets-ffi")
+            .arg("--features")
+            .arg("package-archive")
             .arg("--bin")
             .arg("package-release-archive")
             .arg("--target-dir")

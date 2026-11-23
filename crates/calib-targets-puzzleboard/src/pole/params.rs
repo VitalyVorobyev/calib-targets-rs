@@ -37,6 +37,7 @@ pub const MIN_AXIAL_SPAN: u32 = 8;
 /// Configuration for the PuzzlePole detector.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PuzzlePoleParams {
     /// ChESS corner front-end configuration, as for a planar board.
@@ -115,25 +116,34 @@ impl PuzzlePoleParams {
 /// a field that is silently ignored is worse than one that does not exist.
 #[non_exhaustive]
 #[derive(Clone, Debug, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(deny_unknown_fields)]
 pub struct PuzzlePoleDecodeConfig {
     /// Corner rows around the circumference a fragment must span.
     #[serde(default = "default_min_circumference_span")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 4)))]
     pub min_circumference_span: u32,
     /// Corner columns along the axis a fragment must span.
     #[serde(default = "default_min_axial_span")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 5)))]
     pub min_axial_span: u32,
     /// Minimum per-bit confidence for a sampled dot to count.
     #[serde(default = "default_min_bit_confidence")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 1.0)))]
     pub min_bit_confidence: f32,
     /// Maximum tolerated logical bit-error rate.
     #[serde(default = "default_max_bit_error_rate")]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.0, max = 1.0)))]
     pub max_bit_error_rate: f32,
     /// Try every detected grid component, not just the largest.
     #[serde(default = "default_search_all_components")]
     pub search_all_components: bool,
     /// Dot sampling radius, as a fraction of the edge length.
     #[serde(default = "default_sample_radius_rel")]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(extend("exclusiveMinimum" = 0.0), range(max = 0.5))
+    )]
     pub sample_radius_rel: f32,
     /// Hard-weighted or soft log-likelihood scoring.
     #[serde(default)]
@@ -152,6 +162,14 @@ pub struct PuzzlePoleDecodeConfig {
 }
 
 impl PuzzlePoleDecodeConfig {
+    /// Attach a [`PuzzleBoardAdvancedTuning`] override and return the updated
+    /// config.
+    #[must_use]
+    pub fn with_advanced(mut self, tuning: PuzzleBoardAdvancedTuning) -> Self {
+        self.advanced = Some(Box::new(tuning));
+        self
+    }
+
     /// The advanced tuning in force, defaulted if unset.
     #[must_use]
     pub fn effective_tuning(&self) -> Cow<'_, PuzzleBoardAdvancedTuning> {

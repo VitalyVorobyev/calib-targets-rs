@@ -52,17 +52,18 @@ multi-config sweep to try several parameter variants and keep the best
 result:
 
 ```rust,no_run
-use calib_targets::detect::{default_chess_config, detect_charuco_best, detect_chessboard_best};
+use calib_targets::detect::{default_chess_config, detect_charuco_best, detect_chessboard_best, gray_view};
 use calib_targets::chessboard::ChessboardParams;
 use calib_targets::charuco::CharucoParams;
 # let img: image::GrayImage = todo!();
 # let board = todo!();
 
+let view = gray_view(&img);
 let chess_configs = ChessboardParams::sweep_default();
-let chess_result = detect_chessboard_best(&img, &default_chess_config(), &chess_configs);
+let chess_result = detect_chessboard_best(&view, &default_chess_config(), &chess_configs);
 
 let charuco_configs = CharucoParams::sweep_for_board(&board);
-let charuco_result = detect_charuco_best(&img, &charuco_configs);
+let charuco_result = detect_charuco_best(&view, &charuco_configs);
 ```
 
 `ChessboardParams::sweep_default()` returns three configs: default +

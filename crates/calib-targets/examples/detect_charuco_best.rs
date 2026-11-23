@@ -20,7 +20,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use the built-in three-config sweep: base, high-threshold, low-threshold.
     let configs = CharucoParams::sweep_for_board(&board);
 
-    let result = detect::detect_charuco_best(&img, &configs)?;
+    let result = detect::detect_charuco_best(&detect::gray_view(&img), &configs)?;
     println!(
         "detected {} corners, {} markers",
         result.corners.len(),

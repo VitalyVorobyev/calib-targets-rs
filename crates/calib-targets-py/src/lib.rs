@@ -1,15 +1,20 @@
-use ::calib_targets::detect::DetectorConfig;
-use ::calib_targets::{charuco, chessboard, detect, marker, printable, puzzleboard};
+use ::calib_targets::detect::{self as ct_detect, DetectorConfig};
+use ::calib_targets::{charuco, chessboard, marker, printable as ct_printable, puzzleboard};
 use numpy::{PyArrayDyn, PyArrayMethods, PyUntypedArrayMethods};
 use pyo3::conversion::IntoPyObjectExt;
 use pyo3::exceptions::{PyRuntimeError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::{PyBool, PyBytes, PyDict, PyList, PyString, PyTuple};
+use pyo3::types::{PyBool, PyDict, PyList, PyString, PyTuple};
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{Map, Number, Value};
 
+mod detect;
+mod diagnose;
 mod pole;
+mod printable;
+
+pub(crate) use diagnose::diagnostics_payload;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -130,7 +135,9 @@ pub(crate) fn from_py_json<T: DeserializeOwned>(obj: &Bound<'_, PyAny>, name: &s
 // Image conversion
 // ---------------------------------------------------------------------------
 
-pub(crate) fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::GrayImage> {
+pub(crate) fn gray_image_from_py(
+    image: &Bound<'_, PyAny>,
+) -> PyResult<::calib_targets::core::GrayImage> {
     let array = image
         .cast::<PyArrayDyn<u8>>()
         .map_err(|_| value_error("image must be a numpy.ndarray with dtype=uint8"))?;
@@ -146,11 +153,31 @@ pub(crate) fn gray_image_from_py(image: &Bound<'_, PyAny>) -> PyResult<::image::
     let width = *shape
         .get(1)
         .ok_or_else(|| value_error("image has no width"))?;
-    let height = u32::try_from(height).map_err(|_| value_error("image height is too large"))?;
-    let width = u32::try_from(width).map_err(|_| value_error("image width is too large"))?;
-    let pixels = view.to_owned().into_raw_vec_and_offset().0;
-    detect::gray_image_from_slice(width, height, &pixels)
-        .map_err(|err| value_error(err.to_string()))
+    let height_u32 = u32::try_from(height).map_err(|_| value_error("image height is too large"))?;
+    let width_u32 = u32::try_from(width).map_err(|_| value_error("image width is too large"))?;
+    if width_u32 == 0 || height_u32 == 0 {
+        return Err(value_error(format!(
+            "invalid grayscale image dimensions (width={width_u32}, height={height_u32})"
+        )));
+    }
+    let expected = width
+        .checked_mul(height)
+        .ok_or_else(|| value_error("image dimensions overflow"))?;
+    let data = match view.as_slice() {
+        Some(slice) => slice.to_vec(),
+        None => view.iter().copied().collect(),
+    };
+    if data.len() != expected {
+        return Err(value_error(format!(
+            "invalid grayscale image buffer length (expected {expected} bytes, got {})",
+            data.len()
+        )));
+    }
+    Ok(::calib_targets::core::GrayImage {
+        width,
+        height,
+        data,
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -179,17 +206,17 @@ pub(crate) fn apply_chess_cfg_override(
     Ok(())
 }
 
-fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<DetectorConfig> {
+pub(crate) fn chess_cfg_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<DetectorConfig> {
     let Some(obj) = obj else {
-        return Ok(detect::default_chess_config());
+        return Ok(ct_detect::default_chess_config());
     };
     if obj.is_none() {
-        return Ok(detect::default_chess_config());
+        return Ok(ct_detect::default_chess_config());
     }
     from_py_json(obj, "chess_cfg")
 }
 
-fn chessboard_params_from_py(
+pub(crate) fn chessboard_params_from_py(
     obj: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<chessboard::ChessboardParams> {
     let Some(obj) = obj else {
@@ -201,7 +228,9 @@ fn chessboard_params_from_py(
     from_py_json(obj, "params")
 }
 
-fn charuco_params_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<charuco::CharucoParams> {
+pub(crate) fn charuco_params_from_py(
+    obj: Option<&Bound<'_, PyAny>>,
+) -> PyResult<charuco::CharucoParams> {
     let Some(obj) = obj else {
         return Err(value_error("params is required for ChArUco detection"));
     };
@@ -212,7 +241,7 @@ fn charuco_params_from_py(obj: Option<&Bound<'_, PyAny>>) -> PyResult<charuco::C
     Ok(params)
 }
 
-fn marker_board_params_from_py(
+pub(crate) fn marker_board_params_from_py(
     obj: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<marker::MarkerBoardParams> {
     let Some(obj) = obj else {
@@ -224,7 +253,7 @@ fn marker_board_params_from_py(
     from_py_json(obj, "params")
 }
 
-fn puzzleboard_params_from_py(
+pub(crate) fn puzzleboard_params_from_py(
     obj: Option<&Bound<'_, PyAny>>,
 ) -> PyResult<puzzleboard::PuzzleBoardParams> {
     let Some(obj) = obj else {
@@ -236,9 +265,9 @@ fn puzzleboard_params_from_py(
     from_py_json(obj, "params")
 }
 
-fn printable_document_from_py(
+pub(crate) fn printable_document_from_py(
     obj: &Bound<'_, PyAny>,
-) -> PyResult<printable::PrintableTargetDocument> {
+) -> PyResult<ct_printable::PrintableTargetDocument> {
     from_py_json(obj, "document")
 }
 
@@ -261,15 +290,6 @@ pub(crate) fn chess_corners_from_py(
 // Detection functions
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize)]
-struct TopologicalCornerPayload {
-    index: usize,
-    position: [f32; 2],
-    position_covariance: Option<::calib_targets::core::PositionCovariance>,
-    axes: [::calib_targets::core::AxisEstimate; 2],
-    strength: f32,
-}
-
 /// A facade detection result as Python sees it: the detection as a dict, or
 /// `None` for a miss (`DetectError::is_not_found`). Any other error is a
 /// misuse — a malformed image, an invalid board spec or parameters — and
@@ -277,7 +297,7 @@ struct TopologicalCornerPayload {
 /// this one convention.
 pub(crate) fn detection_result_to_py<T: serde::Serialize>(
     py: Python<'_>,
-    result: Result<T, detect::DetectError>,
+    result: Result<T, ct_detect::DetectError>,
 ) -> PyResult<Option<Py<PyAny>>> {
     match result {
         Ok(detection) => {
@@ -289,626 +309,6 @@ pub(crate) fn detection_result_to_py<T: serde::Serialize>(
         Err(err) => Err(value_error(err.to_string())),
     }
 }
-
-/// Detect a ChArUco board in a grayscale image.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
-///     If provided, overrides `params.chessboard.chess`.
-///   params: dict with CharucoParams fields (must include `board`).
-///
-/// Returns:
-///   dict with detection data, or None when no board is found. Raises
-///   ValueError on an invalid image, board spec or parameters.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params))]
-fn detect_charuco(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let mut params = charuco_params_from_py(Some(params))?;
-    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
-    let result = py.detach(move || detect::detect_charuco(&img, &params));
-    detection_result_to_py(py, result)
-}
-
-/// Detect a ChArUco board from a pre-detected corner cloud.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   corners: list of `ChessCorner`-shaped dicts (see
-///     `trace_chessboard_topological`'s `"corners"` output, or a custom
-///     upstream). `params.chess` is not read: `corners` is taken as given.
-///   params: dict with CharucoParams fields (must include `board`).
-///
-/// Returns:
-///   dict with detection data, or None when no board is found. Raises
-///   ValueError on an invalid image, board spec or parameters.
-#[pyfunction]
-#[pyo3(signature = (image, corners, *, params))]
-fn detect_charuco_with_corners(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    corners: &Bound<'_, PyAny>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let corners = chess_corners_from_py(corners)?;
-    let params = charuco_params_from_py(Some(params))?;
-    let result = py.detach(move || detect::detect_charuco_with_corners(&img, &corners, &params));
-    detection_result_to_py(py, result)
-}
-
-/// Detect a chessboard in a grayscale image.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
-///     If provided, overrides `params.chess`.
-///   params: dict with ChessboardParams fields, or None for defaults.
-///
-/// Returns:
-///   dict with detection data, or None if no board is found.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
-fn detect_chessboard(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let params = chessboard_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-
-    // The facade helper also records the frame's noise level on the result's
-    // `quality`.
-    let result = py.detach(move || detect::detect_chessboard(&img, &chess_cfg, &params));
-    detection_result_to_py(py, result)
-}
-
-/// Detect all chessboard components in a grayscale image.
-///
-/// Like `detect_chessboard` but returns every same-board component the detector
-/// recovers (up to `params.max_components`), rather than just the first one.
-/// Useful when the board is partially occluded and multiple disjoint patches
-/// are visible.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
-///     If provided, overrides `params.chess`.
-///   params: dict with ChessboardParams fields, or None for defaults.
-///
-/// Returns:
-///   list of dicts, each with the `ChessboardDetectionResult` schema.
-///   Empty list if no board components are found.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
-fn detect_chessboard_all(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let params = chessboard_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-
-    let results = py.detach(move || detect::detect_chessboard_all(&img, &chess_cfg, &params));
-    let json =
-        serde_json::to_value(results).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
-}
-
-/// Run ChESS corner detection plus the topological grid trace.
-///
-/// This is an offline diagnostics / visualization entry point. It applies
-/// the topological detector defaults, then returns the raw corners, the
-/// `projective-grid` topological trace when at least three usable corners are
-/// available, and the final merged detections produced by the chessboard
-/// detector.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
-fn trace_chessboard_topological(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let width = img.width();
-    let height = img.height();
-    let params = chessboard_params_from_py(params)?;
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-
-    let payload = py.detach(move || -> Result<Value, String> {
-        let corners = detect::detect_corners(&img, &chess_cfg);
-        let corner_payload: Vec<TopologicalCornerPayload> = corners
-            .iter()
-            .enumerate()
-            .map(|(index, c)| TopologicalCornerPayload {
-                index,
-                position: [c.position.x, c.position.y],
-                position_covariance: c.position_covariance,
-                axes: c.axes,
-                strength: c.strength,
-            })
-            .collect();
-
-        let trace_result = chessboard::trace_topological_detection(&corners, &params);
-
-        let mut payload = serde_json::json!({
-            "schema": 1,
-            "image": {
-                "width": width,
-                "height": height,
-            },
-            "corners": corner_payload,
-        });
-        let obj = payload
-            .as_object_mut()
-            .expect("topological trace payload is an object");
-        match trace_result {
-            Ok(trace) => {
-                obj.insert(
-                    "trace".to_string(),
-                    serde_json::to_value(&trace.projective_grid).map_err(|e| e.to_string())?,
-                );
-                obj.insert(
-                    "chessboard_stages".to_string(),
-                    serde_json::to_value(&trace.chessboard).map_err(|e| e.to_string())?,
-                );
-                obj.insert(
-                    "detections".to_string(),
-                    serde_json::to_value(&trace.detections).map_err(|e| e.to_string())?,
-                );
-                obj.insert("error".to_string(), Value::Null);
-            }
-            Err(err) => {
-                obj.insert("trace".to_string(), Value::Null);
-                obj.insert("chessboard_stages".to_string(), Value::Null);
-                obj.insert("detections".to_string(), Value::Array(Vec::new()));
-                obj.insert("error".to_string(), Value::String(err.to_string()));
-            }
-        }
-        Ok(payload)
-    });
-    let payload = payload.map_err(PyRuntimeError::new_err)?;
-    json_to_py(py, &payload)
-}
-
-/// Detect a marker-board target in a grayscale image.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
-///     If provided, overrides `params.chessboard.chess`.
-///   params: dict with MarkerBoardParams fields, or None for defaults.
-///
-/// Returns:
-///   dict with detection data, or None if no board is found.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
-fn detect_marker_board(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let mut params = marker_board_params_from_py(params)?;
-    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
-
-    let result = py.detach(move || detect::detect_marker_board(&img, &params));
-    detection_result_to_py(py, result)
-}
-
-/// Detect a marker-board target from a pre-detected corner cloud.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   corners: list of `ChessCorner`-shaped dicts (see
-///     `trace_chessboard_topological`'s `"corners"` output, or a custom
-///     upstream). `params.chess` is not read: `corners` is taken as given.
-///   params: dict with MarkerBoardParams fields, or None for defaults.
-///
-/// Returns:
-///   dict with detection data, or None if no board is found.
-#[pyfunction]
-#[pyo3(signature = (image, corners, *, params=None))]
-fn detect_marker_board_with_corners(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    corners: &Bound<'_, PyAny>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let corners = chess_corners_from_py(corners)?;
-    let params = marker_board_params_from_py(params)?;
-
-    let result =
-        py.detach(move || detect::detect_marker_board_with_corners(&img, &corners, &params));
-    detection_result_to_py(py, result)
-}
-
-/// Detect a PuzzleBoard in a grayscale image.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
-///     If provided, overrides `params.chessboard.chess`.
-///   params: dict with PuzzleBoardParams fields (must include `board`).
-///
-/// Returns:
-///   dict with detection data. Raises RuntimeError on detection errors.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params))]
-fn detect_puzzleboard(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let mut params = puzzleboard_params_from_py(Some(params))?;
-    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
-
-    let result = py.detach(move || detect::detect_puzzleboard(&img, &params));
-    detection_result_to_py(py, result)
-}
-
-/// Detect a PuzzleBoard from a pre-detected corner cloud.
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   corners: list of `ChessCorner`-shaped dicts (see
-///     `trace_chessboard_topological`'s `"corners"` output, or a custom
-///     upstream). `params.chess` is not read: `corners` is taken as given.
-///   params: dict with PuzzleBoardParams fields (must include `board`).
-///
-/// Returns:
-///   dict with detection data. Raises RuntimeError on detection errors.
-#[pyfunction]
-#[pyo3(signature = (image, corners, *, params))]
-fn detect_puzzleboard_with_corners(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    corners: &Bound<'_, PyAny>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let corners = chess_corners_from_py(corners)?;
-    let params = puzzleboard_params_from_py(Some(params))?;
-
-    let result =
-        py.detach(move || detect::detect_puzzleboard_with_corners(&img, &corners, &params));
-    detection_result_to_py(py, result)
-}
-
-/// Build the `{"result": ..., "diagnostics": ...}` payload shared by every
-/// `diagnose_*` pyfunction.
-///
-/// `diagnostics` is `None` only when the facade could not construct the
-/// detector from the supplied params — the pipeline never ran, so there is
-/// nothing to report but the construction error, and this raises. Whenever
-/// the pipeline ran, `diagnostics` is `Some`, even on a failed detection:
-/// `result` then serializes to JSON `null` while `diagnostics` still carries
-/// best-effort evidence for overlay tooling.
-fn diagnostics_payload<T: Serialize, D: Serialize>(
-    result: Result<T, detect::DetectError>,
-    diagnostics: Option<D>,
-) -> PyResult<Value> {
-    let Some(diagnostics) = diagnostics else {
-        let err = result
-            .err()
-            .expect("diagnose_*: None diagnostics implies detector construction failed");
-        return Err(value_error(err.to_string()));
-    };
-    let result_json = match result {
-        Ok(value) => {
-            serde_json::to_value(value).map_err(|err| PyRuntimeError::new_err(err.to_string()))?
-        }
-        Err(_) => Value::Null,
-    };
-    let diagnostics_json = serde_json::to_value(diagnostics)
-        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    Ok(serde_json::json!({
-        "result": result_json,
-        "diagnostics": diagnostics_json,
-    }))
-}
-
-/// Detect a ChArUco board and additionally return the diagnostics channel.
-///
-/// Runs the same detection as `detect_charuco` but returns a dict
-/// `{"result": ..., "diagnostics": ...}`. `result` is the
-/// `CharucoDetection` dict (or `None` when detection fails);
-/// `diagnostics` is the raw `CharucoDetectDiagnostics` payload (per-component
-/// matcher decisions, per-cell scores, chosen/runner-up hypotheses, rejection
-/// reasons). Diagnostics are produced even on a failed frame.
-///
-/// The `diagnostics` shape carries a looser stability promise than the
-/// typed result API and may evolve between minor versions.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params))]
-fn diagnose_charuco(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let mut params = charuco_params_from_py(Some(params))?;
-    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
-
-    let (result, diagnostics) = py.detach(move || detect::diagnose_charuco(&img, &params));
-    let payload = diagnostics_payload(result, diagnostics)?;
-    json_to_py(py, &payload)
-}
-
-/// `diagnose_charuco` on a pre-detected corner cloud.
-///
-/// `params.chess` is not read: `corners` is taken as given. See
-/// `detect_charuco_with_corners` for the `corners` shape.
-#[pyfunction]
-#[pyo3(signature = (image, corners, *, params))]
-fn diagnose_charuco_with_corners(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    corners: &Bound<'_, PyAny>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let corners = chess_corners_from_py(corners)?;
-    let params = charuco_params_from_py(Some(params))?;
-
-    let (result, diagnostics) =
-        py.detach(move || detect::diagnose_charuco_with_corners(&img, &corners, &params));
-    let payload = diagnostics_payload(result, diagnostics)?;
-    json_to_py(py, &payload)
-}
-
-/// Detect a marker board and additionally return the diagnostics channel.
-///
-/// Runs the same detection as `detect_marker_board` but returns a dict
-/// `{"result": ..., "diagnostics": ...}`. `result` is the
-/// `MarkerBoardDetection` dict (or `None` when detection fails);
-/// `diagnostics` is the raw `MarkerBoardDiagnostics` payload (scored circle
-/// candidates, circle matches, per-corner provenance, alignment-inlier
-/// count). Diagnostics are produced even on a failed detection — e.g. a grid
-/// found but its circles not matching the expected layout.
-///
-/// The `diagnostics` shape carries a looser stability promise than the
-/// typed result API and may evolve between minor versions.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params=None))]
-fn diagnose_marker_board(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let mut params = marker_board_params_from_py(params)?;
-    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
-
-    let (result, diagnostics) = py.detach(move || detect::diagnose_marker_board(&img, &params));
-    let payload = diagnostics_payload(result, diagnostics)?;
-    json_to_py(py, &payload)
-}
-
-/// `diagnose_marker_board` on a pre-detected corner cloud.
-///
-/// `params.chess` is not read: `corners` is taken as given. See
-/// `detect_marker_board_with_corners` for the `corners` shape.
-#[pyfunction]
-#[pyo3(signature = (image, corners, *, params=None))]
-fn diagnose_marker_board_with_corners(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    corners: &Bound<'_, PyAny>,
-    params: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let corners = chess_corners_from_py(corners)?;
-    let params = marker_board_params_from_py(params)?;
-
-    let (result, diagnostics) =
-        py.detach(move || detect::diagnose_marker_board_with_corners(&img, &corners, &params));
-    let payload = diagnostics_payload(result, diagnostics)?;
-    json_to_py(py, &payload)
-}
-
-/// Detect a PuzzleBoard and additionally return the diagnostics channel.
-///
-/// Runs the same detection as `detect_puzzleboard` but returns a dict
-/// `{"result": ..., "diagnostics": ...}`. `result` is the
-/// `PuzzleBoardDetection` dict (or `None` when detection fails);
-/// `diagnostics` is the raw `PuzzleBoardDiagnostics` payload (raw
-/// pre-alignment per-edge bit observations and winner-vs-runner-up scoring
-/// evidence). Diagnostics are produced even on a failed decode.
-///
-/// The `diagnostics` shape carries a looser stability promise than the
-/// typed result API and may evolve between minor versions.
-#[pyfunction]
-#[pyo3(signature = (image, *, chess_cfg=None, params))]
-fn diagnose_puzzleboard(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let mut params = puzzleboard_params_from_py(Some(params))?;
-    apply_chess_cfg_override(&mut params.chess, chess_cfg)?;
-
-    let (result, diagnostics) = py.detach(move || detect::diagnose_puzzleboard(&img, &params));
-    let payload = diagnostics_payload(result, diagnostics)?;
-    json_to_py(py, &payload)
-}
-
-/// `diagnose_puzzleboard` on a pre-detected corner cloud.
-///
-/// `params.chess` is not read: `corners` is taken as given. See
-/// `detect_puzzleboard_with_corners` for the `corners` shape.
-#[pyfunction]
-#[pyo3(signature = (image, corners, *, params))]
-fn diagnose_puzzleboard_with_corners(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    corners: &Bound<'_, PyAny>,
-    params: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
-    let img = gray_image_from_py(image)?;
-    let corners = chess_corners_from_py(corners)?;
-    let params = puzzleboard_params_from_py(Some(params))?;
-
-    let (result, diagnostics) =
-        py.detach(move || detect::diagnose_puzzleboard_with_corners(&img, &corners, &params));
-    let payload = diagnostics_payload(result, diagnostics)?;
-    json_to_py(py, &payload)
-}
-
-// ---------------------------------------------------------------------------
-// Multi-config sweep detection
-// ---------------------------------------------------------------------------
-
-/// Try multiple chessboard parameter configs, return the best result (most corners).
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   configs: list of dicts with ChessboardParams fields.
-///   chess_cfg: dict with DetectorConfig fields, or None for defaults.
-///     If provided, overrides `params.chess`.
-///
-/// Returns:
-///   dict with detection data, or None if no board is found with any config.
-#[pyfunction]
-#[pyo3(signature = (image, configs, *, chess_cfg=None))]
-fn detect_chessboard_best(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    configs: &Bound<'_, PyAny>,
-    chess_cfg: Option<&Bound<'_, PyAny>>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let list = configs
-        .cast::<PyList>()
-        .map_err(|_| value_error("configs must be a list"))?;
-    let mut params_vec = Vec::with_capacity(list.len());
-    for item in list.iter() {
-        params_vec.push(from_py_json::<chessboard::ChessboardParams>(
-            &item,
-            "configs[]",
-        )?);
-    }
-    let chess_cfg = chess_cfg_from_py(chess_cfg)?;
-
-    let result = py.detach(move || detect::detect_chessboard_best(&img, &chess_cfg, &params_vec));
-    detection_result_to_py(py, result)
-}
-
-/// Try multiple ChArUco parameter configs, return the best result
-/// (most markers, then most corners).
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   configs: list of dicts with CharucoParams fields.
-///
-/// Returns:
-///   dict with detection data. Raises RuntimeError if all configs fail.
-#[pyfunction]
-#[pyo3(signature = (image, configs))]
-fn detect_charuco_best(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    configs: &Bound<'_, PyAny>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let list = configs
-        .cast::<PyList>()
-        .map_err(|_| value_error("configs must be a list"))?;
-    let mut params_vec = Vec::with_capacity(list.len());
-    for item in list.iter() {
-        let cfg = from_py_json::<charuco::CharucoParams>(&item, "configs[]")?;
-        params_vec.push(cfg);
-    }
-
-    let result = py.detach(move || detect::detect_charuco_best(&img, &params_vec));
-    detection_result_to_py(py, result)
-}
-
-/// Try multiple marker board parameter configs, return the best result (most corners).
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   configs: list of dicts with MarkerBoardParams fields.
-///
-/// Returns:
-///   dict with detection data, or None if no board is found with any config.
-#[pyfunction]
-#[pyo3(signature = (image, configs))]
-fn detect_marker_board_best(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    configs: &Bound<'_, PyAny>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let list = configs
-        .cast::<PyList>()
-        .map_err(|_| value_error("configs must be a list"))?;
-    let mut params_vec = Vec::with_capacity(list.len());
-    for item in list.iter() {
-        params_vec.push(from_py_json::<marker::MarkerBoardParams>(
-            &item,
-            "configs[]",
-        )?);
-    }
-
-    let result = py.detach(move || detect::detect_marker_board_best(&img, &params_vec));
-    detection_result_to_py(py, result)
-}
-
-/// Try multiple PuzzleBoard parameter configs, return the best result
-/// (most labelled corners, then mean bit confidence).
-///
-/// Args:
-///   image: 2D numpy.ndarray[uint8] (H, W) grayscale image.
-///   configs: list of dicts with PuzzleBoardParams fields.
-///
-/// Returns:
-///   dict with detection data. Raises RuntimeError if all configs fail.
-#[pyfunction]
-#[pyo3(signature = (image, configs))]
-fn detect_puzzleboard_best(
-    py: Python<'_>,
-    image: &Bound<'_, PyAny>,
-    configs: &Bound<'_, PyAny>,
-) -> PyResult<Option<Py<PyAny>>> {
-    let img = gray_image_from_py(image)?;
-    let list = configs
-        .cast::<PyList>()
-        .map_err(|_| value_error("configs must be a list"))?;
-    let mut params_vec = Vec::with_capacity(list.len());
-    for item in list.iter() {
-        params_vec.push(from_py_json::<puzzleboard::PuzzleBoardParams>(
-            &item,
-            "configs[]",
-        )?);
-    }
-
-    let result = py.detach(move || detect::detect_puzzleboard_best(&img, &params_vec));
-    detection_result_to_py(py, result)
-}
-
-// ---------------------------------------------------------------------------
-// Multi-config sweep presets
-// ---------------------------------------------------------------------------
 
 /// Serialize a Rust-built sweep preset into a Python list of config dicts.
 ///
@@ -929,205 +329,66 @@ pub(crate) fn sweep_preset_to_py<T: Serialize>(
     json_to_py(py, &json)
 }
 
-/// Return the chessboard sweep preset (`ChessboardParams::sweep_default()`).
-///
-/// Three configs: the canonical tolerances plus a tighter and a looser
-/// grid-graph angular bracket. Pass the list to `detect_chessboard_best`.
-///
-/// Returns:
-///   list of dicts with ChessboardParams fields.
-#[pyfunction]
-#[pyo3(signature = ())]
-fn chessboard_sweep_default(py: Python<'_>) -> PyResult<Py<PyAny>> {
-    sweep_preset_to_py(py, &chessboard::ChessboardParams::sweep_default())
-}
-
-/// Return the ChArUco sweep preset (`CharucoParams::sweep_for_board(&spec)`).
-///
-/// Args:
-///   board: dict with CharucoBoardSpec fields.
-///
-/// Returns:
-///   list of dicts with CharucoParams fields.
-#[pyfunction]
-#[pyo3(signature = (board))]
-fn charuco_sweep_for_board(py: Python<'_>, board: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-    let spec: charuco::CharucoBoardSpec = from_py_json(board, "board")?;
-    sweep_preset_to_py(py, &charuco::CharucoParams::sweep_for_board(&spec))
-}
-
-/// Return the marker-board sweep preset
-/// (`MarkerBoardParams::sweep_for_board(&spec)`).
-///
-/// Takes the full board spec rather than a `(rows, cols)` pair: a marker-board
-/// layout is not reducible to a size, since the three circle placements are
-/// load-bearing.
-///
-/// Args:
-///   board: dict with MarkerBoardSpec fields.
-///
-/// Returns:
-///   list of dicts with MarkerBoardParams fields.
-#[pyfunction]
-#[pyo3(signature = (board))]
-fn marker_board_sweep_for_board(py: Python<'_>, board: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-    let spec: marker::MarkerBoardSpec = from_py_json(board, "board")?;
-    sweep_preset_to_py(py, &marker::MarkerBoardParams::sweep_for_board(&spec))
-}
-
-/// Return the PuzzleBoard sweep preset
-/// (`PuzzleBoardParams::sweep_for_board(&spec)`).
-///
-/// Takes the full board spec so the caller's `cell_size` and board origin
-/// travel into every returned config.
-///
-/// Args:
-///   board: dict with PuzzleBoardSpec fields.
-///
-/// Returns:
-///   list of dicts with PuzzleBoardParams fields.
-#[pyfunction]
-#[pyo3(signature = (board))]
-fn puzzleboard_sweep_for_board(py: Python<'_>, board: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-    let spec: puzzleboard::PuzzleBoardSpec = from_py_json(board, "board")?;
-    sweep_preset_to_py(py, &puzzleboard::PuzzleBoardParams::sweep_for_board(&spec))
-}
-
-/// Return Rust-side default PuzzleBoard parameters for a board size.
-#[pyfunction]
-#[pyo3(signature = (rows, cols))]
-fn default_puzzleboard_params(py: Python<'_>, rows: u32, cols: u32) -> PyResult<Py<PyAny>> {
-    let spec = puzzleboard::PuzzleBoardSpec::new(rows, cols, 1.0)
-        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let params = puzzleboard::PuzzleBoardParams::for_board(spec);
-    let json =
-        serde_json::to_value(params).map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    json_to_py(py, &json)
-}
-
-/// Every `(circumference_squares, start_row)` pair that closes seamlessly
-/// around a cylinder.
-///
-/// Exposed rather than duplicated in Python: the table is derived from the
-/// shipped code maps and pinned by a Rust test, so a Python copy could drift
-/// from the pattern it describes.
-#[pyfunction]
-#[pyo3(signature = ())]
-fn puzzlepole_periods() -> Vec<(u32, u32)> {
-    puzzleboard::SUPPORTED_PERIODS
-        .iter()
-        .map(|p| (p.squares, p.start_row))
-        .collect()
-}
-
-/// The canonical start row for a PuzzlePole circumference, or `None` if that
-/// circumference has no seamless strip.
-#[pyfunction]
-#[pyo3(signature = (circumference_squares))]
-fn puzzlepole_canonical_start_row(circumference_squares: u32) -> Option<u32> {
-    puzzleboard::PuzzlePolePeriod::canonical(circumference_squares).map(|p| p.start_row)
-}
-
-// ---------------------------------------------------------------------------
-// Printable target functions
-// ---------------------------------------------------------------------------
-
-#[pyfunction]
-#[pyo3(signature = (document))]
-fn render_target_bundle(py: Python<'_>, document: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
-    let document = printable_document_from_py(document)?;
-    let bundle = printable::render_target_bundle(&document)
-        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let out = PyDict::new(py);
-    out.set_item("json_text", bundle.json_text)?;
-    out.set_item("svg_text", bundle.svg_text)?;
-    out.set_item("png_bytes", PyBytes::new(py, &bundle.png_bytes))?;
-    out.set_item("dxf_text", bundle.dxf_text)?;
-    Ok(out.into_any().unbind())
-}
-
-#[pyfunction]
-#[pyo3(signature = (target, screen))]
-fn render_screen_target(
-    py: Python<'_>,
-    target: &Bound<'_, PyAny>,
-    screen: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
-    let target = from_py_json(target, "target")?;
-    let screen = from_py_json(screen, "screen")?;
-    let rendered = printable::render_screen_target(&target, &screen)
-        .map_err(|err| value_error(err.to_string()))?;
-    let json = rendered
-        .metadata
-        .to_json_pretty()
-        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let out = PyDict::new(py);
-    out.set_item("json_text", json)?;
-    out.set_item("png_bytes", PyBytes::new(py, &rendered.png_bytes))?;
-    Ok(out.into_any().unbind())
-}
-
-#[pyfunction]
-#[pyo3(signature = (document, output_stem))]
-fn write_target_bundle(
-    py: Python<'_>,
-    document: &Bound<'_, PyAny>,
-    output_stem: &Bound<'_, PyAny>,
-) -> PyResult<Py<PyAny>> {
-    let document = printable_document_from_py(document)?;
-    let output_stem = output_stem
-        .extract::<String>()
-        .map_err(|_| value_error("output_stem must be str"))?;
-    let written = printable::write_target_bundle(&document, output_stem)
-        .map_err(|err| PyRuntimeError::new_err(err.to_string()))?;
-    let out = PyDict::new(py);
-    out.set_item("json_path", written.json_path.to_string_lossy().as_ref())?;
-    out.set_item("svg_path", written.svg_path.to_string_lossy().as_ref())?;
-    out.set_item("png_path", written.png_path.to_string_lossy().as_ref())?;
-    out.set_item("dxf_path", written.dxf_path.to_string_lossy().as_ref())?;
-    Ok(out.into_any().unbind())
-}
-
 // ---------------------------------------------------------------------------
 // Module
 // ---------------------------------------------------------------------------
 
 #[pymodule]
 fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
-    m.add_function(wrap_pyfunction!(detect_charuco, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_charuco_with_corners, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_chessboard, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_chessboard_all, m)?)?;
-    m.add_function(wrap_pyfunction!(trace_chessboard_topological, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_marker_board, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_marker_board_with_corners, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_puzzleboard, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_puzzleboard_with_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_charuco, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_charuco_with_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_chessboard, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_chessboard_all, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::trace_chessboard_topological, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_marker_board, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        detect::detect_marker_board_with_corners,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_puzzleboard, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        detect::detect_puzzleboard_with_corners,
+        m
+    )?)?;
     m.add_function(wrap_pyfunction!(pole::detect_puzzlepole, m)?)?;
     m.add_function(wrap_pyfunction!(pole::detect_puzzlepole_with_corners, m)?)?;
-    m.add_function(wrap_pyfunction!(diagnose_charuco, m)?)?;
-    m.add_function(wrap_pyfunction!(diagnose_charuco_with_corners, m)?)?;
-    m.add_function(wrap_pyfunction!(diagnose_marker_board, m)?)?;
-    m.add_function(wrap_pyfunction!(diagnose_marker_board_with_corners, m)?)?;
-    m.add_function(wrap_pyfunction!(diagnose_puzzleboard, m)?)?;
-    m.add_function(wrap_pyfunction!(diagnose_puzzleboard_with_corners, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_chessboard_best, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_charuco_best, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_marker_board_best, m)?)?;
-    m.add_function(wrap_pyfunction!(detect_puzzleboard_best, m)?)?;
+    m.add_function(wrap_pyfunction!(diagnose::diagnose_charuco, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        diagnose::diagnose_charuco_with_corners,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(diagnose::diagnose_marker_board, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        diagnose::diagnose_marker_board_with_corners,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(diagnose::diagnose_puzzleboard, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        diagnose::diagnose_puzzleboard_with_corners,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(pole::diagnose_puzzlepole, m)?)?;
+    m.add_function(wrap_pyfunction!(pole::diagnose_puzzlepole_with_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_chessboard_best, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_charuco_best, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_marker_board_best, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::detect_puzzleboard_best, m)?)?;
     m.add_function(wrap_pyfunction!(pole::detect_puzzlepole_best, m)?)?;
-    m.add_function(wrap_pyfunction!(chessboard_sweep_default, m)?)?;
-    m.add_function(wrap_pyfunction!(charuco_sweep_for_board, m)?)?;
-    m.add_function(wrap_pyfunction!(marker_board_sweep_for_board, m)?)?;
-    m.add_function(wrap_pyfunction!(puzzleboard_sweep_for_board, m)?)?;
-    m.add_function(wrap_pyfunction!(default_puzzleboard_params, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::chessboard_sweep_default, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::charuco_sweep_for_board, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::marker_board_sweep_for_board, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::puzzleboard_sweep_for_board, m)?)?;
+    m.add_function(wrap_pyfunction!(detect::default_puzzleboard_params, m)?)?;
     m.add_function(wrap_pyfunction!(pole::puzzlepole_sweep_for_pole, m)?)?;
     m.add_function(wrap_pyfunction!(pole::default_puzzlepole_params, m)?)?;
     m.add_function(wrap_pyfunction!(pole::puzzlepole_distinct_poles, m)?)?;
-    m.add_function(wrap_pyfunction!(puzzlepole_periods, m)?)?;
-    m.add_function(wrap_pyfunction!(puzzlepole_canonical_start_row, m)?)?;
-    m.add_function(wrap_pyfunction!(render_target_bundle, m)?)?;
-    m.add_function(wrap_pyfunction!(render_screen_target, m)?)?;
-    m.add_function(wrap_pyfunction!(write_target_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(printable::puzzlepole_periods, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        printable::puzzlepole_canonical_start_row,
+        m
+    )?)?;
+    m.add_function(wrap_pyfunction!(printable::render_target_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(printable::render_screen_target, m)?)?;
+    m.add_function(wrap_pyfunction!(printable::write_target_bundle, m)?)?;
     Ok(())
 }

@@ -39,14 +39,14 @@ jobs:
         run: cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
 
       - name: Release archive smoke
-        run: cargo test -p calib-targets-ffi --test release_archive_smoke -- --ignored --nocapture
+        run: cargo test -p calib-targets-ffi --features package-archive --test release_archive_smoke -- --ignored --nocapture
 
       - name: Build release archive
         shell: bash
         run: |
           cargo build -p calib-targets-ffi --release
           mkdir -p dist
-          cargo run -p calib-targets-ffi --bin package-release-archive -- \
+          cargo run -p calib-targets-ffi --features package-archive --bin package-release-archive -- \
             --lib-dir target/release \
             --output-dir dist
           ls -l dist

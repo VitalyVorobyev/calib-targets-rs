@@ -203,7 +203,7 @@ archive itself:
 cargo run -p calib-targets-ffi --bin stage-cmake-package -- \
   --lib-dir target/debug --prefix target/ffi-cmake-package
 cargo build -p calib-targets-ffi --release
-cargo run -p calib-targets-ffi --bin package-release-archive -- \
+cargo run -p calib-targets-ffi --features package-archive --bin package-release-archive -- \
   --lib-dir target/release --output-dir target/ffi-release-archives
 ```
 
@@ -218,7 +218,7 @@ the [quickstart](./cmake-consumer-quickstart.md). On Windows, put
 cargo run -p calib-targets-ffi --features generate-header --bin generate-ffi-header -- --check
 cargo test -p calib-targets-ffi --test native_consumer_smoke -- --nocapture
 cargo test -p calib-targets-ffi --test cmake_consumer_smoke -- --nocapture
-cargo test -p calib-targets-ffi --test release_archive_smoke -- --ignored --nocapture
+cargo test -p calib-targets-ffi --features package-archive --test release_archive_smoke -- --ignored --nocapture
 ```
 
 The header check fails when `calib_targets_ffi.h` is stale; regenerate it by

@@ -60,6 +60,10 @@ pub fn schemas() -> Vec<SchemaFile> {
             name: "puzzleboard_params.json",
             schema: schema_of::<calib_targets_puzzleboard::PuzzleBoardParams>(),
         },
+        SchemaFile {
+            name: "puzzlepole_params.json",
+            schema: schema_of::<calib_targets_puzzleboard::PuzzlePoleParams>(),
+        },
         // The `doc` argument of `render_target_bundle_json`.
         SchemaFile {
             name: "printable_target_document.json",

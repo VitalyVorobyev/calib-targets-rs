@@ -69,7 +69,7 @@ jobs:
         if: matrix.toolchain == 'stable'
         run: >
           cargo check --workspace --all-targets --features
-          calib-targets-aruco/tracing,calib-targets-charuco/diagnostics,calib-targets-charuco/link-check,calib-targets-charuco/dataset,calib-targets-charuco/tracing,calib-targets-chessboard/diagnostics,calib-targets-chessboard/tracing,calib-targets-core/tracing,calib-targets-marker/diagnostics,calib-targets-marker/tracing,calib-targets-puzzleboard/diagnostics,calib-targets-puzzleboard/dataset,calib-targets-puzzleboard/tracing,calib-targets/image,calib-targets/cli,calib-targets/diagnostics,calib-targets/tracing,projective-grid/diagnostics,projective-grid/tracing,calib-targets-ffi/generate-header
+          calib-targets-aruco/tracing,calib-targets-charuco/diagnostics,calib-targets-charuco/link-check,calib-targets-charuco/dataset,calib-targets-charuco/tracing,calib-targets-chessboard/diagnostics,calib-targets-chessboard/tracing,calib-targets-core/tracing,calib-targets-marker/diagnostics,calib-targets-marker/tracing,calib-targets-puzzleboard/diagnostics,calib-targets-puzzleboard/dataset,calib-targets-puzzleboard/tools,calib-targets-puzzleboard/tracing,calib-targets/image,calib-targets/cli,calib-targets/diagnostics,calib-targets/tracing,projective-grid/diagnostics,projective-grid/tracing,calib-targets-ffi/generate-header,calib-targets-ffi/package-archive
 
       # `cargo doc` is a *hard* gate in this workspace: broken intra-doc links
       # and ambiguous references (a name that is both a module and a function)

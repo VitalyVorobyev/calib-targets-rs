@@ -345,19 +345,17 @@ pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = square::SQUARE_CARDINAL_OFFSETS;
 /// Six axial neighbour offsets on a hex grid.
 pub const HEX_AXIAL_OFFSETS: [Coord; 6] = hex::HEX_AXIAL_OFFSETS;
 
-/// Dihedral group D4 acting on square lattice coordinates.
-pub const D4_TRANSFORMS: [GridTransform; 8] = square::D4_TRANSFORMS;
-
-/// The dihedral group D4 in alignment-search order: the identity, the
-/// rotations as successive powers of `(u, v) -> (v, -u)`, then the four
-/// reflections in [`D4_TRANSFORMS`] order.
+/// Dihedral group D4 acting on square lattice coordinates, in the workspace's
+/// canonical alignment-search order: the identity, the rotations as successive
+/// powers of `(u, v) -> (v, -u)`, then the four reflections.
 ///
-/// Rotation index `k < 4` is the inverse of `D4_TRANSFORMS[k]`; the first four
-/// entries are the orientation-preserving rotation subgroup `C4`. Component
-/// merge and every target detector's board-alignment search enumerate this
-/// table, so an index means the same transform everywhere and equal-score ties
-/// resolve identically.
-pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = square::GRID_TRANSFORMS_D4;
+/// The first four entries (`D4_TRANSFORMS[..4]`) are the orientation-preserving
+/// rotation subgroup `C4` (`determinant == +1`), and the last four
+/// (`D4_TRANSFORMS[4..]`) are the four reflections (`determinant == -1`).
+/// Component merge and every target detector's board-alignment search enumerate
+/// this table, so an index means the same transform everywhere and equal-score
+/// ties resolve identically.
+pub const D4_TRANSFORMS: [GridTransform; 8] = square::D4_TRANSFORMS;
 
 /// Dihedral group D6 acting on hex axial coordinates.
 pub const D6_TRANSFORMS: [GridTransform; 12] = hex::D6_TRANSFORMS;
@@ -407,6 +405,10 @@ mod tests {
         assert!(D4_TRANSFORMS
             .iter()
             .all(|t| t.lattice() == LatticeKind::Square && t.determinant().abs() == 1));
+        assert!(D4_TRANSFORMS[..4].iter().all(|t| t.determinant() == 1));
+        assert!(D4_TRANSFORMS[4..].iter().all(|t| t.determinant() == -1));
+        assert_eq!(D4_TRANSFORMS[1].apply(Coord::new(1, 0)), Coord::new(0, -1));
+        assert_eq!(D4_TRANSFORMS[1].apply(Coord::new(0, 1)), Coord::new(1, 0));
     }
 
     #[test]
@@ -433,7 +435,7 @@ mod tests {
             json,
             serde_json::json!({
                 "lattice": "square",
-                "matrix": [[0, -1], [1, 0]],
+                "matrix": [[0, 1], [-1, 0]],
                 "translation": [3, -4]
             })
         );

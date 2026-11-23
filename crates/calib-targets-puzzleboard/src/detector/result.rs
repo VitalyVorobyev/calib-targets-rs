@@ -139,6 +139,47 @@ pub struct PuzzleBoardDecodeInfo {
     pub master_origin_col: i32,
 }
 
+impl PuzzleBoardDecodeInfo {
+    /// Construct a decode summary from its six core metrics; period-3 consensus
+    /// metrics default to `logical_bits = edges_observed`,
+    /// `logical_bit_error_rate = bit_error_rate`, and `dot_dissent_rate = 0.0`
+    /// unless overridden via [`PuzzleBoardDecodeInfo::with_consensus`].
+    pub fn new(
+        edges_observed: usize,
+        edges_matched: usize,
+        mean_confidence: f32,
+        bit_error_rate: f32,
+        master_origin_row: i32,
+        master_origin_col: i32,
+    ) -> Self {
+        Self {
+            edges_observed,
+            edges_matched,
+            mean_confidence,
+            bit_error_rate,
+            logical_bits: edges_observed,
+            logical_bit_error_rate: bit_error_rate,
+            dot_dissent_rate: 0.0,
+            master_origin_row,
+            master_origin_col,
+        }
+    }
+
+    /// Attach the period-3 replica voting metrics computed before scoring.
+    #[must_use]
+    pub fn with_consensus(
+        mut self,
+        logical_bits: usize,
+        logical_bit_error_rate: f32,
+        dot_dissent_rate: f32,
+    ) -> Self {
+        self.logical_bits = logical_bits;
+        self.logical_bit_error_rate = logical_bit_error_rate;
+        self.dot_dissent_rate = dot_dissent_rate;
+        self
+    }
+}
+
 /// Full result of a PuzzleBoard detection call.
 ///
 /// `#[non_exhaustive]`: construct with [`PuzzleBoardDetection::new`].
@@ -202,5 +243,27 @@ impl PuzzleBoardDetection {
                 .map(PuzzleBoardCorner::to_labeled)
                 .collect(),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_info_constructor_and_with_consensus_populate_fields() {
+        let base = PuzzleBoardDecodeInfo::new(40, 38, 0.9, 0.05, 12, 34);
+        assert_eq!(base.edges_observed, 40);
+        assert_eq!(base.edges_matched, 38);
+        assert_eq!(base.logical_bits, 40);
+        assert_eq!(base.logical_bit_error_rate, 0.05);
+        assert_eq!(base.dot_dissent_rate, 0.0);
+        assert_eq!(base.master_origin_row, 12);
+        assert_eq!(base.master_origin_col, 34);
+
+        let full = base.with_consensus(18, 0.02, 0.01);
+        assert_eq!(full.logical_bits, 18);
+        assert_eq!(full.logical_bit_error_rate, 0.02);
+        assert_eq!(full.dot_dissent_rate, 0.01);
     }
 }

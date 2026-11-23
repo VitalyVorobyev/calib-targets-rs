@@ -381,6 +381,25 @@ def test_puzzlepole_detect_with_corners_matches_the_one_shot_path() -> None:
     assert len(result.corners) > 0
 
 
+def test_diagnose_puzzlepole_roundtrip() -> None:
+    image = _load_gray("puzzlepole_view.png")
+    spec = _puzzlepole_spec()
+    params = ct.PuzzlePoleParams.for_pole(spec)
+
+    payload = ct.diagnose_puzzlepole(image, params=params)
+    assert payload["result"] is not None
+    detection = ct.PuzzlePoleDetection.from_dict(payload["result"])
+    assert detection.spec == spec
+    diag = payload["diagnostics"]
+    assert "observed_edges" in diag and len(diag["observed_edges"]) > 0
+    assert "decode" in diag
+
+    traced = _core.trace_chessboard_topological(image, chess_cfg=params.chess.to_dict())
+    payload2 = ct.diagnose_puzzlepole_with_corners(image, traced["corners"], params=params)
+    assert payload2["result"] is not None
+    assert "observed_edges" in payload2["diagnostics"]
+
+
 # ---------------------------------------------------------------------------
 # low-level key-shape assertions on the raw Rust dict
 # ---------------------------------------------------------------------------

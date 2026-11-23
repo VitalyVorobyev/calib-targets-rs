@@ -6,7 +6,7 @@ use std::time::Instant;
 
 use calib_targets::chessboard::{ChessboardAdvancedTuning, ChessboardDetector, ChessboardParams};
 use calib_targets::core::DetectorConfig;
-use calib_targets::detect::{default_chess_config, detect_corners, OrientationMethod};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view, OrientationMethod};
 use calib_targets_bench::span_timing::{
     command_output, cpu_name, span_ms, summarize, SpanTotals, SummaryStats, TimingLayer,
 };
@@ -268,7 +268,7 @@ fn measure_once(
     totals.clear();
     let full_start = Instant::now();
     let corner_start = Instant::now();
-    let corners = detect_corners(img, chess_cfg);
+    let corners = detect_corners(&gray_view(img), chess_cfg);
     let corner_wall_ms = corner_start.elapsed().as_secs_f64() * 1000.0;
 
     let grid_start = Instant::now();

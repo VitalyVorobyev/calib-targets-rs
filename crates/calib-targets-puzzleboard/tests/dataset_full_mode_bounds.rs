@@ -97,10 +97,9 @@ fn detect_one(
     let detector = PuzzleBoardDetector::new(params).expect("detector");
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(image, &chess_cfg);
-    detector
-        .detect_with_corners(&gray_view(image), &corners)
-        .ok()
+    let view = gray_view(image);
+    let corners = detect_corners(&view, &chess_cfg);
+    detector.detect_with_corners(&view, &corners).ok()
 }
 
 fn dataset_present_or_skip(test_name: &str) -> bool {

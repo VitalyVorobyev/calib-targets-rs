@@ -42,11 +42,12 @@ impl AxisEstimate {
 
 // ---- Conversions to / from projective-grid ----
 
-/// Promote [`AxisEstimate`] into the [`projective_grid`] crate's generic
-/// local-axis shape.
-#[inline]
-pub fn axis_estimate_to_next(a: AxisEstimate) -> NextLocalAxis {
-    NextLocalAxis::new(a.angle, Some(a.fit_std_error))
+impl From<AxisEstimate> for NextLocalAxis {
+    /// Promote [`AxisEstimate`] into [`projective_grid::LocalAxis`].
+    #[inline]
+    fn from(a: AxisEstimate) -> Self {
+        Self::new(a.angle, Some(a.fit_std_error))
+    }
 }
 
 #[cfg(test)]
@@ -73,7 +74,7 @@ mod axis_tests {
             angle: 0.75,
             fit_std_error: 0.02,
         };
-        let next = axis_estimate_to_next(axis);
+        let next = NextLocalAxis::from(axis);
         assert_eq!(next.angle_rad, 0.75);
         assert_eq!(next.sigma_rad, Some(0.02));
     }

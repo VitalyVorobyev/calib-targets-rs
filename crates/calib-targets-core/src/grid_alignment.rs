@@ -64,7 +64,7 @@ pub fn cell_to_corner_alignment(cell_alignment: GridAlignment) -> GridAlignment 
 
 /// The 8 dihedral transforms `D4` on the integer grid, in the workspace's
 /// alignment-search order: index `1` is `(u, v) -> (v, -u)`.
-pub use projective_grid::expert::lattice::GRID_TRANSFORMS_D4;
+pub use projective_grid::expert::lattice::D4_TRANSFORMS as GRID_TRANSFORMS_D4;
 
 /// The 4 rotations `C4` on the integer grid: the orientation-preserving
 /// (`determinant == +1`) subgroup of [`GRID_TRANSFORMS_D4`].

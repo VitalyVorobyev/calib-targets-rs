@@ -235,6 +235,9 @@ export interface GeneratedTargetBundle {
 /** `nalgebra::Point2<f32>` serialises as a 2-tuple. */
 export type Point2 = [number, number];
 
+/** `nalgebra::Point3<f32>` serialises as a 3-tuple. */
+export type Point3 = [number, number, number];
+
 /** Canonical integer grid coordinate `(u, v)` (Rust `Coord`). `u` is the
  * grid's first axis (right), `v` the second (down). */
 export interface Coord {
@@ -927,6 +930,60 @@ export interface PuzzleBoardDecodeConfig {
   advanced?: PuzzleBoardAdvancedTuning;
 }
 
+// ---------------------------------------------------------------------------
+// PuzzlePole types and parameters
+// ---------------------------------------------------------------------------
+
+/** Specification of a physical PuzzlePole (Rust `PuzzlePoleSpec`). */
+export interface PuzzlePoleSpec {
+  circumference_squares: number;
+  start_row: number;
+  axial_start_col: number;
+  axial_squares: number;
+  cell_size_mm: number;
+}
+
+/** Decode knobs for a PuzzlePole (Rust `PuzzlePoleDecodeConfig`). */
+export interface PuzzlePoleDecodeConfig {
+  min_circumference_span?: number;
+  min_axial_span?: number;
+  min_bit_confidence?: number;
+  max_bit_error_rate?: number;
+  search_all_components?: boolean;
+  sample_radius_rel?: number;
+  scoring_mode?: PuzzleBoardScoringMode;
+  symmetry_mode?: PuzzleBoardSymmetryMode;
+  advanced?: PuzzleBoardAdvancedTuning;
+}
+
+/** Configuration for the PuzzlePole detector (Rust `PuzzlePoleParams`). */
+export interface PuzzlePoleParams {
+  chess?: ChessConfig;
+  chessboard?: ChessboardParams;
+  pole: PuzzlePoleSpec;
+  decode?: PuzzlePoleDecodeConfig;
+}
+
+/** One decoded corner on a PuzzlePole (Rust `PuzzlePoleCorner`). */
+export interface PuzzlePoleCorner {
+  position: Point2;
+  position_covariance?: PositionCovariance | null;
+  grid: Coord;
+  id: number;
+  surface_position: Point2;
+  object_position: Point3;
+  score: number;
+}
+
+/** Result of detecting a PuzzlePole (Rust `PuzzlePoleDetection`). */
+export interface PuzzlePoleDetection {
+  corners: PuzzlePoleCorner[];
+  alignment: GridAlignment;
+  decode: PuzzleBoardDecodeInfo;
+  spec: PuzzlePoleSpec;
+  quality: DetectionQuality;
+}
+
 export interface PuzzleBoardParams {
   /**
    * ChESS corner front-end for the main detection pass.
@@ -960,7 +1017,7 @@ export interface DetectionWithDiagnostics<TResult, TDiagnostics> {
   /**
    * The diagnostics payload, produced even when detection fails
    * (best-effort evidence for overlays) — always present across ChArUco,
-   * PuzzleBoard, and marker-board detectors.
+   * PuzzleBoard, PuzzlePole, and marker-board detectors.
    */
   diagnostics: TDiagnostics;
 }

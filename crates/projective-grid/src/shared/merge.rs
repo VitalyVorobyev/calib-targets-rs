@@ -45,7 +45,7 @@ use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
 
 use crate::lattice::rebase::rebase_to_origin;
-use crate::lattice::{Coord, GridTransform, LatticeKind, GRID_TRANSFORMS_D4};
+use crate::lattice::{Coord, GridTransform, LatticeKind, D4_TRANSFORMS};
 use crate::shared::cell_size::median_edge_length;
 use crate::spatial::PointIndex;
 
@@ -311,7 +311,7 @@ pub fn merge_components_local_for(
     lattice: LatticeKind,
 ) -> ComponentMergeResult {
     let transforms: &[GridTransform] = match lattice {
-        LatticeKind::Square => &GRID_TRANSFORMS_D4,
+        LatticeKind::Square => &D4_TRANSFORMS,
         LatticeKind::Hex => lattice.symmetry_transforms(),
     };
     merge_components_local_with_transforms(components, positions, params, transforms, lattice)

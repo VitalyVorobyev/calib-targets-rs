@@ -151,7 +151,10 @@ use calib_targets::puzzleboard::{PuzzlePoleParams, PuzzlePoleSpec};
 let img = image::open("out/puzzlepole_view.png")?.to_luma8();
 
 let spec = PuzzlePoleSpec::new(24, 12, 20.0)?;
-let found = detect::detect_puzzlepole_best(&img, &PuzzlePoleParams::sweep_for_pole(&spec))?;
+let found = detect::detect_puzzlepole_best(
+    &detect::gray_view(&img),
+    &PuzzlePoleParams::sweep_for_pole(&spec),
+)?;
 
 println!("{} corners identified", found.corners.len());
 # Ok(())
@@ -208,7 +211,7 @@ here.
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 # let img = image::open("out/puzzlepole_view.png")?.to_luma8();
 # let spec = PuzzlePoleSpec::new(24, 12, 20.0)?;
-# let found = detect::detect_puzzlepole_best(&img, &PuzzlePoleParams::sweep_for_pole(&spec))?;
+# let found = detect::detect_puzzlepole_best(&detect::gray_view(&img), &PuzzlePoleParams::sweep_for_pole(&spec))?;
 for (image_point, object_point) in found.correspondences() {
     // image_point: Point2<f32> in pixels
     // object_point: Point3<f32> in millimetres on the cylinder

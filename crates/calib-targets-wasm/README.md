@@ -263,6 +263,13 @@ spec or invalid parameters.
 | `detect_puzzleboard_best(w, h, px, configs)` | `PuzzleBoardDetection \| null` |
 | `diagnose_puzzleboard(w, h, px, cfg, params)` | `{ result: PuzzleBoardDetection \| null, diagnostics: PuzzleBoardDiagnostics }` |
 | `diagnose_puzzleboard_with_corners(w, h, px, corners, params)` | same as `diagnose_puzzleboard` |
+| `detect_puzzlepole(w, h, px, cfg, params)` | `PuzzlePoleDetection \| null` |
+| `detect_puzzlepole_with_corners(w, h, px, corners, params)` | `PuzzlePoleDetection \| null` |
+| `detect_puzzlepole_best(w, h, px, configs)` | `PuzzlePoleDetection \| null` |
+| `diagnose_puzzlepole(w, h, px, cfg, params)` | `{ result: PuzzlePoleDetection \| null, diagnostics: PuzzleBoardDiagnostics }` |
+| `diagnose_puzzlepole_with_corners(w, h, px, corners, params)` | same as `diagnose_puzzlepole` |
+| `puzzlepole_sweep_for_pole(pole)` | `PuzzlePoleParams[]` — pass to `detect_puzzlepole_best` |
+| `puzzlepole_periods()`, `puzzlepole_distinct_poles(c, a, mm)` | supported periods and disjoint pole specs |
 | `detect_marker_board(w, h, px, cfg, params)` | `MarkerBoardDetection \| null` |
 | `detect_marker_board_with_corners(w, h, px, corners, params)` | `MarkerBoardDetection \| null` |
 | `detect_marker_board_best(w, h, px, configs)` | `MarkerBoardDetection \| null` |
@@ -279,7 +286,7 @@ spec or invalid parameters.
 | `render_marker_board_bundle(inner_rows, inner_cols, square_mm, dpi)` | `GeneratedTargetBundle` |
 | `render_puzzleboard_bundle(rows, cols, square_mm, dpi)` | `GeneratedTargetBundle` |
 | `render_target_bundle_json(doc)` | `GeneratedTargetBundle` — full `PrintableTargetDocument`: page size, orientation, margin and every spec field |
-| `default_chess_config()`, `default_chessboard_params()`, `default_puzzleboard_params(rows, cols)`, `default_marker_board_params()` | baseline configs |
+| `default_chess_config()`, `default_chessboard_params()`, `default_puzzleboard_params(rows, cols)`, `default_puzzlepole_params(c, a, mm)`, `default_marker_board_params()` | baseline configs |
 
 ## JSON Schemas
 
@@ -296,6 +303,7 @@ validator can edit and check them. Import them by deep path (the package has no
 | `schemas/marker_board_params.json` | `default_marker_board_params()`, the elements of `marker_board_sweep_for_board(...)` |
 | `schemas/marker_board_spec.json` | the `spec` argument of `marker_board_sweep_for_board` |
 | `schemas/puzzleboard_params.json` | `default_puzzleboard_params(...)`, the elements of `puzzleboard_sweep_for_board(...)` |
+| `schemas/puzzlepole_params.json` | `default_puzzlepole_params(...)`, the elements of `puzzlepole_sweep_for_pole(...)` |
 | `schemas/printable_target_document.json` | the `doc` argument of `render_target_bundle_json` |
 
 The `detect_*_best` functions take an array of the matching params object, so
@@ -338,9 +346,9 @@ documented as "`+inf` disables" takes a very large number such as `1e30`.
 - **No threads.** The WASM build is single-threaded; heavy detection on
   4K images may exceed 100 ms per call. Consider Web Workers.
 
-Diagnostics are available for the three compound targets:
-`diagnose_charuco`, `diagnose_marker_board`, and `diagnose_puzzleboard`
-(plus their `_with_corners` counterparts) return a
+Diagnostics are available for the compound targets:
+`diagnose_charuco`, `diagnose_marker_board`, `diagnose_puzzleboard`, and
+`diagnose_puzzlepole` (plus their `_with_corners` counterparts) return a
 `{ result, diagnostics }` object. `diagnostics` is produced even when
 detection fails, so overlay tools can render the failure mode. The
 diagnostics payloads carry a looser stability promise than the typed

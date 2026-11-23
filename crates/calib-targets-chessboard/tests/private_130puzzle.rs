@@ -13,7 +13,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector, ChessboardParams};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
@@ -178,7 +178,7 @@ fn puzzle130_topological_smoke_target13_snap0_rejects_wrong_labels() {
     }
 
     let snap = load_snap(13, 0);
-    let corners = detect_corners(&snap, &default_chess_config());
+    let corners = detect_corners(&gray_view(&snap), &default_chess_config());
     let detection = default_topological_detector()
         .detect(&corners)
         .expect("target_13 snap 0 must produce a topological detection");
@@ -224,7 +224,7 @@ fn puzzle130_full_topological_recall_contract() {
         );
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap = load_snap(target_idx, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg);
+            let corners = detect_corners(&gray_view(&snap), &chess_cfg);
             frames += 1;
             let Some(detection) = detector.detect(&corners) else {
                 eprintln!("target_{target_idx} snap {snap_idx}: no detection");

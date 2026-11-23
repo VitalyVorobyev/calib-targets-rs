@@ -3,7 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::{
     trace_topological, ChessboardAdvancedTuning, ChessboardDetection, ChessboardDetector,
     ChessboardParams,
@@ -163,7 +163,7 @@ fn topo_grid_manifest_gates_hold() {
         let path = root.join(&case.path);
         let img = load_image(&path);
         let default_cfg = default_chess_config();
-        let default_corners = detect_corners(&img, &default_cfg);
+        let default_corners = detect_corners(&gray_view(&img), &default_cfg);
 
         if let Some(gate) = &case.topological {
             let detection = ChessboardDetector::new(topological_params())

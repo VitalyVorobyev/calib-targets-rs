@@ -133,13 +133,14 @@ fn main() -> Result<(), Box<dyn Error>> {
     let img = ImageReader::open(&args.image)?.decode()?.to_luma8();
     let (width, height) = (img.width(), img.height());
 
+    let view = gray_view(&img);
+
     // Corners are stable detector input; detect them once and reuse them for
     // every repeat so the timed loop measures only `detect`.
-    let corners = detect_corners(&img, &default_chess_config());
+    let corners = detect_corners(&view, &default_chess_config());
 
     // One diagnostics pass (production work, identical to `detect`) to recover
     // the candidate-cell count for the workload report. Not timed.
-    let view = gray_view(&img);
     let (diag_result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
     let candidate_cells: usize = diagnostics
         .components

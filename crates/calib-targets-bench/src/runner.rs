@@ -8,7 +8,6 @@ use calib_targets::chessboard::{
 };
 use calib_targets::detect::{gray_view, DetectorConfig};
 use calib_targets::DetectionQuality;
-use calib_targets_core::axis_estimate_to_next;
 use chess_corners::Uncertainty;
 use image::{imageops::FilterType, GenericImageView, GrayImage, ImageReader};
 use projective_grid::{
@@ -217,10 +216,7 @@ fn run_grid_engine(_params: &ChessboardParams, corners: &[ChessCorner]) -> Optio
         .map(|(i, c)| {
             OrientedFeature::new(
                 PointFeature::new(i, c.position),
-                [
-                    axis_estimate_to_next(c.axes[0]),
-                    axis_estimate_to_next(c.axes[1]),
-                ],
+                [c.axes[0].into(), c.axes[1].into()],
             )
         })
         .collect();

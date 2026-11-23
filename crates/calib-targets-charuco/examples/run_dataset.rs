@@ -346,16 +346,16 @@ fn run_one(ctx: &RunCtx<'_>) -> (CharucoFrameReport, Option<FrameDiag>) {
     let width = snap.width();
     let height = snap.height();
 
-    let t_total = Instant::now();
-    let t_chess = Instant::now();
-    let corners: Vec<Corner> = detect_corners(snap, chess_cfg);
-    let chess_ms = t_chess.elapsed().as_secs_f32() * 1000.0;
-
     let view = GrayImageView {
         width: width as usize,
         height: height as usize,
         data: snap.as_raw(),
     };
+
+    let t_total = Instant::now();
+    let t_chess = Instant::now();
+    let corners: Vec<Corner> = detect_corners(&view, chess_cfg);
+    let chess_ms = t_chess.elapsed().as_secs_f32() * 1000.0;
 
     let t_detect = Instant::now();
     let (outcome, detect_diag) = detector.diagnose_with_corners(&view, &corners);

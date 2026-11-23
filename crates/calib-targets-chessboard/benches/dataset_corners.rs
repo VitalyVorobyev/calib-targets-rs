@@ -22,7 +22,7 @@
 
 use std::path::PathBuf;
 
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion};
 use image::imageops::FilterType;
 use image::{GenericImageView, GrayImage};
@@ -85,8 +85,9 @@ fn bench_corners(c: &mut Criterion) {
         };
         loaded_any = true;
         group.bench_with_input(BenchmarkId::from_parameter(label), &snap, |b, snap| {
+            let view = gray_view(snap);
             b.iter(|| {
-                let corners = detect_corners(snap, &cfg);
+                let corners = detect_corners(&view, &cfg);
                 criterion::black_box(corners)
             });
         });

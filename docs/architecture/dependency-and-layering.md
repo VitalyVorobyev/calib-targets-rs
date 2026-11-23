@@ -85,9 +85,9 @@ in are documented once, in
    an optional recovery schedule. Only `(Square, Oriented2)` is on a workspace
    detector path; the rest is external library scope.
 2. **Low-level ownership.** L0 owns the normalized DLT core, the grid-position
-   predictor, the modulo-π helpers, the D4/D6 tables, `Coord`, and the affine
-   `GridTransform`. `core` re-exports or wraps those primitives (its
-   `GRID_TRANSFORMS_D4` is a reordering of the L0 table) and adds only
+   predictor, the modulo-π helpers, the canonical D4/D6 tables, `Coord`, and
+   the affine `GridTransform`. `core` re-exports those primitives directly (its
+   `GRID_TRANSFORMS_D4` is a re-export of L0's `D4_TRANSFORMS`) and adds only
    image-domain operations. This direction follows the DAG and avoids a
    dependency cycle.
 

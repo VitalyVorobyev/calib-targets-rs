@@ -23,7 +23,9 @@ use std::path::PathBuf;
 
 use calib_targets::blur::{chessboard_blur, puzzleboard_blur, BlurDecline, CornerBlur};
 use calib_targets::chessboard::ChessboardParams;
-use calib_targets::detect::{default_chess_config, detect_chessboard, detect_puzzleboard_best};
+use calib_targets::detect::{
+    default_chess_config, detect_chessboard, detect_puzzleboard_best, gray_view,
+};
 use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
 use calib_targets_bench::accuracy::blur::robust_sd;
 use image::GrayImage;
@@ -82,8 +84,9 @@ fn puzzleboard_photograph_has_a_smooth_honest_blur_field() {
         return;
     }
     let img = load_gray("puzzleboard_reference/example4.png");
+    let view = gray_view(&img);
     let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("board spec");
-    let mut detection = detect_puzzleboard_best(&img, &PuzzleBoardParams::sweep_for_board(&board))
+    let mut detection = detect_puzzleboard_best(&view, &PuzzleBoardParams::sweep_for_board(&board))
         .expect("the photograph decodes");
     // A 15 × 15-corner block on the photograph's defocused side (its centre
     // in master coordinates); the in-focus centre is sharpened and declines.
@@ -91,7 +94,7 @@ fn puzzleboard_photograph_has_a_smooth_honest_blur_field() {
     detection
         .corners
         .retain(|c| (c.grid.u - u0).abs() <= 7 && (c.grid.v - v0).abs() <= 7);
-    let blur = puzzleboard_blur(&img, &detection);
+    let blur = puzzleboard_blur(&view, &detection);
     let estimates: HashMap<(i32, i32), CornerBlur> = detection
         .corners
         .iter()
@@ -128,11 +131,12 @@ fn puzzleboard_photograph_has_a_smooth_honest_blur_field() {
 #[test]
 fn sharpened_photograph_is_declined_as_sharper_than_the_pixel() {
     let img = load_gray("mid.png");
+    let view = gray_view(&img);
     let mut params = ChessboardParams::default();
     params.min_corner_strength = 0.5;
     let detection =
-        detect_chessboard(&img, &default_chess_config(), &params).expect("chessboard detects");
-    let blur = chessboard_blur(&img, &detection);
+        detect_chessboard(&view, &default_chess_config(), &params).expect("chessboard detects");
+    let blur = chessboard_blur(&view, &detection);
     let sharper = blur
         .iter()
         .filter(|b| matches!(b, Err(BlurDecline::SharperThanPixel)))

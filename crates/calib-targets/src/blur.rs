@@ -11,10 +11,11 @@
 //! use calib_targets::chessboard::ChessboardParams;
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
-//! let img = image::open("board.png")?.to_luma8();
+//! let img = calib_targets::image::open("board.png")?.to_luma8();
+//! let view = detect::gray_view(&img);
 //! let detection =
-//!     detect::detect_chessboard(&img, &detect::default_chess_config(), &ChessboardParams::default())?;
-//! for (corner, blur) in detection.corners.iter().zip(blur::chessboard_blur(&img, &detection)) {
+//!     detect::detect_chessboard(&view, &detect::default_chess_config(), &ChessboardParams::default())?;
+//! for (corner, blur) in detection.corners.iter().zip(blur::chessboard_blur(&view, &detection)) {
 //!     match blur {
 //!         Ok(b) => println!("{:?}: σ = {:.2} ± {:.2} px", corner.grid, b.sigma_px, b.sigma_std_error_px),
 //!         Err(why) => println!("{:?}: no estimate ({why})", corner.grid),
@@ -79,8 +80,7 @@ use nalgebra::Point2;
 
 use crate::chessboard::ChessboardDetection;
 use crate::core::blur::{estimate_corner_blur, BlurPattern};
-use crate::core::{estimate_homography_rect_to_img, Homography};
-use crate::detect::gray_view;
+use crate::core::{estimate_homography_rect_to_img, GrayImageView, Homography};
 use crate::marker::{CirclePolarity, MarkerBoardDetection, MarkerBoardSpec};
 use crate::puzzleboard::code_maps;
 use crate::puzzleboard::PuzzleBoardDetection;
@@ -107,7 +107,7 @@ const MAX_CIRCLE_SAGITTA_PX: f64 = 0.05;
 /// A plain chessboard's colour parity is not observable from its labels, so
 /// the contrast's sign is fitted per corner.
 pub fn chessboard_blur(
-    image: &::image::GrayImage,
+    image: &GrayImageView<'_>,
     detection: &ChessboardDetection,
 ) -> Vec<Result<CornerBlur, BlurDecline>> {
     let lattice = Lattice::new(detection.corners.iter().map(|c| (c.grid, c.position)));
@@ -128,7 +128,7 @@ pub fn chessboard_blur(
 ///
 /// Assumes the standard dot diameter of a third of a square.
 pub fn puzzleboard_blur(
-    image: &::image::GrayImage,
+    image: &GrayImageView<'_>,
     detection: &PuzzleBoardDetection,
 ) -> Vec<Result<CornerBlur, BlurDecline>> {
     let lattice = Lattice::new(detection.corners.iter().map(|c| (c.grid, c.position)));
@@ -156,7 +156,7 @@ pub fn puzzleboard_blur(
 /// diameter). Without a resolved alignment the circles' cells are unknown
 /// and every corner is declined ([`BlurDecline::PatternUnknown`]).
 pub fn marker_board_blur(
-    image: &::image::GrayImage,
+    image: &GrayImageView<'_>,
     board: &MarkerBoardSpec,
     detection: &MarkerBoardDetection,
 ) -> Vec<Result<CornerBlur, BlurDecline>> {
@@ -241,14 +241,14 @@ impl Lattice {
     /// down over the known cells.
     fn estimate(
         &self,
-        image: &::image::GrayImage,
+        image: &GrayImageView<'_>,
         (u, v): (i32, i32),
         build: impl FnOnce(&mut LocalPattern),
     ) -> Result<CornerBlur, BlurDecline> {
         let frame = self.local_frame((u, v)).ok_or(BlurDecline::NoGeometry)?;
         let mut local = LocalPattern::new(self, (u, v), &frame);
         build(&mut local);
-        estimate_corner_blur(&gray_view(image), &local.finish(), &frame)
+        estimate_corner_blur(image, &local.finish(), &frame)
     }
 }
 

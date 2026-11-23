@@ -4,7 +4,7 @@ use calib_targets_print::{render_screen_target, stem_paths, ScreenTargetOptions}
 use clap::{Args, Subcommand};
 
 use super::error::CliError;
-use super::gen::{
+use super::target_args::{
     charuco_from_args, chessboard_from_args, puzzleboard_from_args, CharucoGeometryArgs,
     ChessboardGeometryArgs, PuzzleboardGeometryArgs,
 };

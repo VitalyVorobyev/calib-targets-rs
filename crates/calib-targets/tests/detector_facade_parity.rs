@@ -85,7 +85,7 @@ fn charuco_facade_matches_detector() {
     let img = load_gray("small.png");
     let params = charuco_params();
 
-    let via_facade = detect::detect_charuco(&img, &params);
+    let via_facade = detect::detect_charuco(&gray_view(&img), &params);
     let detector = CharucoDetector::new(params).expect("detector");
     let via_detector = detector.detect(&gray_view(&img));
 
@@ -141,7 +141,7 @@ fn puzzleboard_facade_matches_detector() {
     let img = load_gray("puzzleboard_small.png");
     let params = puzzleboard_params();
 
-    let via_facade = detect::detect_puzzleboard(&img, &params);
+    let via_facade = detect::detect_puzzleboard(&gray_view(&img), &params);
     let detector = PuzzleBoardDetector::new(params).expect("detector");
     let via_detector = detector.detect(&gray_view(&img));
 
@@ -197,7 +197,7 @@ fn marker_board_facade_matches_detector() {
     let img = load_gray("markerboard.png");
     let params = marker_params();
 
-    let via_facade = detect::detect_marker_board(&img, &params);
+    let via_facade = detect::detect_marker_board(&gray_view(&img), &params);
     let detector = MarkerBoardDetector::new(params).expect("detector");
     let via_detector = detector.detect(&gray_view(&img));
 

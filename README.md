@@ -91,7 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The simplest call: default ChESS corner config + default detector params.
     let detection = detect::detect_chessboard(
-        &img,
+        &detect::gray_view(&img),
         &detect::default_chess_config(),
         &ChessboardParams::default(),
     );
@@ -129,7 +129,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 
     let detection = detect::detect_chessboard_best(
-        &img,
+        &detect::gray_view(&img),
         &detect::default_chess_config(),
         &ChessboardParams::sweep_default(),
     )?;

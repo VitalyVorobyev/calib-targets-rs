@@ -26,9 +26,8 @@ pub mod lattice {
     use crate::GridEntry;
 
     pub use crate::lattice::{
-        predict_grid_position, GridTransform, Hex, Lattice, PredictedPosition, Square,
-        D4_TRANSFORMS, D6_TRANSFORMS, GRID_TRANSFORMS_D4, HEX_AXIAL_OFFSETS,
-        SQUARE_CARDINAL_OFFSETS,
+        predict_grid_position, CellTopology, GridTransform, Hex, Lattice, PredictedPosition,
+        Square, D4_TRANSFORMS, D6_TRANSFORMS, HEX_AXIAL_OFFSETS, SQUARE_CARDINAL_OFFSETS,
     };
 
     /// Canonicalise square-grid coordinates while preserving entry provenance.
@@ -120,7 +119,9 @@ pub mod square {
 /// Labelled-component merge and scale primitives.
 pub mod component {
     pub use crate::shared::cell_size::{max_axis_median_edge_length, median_edge_length};
-    pub use crate::shared::merge::{merge_components_local, LocalMergeParams};
+    pub use crate::shared::merge::{
+        merge_components_local, ComponentMergeResult, ComponentMergeStats, LocalMergeParams,
+    };
 }
 
 /// Pattern-aware candidate attachment primitives.
@@ -138,7 +139,8 @@ pub mod fill {
 /// Drop-only structural validation primitives.
 pub mod validation {
     pub use crate::shared::validate::{
-        validate, LabelledEntry, ValidationParams, ValidationResult,
+        validate, EdgeShapeDiagnostic, EdgeShapeParams, LabelledEntry, ValidationParams,
+        ValidationResult,
     };
 
     /// Direct wrong-label and connected-component filters.
@@ -148,5 +150,6 @@ pub mod validation {
 }
 
 pub use crate::detect::DetectionTuning;
+pub use crate::float::Float;
 pub use crate::shared::recovery_schedule::{RecoveryParams, RecoverySchedule};
 pub use crate::topological::TopologicalParams;

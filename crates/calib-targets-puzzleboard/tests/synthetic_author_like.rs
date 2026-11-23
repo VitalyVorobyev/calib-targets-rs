@@ -171,7 +171,7 @@ fn synthetic_author_like_photos_decode_against_canonical_map() {
         )
         .expect("board spec");
         let sweep = PuzzleBoardParams::sweep_for_board(&board);
-        let result = detect::detect_puzzleboard_best(&img, &sweep)
+        let result = detect::detect_puzzleboard_best(&detect::gray_view(&img), &sweep)
             .unwrap_or_else(|err| panic!("{} failed to decode: {err}", scenario.name));
         if let Some(out_dir) = overlay_dir.as_deref() {
             write_overlay(out_dir, scenario, &img, &result);

@@ -1,5 +1,6 @@
 //! Per-corner position covariance.
 
+use crate::sym2::Sym2x2;
 use serde::{Deserialize, Serialize};
 
 /// Covariance of a corner's image position, in px² in the input image frame.
@@ -54,10 +55,7 @@ impl PositionCovariance {
     /// A negative eigenvalue (a matrix that is not positive semi-definite)
     /// counts as `0`.
     pub fn sigma_max_px(&self) -> f32 {
-        let (xx, xy, yy) = (f64::from(self.xx), f64::from(self.xy), f64::from(self.yy));
-        let mean = 0.5 * (xx + yy);
-        let half_diff = 0.5 * (xx - yy);
-        let lambda_max = mean + half_diff.hypot(xy);
+        let (_, lambda_max) = Sym2x2::from_f32(self.xx, self.xy, self.yy).eigenvalues();
         lambda_max.max(0.0).sqrt() as f32
     }
 
@@ -68,13 +66,9 @@ impl PositionCovariance {
     /// Under the covariance's Gaussian model this is χ²-distributed with two
     /// degrees of freedom, so e.g. `> 5.99` rejects at the 95 % level.
     pub fn mahalanobis_sq(&self, dx: f32, dy: f32) -> Option<f32> {
-        let (xx, xy, yy) = (f64::from(self.xx), f64::from(self.xy), f64::from(self.yy));
-        let det = xx * yy - xy * xy;
-        if !(xx > 0.0 && det > 0.0 && det.is_finite()) {
-            return None;
-        }
-        let (dx, dy) = (f64::from(dx), f64::from(dy));
-        Some(((yy * dx * dx - 2.0 * xy * dx * dy + xx * dy * dy) / det) as f32)
+        Sym2x2::from_f32(self.xx, self.xy, self.yy)
+            .mahalanobis_sq(f64::from(dx), f64::from(dy))
+            .map(|v| v as f32)
     }
 
     /// The covariance of `G·p` for a position `p` with this covariance:
@@ -85,13 +79,9 @@ impl PositionCovariance {
     /// by `s`, or the Jacobian of a homography at the point. Translations do
     /// not change a covariance.
     pub fn transformed(&self, g: &[[f32; 2]; 2]) -> Self {
-        let [[a, b], [c, d]] = g.map(|row| row.map(f64::from));
-        let (xx, xy, yy) = (f64::from(self.xx), f64::from(self.xy), f64::from(self.yy));
-        Self {
-            xx: (a * a * xx + 2.0 * a * b * xy + b * b * yy) as f32,
-            xy: (a * c * xx + (a * d + b * c) * xy + b * d * yy) as f32,
-            yy: (c * c * xx + 2.0 * c * d * xy + d * d * yy) as f32,
-        }
+        let g = g.map(|row| row.map(f64::from));
+        let s = Sym2x2::from_f32(self.xx, self.xy, self.yy).transformed(&g);
+        Self::new(s.xx as f32, s.xy as f32, s.yy as f32)
     }
 }
 

@@ -219,12 +219,11 @@ impl Board {
         image: &Rendered,
         run: &FamilyRun,
     ) -> Option<Vec<Result<CornerBlur, BlurDecline>>> {
-        let img = image::GrayImage::from_raw(
-            image.width as u32,
-            image.height as u32,
-            image.pixels.clone(),
-        )
-        .expect("buffer matches its size");
+        let img = calib_targets::core::GrayImageView {
+            width: image.width,
+            height: image.height,
+            data: &image.pixels,
+        };
         match &run.detection {
             TypedDetection::Chessboard(d) => Some(chessboard_blur(&img, d)),
             TypedDetection::PuzzleBoard(d) => Some(puzzleboard_blur(&img, d)),
@@ -370,12 +369,11 @@ impl Board {
 
 /// The plain chessboard detector with default parameters on `image`.
 fn detect_plain_chessboard(image: &Rendered, chess: &DetectorConfig) -> Result<FamilyRun, String> {
-    let img = image::GrayImage::from_raw(
-        image.width as u32,
-        image.height as u32,
-        image.pixels.clone(),
-    )
-    .expect("buffer matches its size");
+    let img = calib_targets::core::GrayImageView {
+        width: image.width,
+        height: image.height,
+        data: &image.pixels,
+    };
     let d =
         detect_chessboard(&img, chess, &ChessboardParams::default()).map_err(|e| e.to_string())?;
     Ok(FamilyRun {
