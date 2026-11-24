@@ -7,7 +7,12 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
-Breaking: needs a minor release (0.15.0).
+## [0.15.0] - 2026-11-24
+
+Breaking: the D4 transform table is unified (and reordered) and
+`GRID_TRANSFORMS_D4` is removed. Grid canonicalization is always
+right-handed, component merge and validation are fixed, and a scale-free
+local-shape check joins the topological wrong-label check.
 
 ### Breaking
 

@@ -20,7 +20,7 @@ pitch to export a pixel-aligned grayscale PNG and calibration metadata.
 
 ```toml
 [dependencies]
-calib-targets-print = "0.17"
+calib-targets-print = "0.18"
 ```
 
 ## Quickstart

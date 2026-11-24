@@ -7,9 +7,20 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
-## Unreleased
+## 0.18.0
 
-See the [0.18.0 migration guide](docs/migrations/0.18.0.md).
+More chessboard corners on dense, distorted boards with no new wrong labels,
+geometric checks that keep wrong ChArUco fragments and mirrored grids out,
+and an opt-in blur-aware photometric corner refiner with a physical defocus
+model. A minor release: the facade now borrows images as `GrayImageView`, and
+the `detect_*_best` sweeps share one contract; see the
+[0.18.0 migration guide](docs/migrations/0.18.0.md). The C ABI moves to 6.0.4
+(no type, layout or symbol change; detection results change as described
+below), and the workspace requires `projective-grid` 0.15.0.
+
+The photometric refinement, defocus and patch-residual APIs are new and may
+still change in a minor release; they are not yet in the C ABI, and only
+partly in the Python and WASM bindings.
 
 ### Breaking
 

@@ -382,9 +382,16 @@
       ]
     },
     "testdata/02-topo-grid/GeminiChess2.png": {
-      "labelled_count": 29,
+      "labelled_count": 30,
       "cell_size_px": 43.600315,
       "corners": [
+        {
+          "i": 0,
+          "j": 0,
+          "x": 623.1542,
+          "y": 276.86594,
+          "score": 71.400024
+        },
         {
           "i": 1,
           "j": 0,
@@ -1317,7 +1324,7 @@
       ]
     },
     "testdata/large.png": {
-      "labelled_count": 372,
+      "labelled_count": 373,
       "cell_size_px": 81.15699,
       "corners": [
         {
@@ -2924,6 +2931,13 @@
           "score": 1496.6001
         },
         {
+          "i": 2,
+          "j": 12,
+          "x": 118.86055,
+          "y": 840.4822,
+          "score": 1375.2
+        },
+        {
           "i": 3,
           "j": 12,
           "x": 223.86261,
@@ -4472,7 +4486,7 @@
       ]
     },
     "testdata/puzzleboard_reference/example1.png": {
-      "labelled_count": 254,
+      "labelled_count": 255,
       "cell_size_px": 33.927063,
       "corners": [
         {
@@ -6219,6 +6233,13 @@
           "score": 454.0
         },
         {
+          "i": 20,
+          "j": 13,
+          "x": 627.70905,
+          "y": 409.23938,
+          "score": 600.19995
+        },
+        {
           "i": 16,
           "j": 14,
           "x": 535.44525,
@@ -6256,8 +6277,8 @@
       ]
     },
     "testdata/puzzleboard_reference/example2.png": {
-      "labelled_count": 180,
-      "cell_size_px": 38.413025,
+      "labelled_count": 182,
+      "cell_size_px": 38.27562,
       "corners": [
         {
           "i": 11,
@@ -6664,6 +6685,20 @@
           "x": 511.83725,
           "y": 22.659435,
           "score": 582.6001
+        },
+        {
+          "i": 1,
+          "j": 6,
+          "x": 57.89044,
+          "y": 448.38812,
+          "score": 263.0
+        },
+        {
+          "i": 2,
+          "j": 6,
+          "x": 74.746185,
+          "y": 439.97256,
+          "score": 292.80005
         },
         {
           "i": 3,
@@ -8647,7 +8682,7 @@
       ]
     },
     "testdata/small1.png": {
-      "labelled_count": 118,
+      "labelled_count": 119,
       "cell_size_px": 41.35383,
       "corners": [
         {
@@ -9391,6 +9426,13 @@
           "x": 463.04886,
           "y": 411.6282,
           "score": 48.599976
+        },
+        {
+          "i": 14,
+          "j": 8,
+          "x": 502.67242,
+          "y": 432.1433,
+          "score": 36.0
         },
         {
           "i": 2,
@@ -11157,8 +11199,8 @@
       ]
     },
     "testdata/small4.png": {
-      "labelled_count": 113,
-      "cell_size_px": 40.953274,
+      "labelled_count": 115,
+      "cell_size_px": 41.018227,
       "corners": [
         {
           "i": 12,
@@ -11616,6 +11658,13 @@
           "score": 33.600006
         },
         {
+          "i": 17,
+          "j": 5,
+          "x": 697.9348,
+          "y": 301.08325,
+          "score": 84.79999
+        },
+        {
           "i": 0,
           "j": 6,
           "x": 26.73067,
@@ -11943,6 +11992,13 @@
           "x": 66.39228,
           "y": 282.22647,
           "score": 75.20001
+        },
+        {
+          "i": 6,
+          "j": 10,
+          "x": 135.8032,
+          "y": 314.7666,
+          "score": 57.0
         },
         {
           "i": 3,
