@@ -69,6 +69,11 @@ pub fn schemas() -> Vec<SchemaFile> {
             name: "printable_target_document.json",
             schema: schema_of::<calib_targets_print::PrintableTargetDocument>(),
         },
+        // Photometric / blur-aware refinement options.
+        SchemaFile {
+            name: "board_photometric_options.json",
+            schema: schema_of::<calib_targets_core::blur::BoardPhotometricOptions>(),
+        },
     ]
 }
 

@@ -499,6 +499,7 @@ dependencies = [
  "libm",
  "nalgebra",
  "projective-grid",
+ "schemars",
  "serde",
  "serde_json",
  "thiserror",

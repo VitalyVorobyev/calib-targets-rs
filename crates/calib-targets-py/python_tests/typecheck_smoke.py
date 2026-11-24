@@ -72,3 +72,26 @@ _pole_spec = pole_doc.target
 assert isinstance(_pole_spec, ct.PuzzlePoleTargetSpec)
 _pole_diameter: float = _pole_spec.diameter_mm
 _pole_strip: int = _pole_spec.printed_strip_squares
+
+# Photometric corner refinement & blur estimation:
+if chess is not None:
+    _chess_refined, _chess_ref = ct.refine_chessboard_corners(img, chess)
+    _chess_corners: list[ct.ChessboardCorner] = _chess_refined.corners
+    _chess_bf = _chess_ref["blur_field"]
+if charuco is not None:
+    _blurs = ct.charuco_blur(img, board, charuco)
+    _charuco_refined, _charuco_ref = ct.refine_charuco_corners(
+        img, board, charuco, options={"two_pass_scatter_correction": True}
+    )
+    _charuco_corners: list[ct.CharucoCorner] = _charuco_refined.corners
+_puzzle_det = ct.detect_puzzleboard(
+    img, params=ct.PuzzleBoardParams.for_board(ct.PuzzleBoardSpec(rows=13, cols=13, cell_size=1.0))
+)
+if _puzzle_det is not None:
+    _puzzle_refined, _puzzle_ref = ct.refine_puzzleboard_corners(img, _puzzle_det)
+    _puzzle_corners: list[ct.PuzzleBoardCorner] = _puzzle_refined.corners
+if marker is not None:
+    _marker_refined, _marker_ref = ct.refine_marker_board_corners(
+        img, ct.MarkerBoardSpec(), marker
+    )
+    _marker_ref_corners: list[ct.MarkerBoardCorner] = _marker_refined.corners

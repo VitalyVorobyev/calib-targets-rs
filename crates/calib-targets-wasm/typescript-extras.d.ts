@@ -1194,3 +1194,133 @@ export interface PuzzleBoardDiagnostics {
   observed_edges: PuzzleBoardObservedEdge[];
   decode: PuzzleBoardDecodeDiagnostics;
 }
+
+// ===========================================================================
+// Photometric / blur-aware corner refinement (calib-targets-core::blur)
+// Matches schemas/board_photometric_options.json and serde_json payloads.
+// ===========================================================================
+
+/** Camera radiometric tone-response model (Rust `RadiometricModel`). */
+export type RadiometricModel =
+  | "linear"
+  | "srgb"
+  | { fixed_gamma: { gamma: number } }
+  | { free_gamma: { initial_gamma: number } };
+
+/** First-order spatial gradient of the blur covariance (Rust `BlurGradient`). */
+export interface BlurGradient {
+  /** ∂Σ/∂x as [∂Σxx/∂x, ∂Σxy/∂x, ∂Σyy/∂x], px²/px. */
+  d_sigma_dx: [number, number, number];
+  /** ∂Σ/∂y as [∂Σxx/∂y, ∂Σxy/∂y, ∂Σyy/∂y], px²/px. */
+  d_sigma_dy: [number, number, number];
+}
+
+/** Physical display surface model (Rust `DisplaySurfaceModel`). */
+export interface DisplaySurfaceModel {
+  display_pixels_per_cell: number;
+  mtf_sigma_display_px?: number;
+  gray_levels?: number | null;
+  rasterize_curved_features?: boolean;
+}
+
+/** Per-corner photometric fitting options (Rust `PhotometricFitOptions`). */
+export interface PhotometricFitOptions {
+  radiometric?: RadiometricModel;
+  fit_ink_bleed?: boolean;
+  use_varpro?: boolean;
+  display?: DisplaySurfaceModel | null;
+  known_blur_gradient?: BlurGradient | null;
+}
+
+/** Board-wide photometric corner refinement options (Rust `BoardPhotometricOptions`). */
+export interface BoardPhotometricOptions {
+  fit?: PhotometricFitOptions;
+  puzzle_dot_diameter_rel?: number;
+  two_pass_scatter_correction?: boolean;
+}
+
+/** Anisotropic 2-D Gaussian blur covariance Σ in image px² (Rust `BlurKernel`). */
+export interface BlurKernel {
+  xx: number;
+  xy: number;
+  yy: number;
+}
+
+/** Goodness-of-fit diagnostics for a photometric patch fit (Rust `BlurFitQuality`). */
+export interface BlurFitQuality {
+  window_cells: number;
+  pixels: number;
+  contrast: number;
+  residual_rms: number;
+  residual_autocorrelation: number;
+}
+
+/** Per-corner estimated blur kernel and uncertainty (Rust `CornerBlur`). */
+export interface CornerBlur {
+  sigma_px: number;
+  sigma_std_error_px: number;
+  kernel: BlurKernel;
+  kernel_covariance: [
+    [number, number, number],
+    [number, number, number],
+    [number, number, number],
+  ];
+  fit: BlurFitQuality;
+}
+
+/** Reason a photometric fit or blur estimate declined (Rust `BlurDecline`). */
+export type BlurDecline =
+  | "NoGeometry"
+  | "PatternUnknown"
+  | "TooFewPixels"
+  | "NotConverged"
+  | "Singular"
+  | "TooBlurred"
+  | "Unresolved"
+  | "SharperThanPixel"
+  | "PolarityMismatch";
+
+/** Full per-corner photometric fit output (Rust `CornerPhotometricFit`). */
+export interface CornerPhotometricFit {
+  position: Point2;
+  position_covariance: PositionCovariance;
+  axes: [AxisEstimate, AxisEstimate];
+  blur: CornerBlur | null;
+  blur_decline: BlurDecline | null;
+  display_blur: BlurKernel | null;
+  fit: BlurFitQuality;
+  gamma: number | null;
+  ink_bleed_cells: number | null;
+  scatter_correction_px: [number, number] | null;
+}
+
+/** 6-coefficient 2-D polynomial vector `[1, u, v, u², u·v, v²]`. */
+export type BlurFieldPolyCoeffs = [
+  number,
+  number,
+  number,
+  number,
+  number,
+  number,
+];
+
+/** Smooth 2-D polynomial surface over converged corner blurs (Rust `BlurField`). */
+export interface BlurField {
+  center: [number, number];
+  scale: number;
+  degree: number;
+  coeffs: [BlurFieldPolyCoeffs, BlurFieldPolyCoeffs, BlurFieldPolyCoeffs];
+  sample_count: number;
+}
+
+/** Board-wide photometric refinement output (Rust `BoardPhotometricRefinement`). */
+export interface BoardPhotometricRefinement {
+  corners: Array<{ Ok: CornerPhotometricFit } | { Err: BlurDecline }>;
+  blur_field: BlurField | null;
+}
+
+/** Envelope returned by the WASM `refine_*_corners` functions. */
+export interface RefinedDetection<D> {
+  detection: D;
+  refinement: BoardPhotometricRefinement;
+}

@@ -15,10 +15,12 @@ from ._convert_in import (
     puzzlepole_params_to_payload,
 )
 from .config import (
+    CharucoBoardSpec,
     CharucoDetectorParams,
     ChessConfig,
     ChessboardParams,
     MarkerBoardParams,
+    MarkerBoardSpec,
     PuzzleBoardParams,
     PuzzlePoleParams,
 )
@@ -572,6 +574,104 @@ def default_puzzlepole_params(
     return PuzzlePoleParams.from_dict(raw)
 
 
+def refine_chessboard_corners(
+    image: npt.NDArray[np.uint8],
+    detection: ChessboardDetectionResult,
+    *,
+    options: dict[str, Any] | None = None,
+) -> tuple[ChessboardDetectionResult, dict[str, Any]]:
+    """Refine detected chessboard corners using the joint blur-aware photometric model."""
+    _check_type("detection", detection, ChessboardDetectionResult)
+    if options is not None:
+        _check_type("options", options, dict)
+
+    raw = _core.refine_chessboard_corners(
+        image,
+        detection.to_dict(),
+        options=options,
+    )
+    return ChessboardDetectionResult.from_dict(raw["detection"]), raw["refinement"]
+
+
+def refine_charuco_corners(
+    image: npt.NDArray[np.uint8],
+    board: CharucoBoardSpec,
+    detection: CharucoDetection,
+    *,
+    options: dict[str, Any] | None = None,
+) -> tuple[CharucoDetection, dict[str, Any]]:
+    """Refine detected ChArUco corners using the joint blur-aware photometric model."""
+    _check_type("board", board, CharucoBoardSpec)
+    _check_type("detection", detection, CharucoDetection)
+    if options is not None:
+        _check_type("options", options, dict)
+
+    raw = _core.refine_charuco_corners(
+        image,
+        board.to_dict(),
+        detection.to_dict(),
+        options=options,
+    )
+    return CharucoDetection.from_dict(raw["detection"]), raw["refinement"]
+
+
+def refine_puzzleboard_corners(
+    image: npt.NDArray[np.uint8],
+    detection: PuzzleBoardDetection,
+    *,
+    options: dict[str, Any] | None = None,
+) -> tuple[PuzzleBoardDetection, dict[str, Any]]:
+    """Refine detected PuzzleBoard corners using the joint blur-aware photometric model."""
+    _check_type("detection", detection, PuzzleBoardDetection)
+    if options is not None:
+        _check_type("options", options, dict)
+
+    raw = _core.refine_puzzleboard_corners(
+        image,
+        detection.to_dict(),
+        options=options,
+    )
+    return PuzzleBoardDetection.from_dict(raw["detection"]), raw["refinement"]
+
+
+def refine_marker_board_corners(
+    image: npt.NDArray[np.uint8],
+    board: MarkerBoardSpec,
+    detection: MarkerBoardDetection,
+    *,
+    options: dict[str, Any] | None = None,
+) -> tuple[MarkerBoardDetection, dict[str, Any]]:
+    """Refine detected marker-board corners using the joint blur-aware photometric model."""
+    _check_type("board", board, MarkerBoardSpec)
+    _check_type("detection", detection, MarkerBoardDetection)
+    if options is not None:
+        _check_type("options", options, dict)
+
+    raw = _core.refine_marker_board_corners(
+        image,
+        board.to_dict(),
+        detection.to_dict(),
+        options=options,
+    )
+    return MarkerBoardDetection.from_dict(raw["detection"]), raw["refinement"]
+
+
+def charuco_blur(
+    image: npt.NDArray[np.uint8],
+    board: CharucoBoardSpec,
+    detection: CharucoDetection,
+) -> list[dict[str, Any]]:
+    """Estimate per-corner PSF blur kernels for a detected ChArUco board."""
+    _check_type("board", board, CharucoBoardSpec)
+    _check_type("detection", detection, CharucoDetection)
+
+    return _core.charuco_blur(
+        image,
+        board.to_dict(),
+        detection.to_dict(),
+    )
+
+
 __all__ = [
     "detect_chessboard",
     "detect_chessboard_all",
@@ -599,4 +699,9 @@ __all__ = [
     "diagnose_puzzlepole_with_corners",
     "detect_puzzlepole_best",
     "default_puzzlepole_params",
+    "refine_chessboard_corners",
+    "refine_charuco_corners",
+    "refine_puzzleboard_corners",
+    "refine_marker_board_corners",
+    "charuco_blur",
 ]

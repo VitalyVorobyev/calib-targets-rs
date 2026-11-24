@@ -1,18 +1,27 @@
 //! The per-corner fit: window selection, initialisation, Levenberg–Marquardt,
 //! the window-growth / decline rules, and the HAC covariance.
 
+use std::f64::consts::PI;
+
+use nalgebra::Point2;
+
 use super::frame::{in_support, pixel_bounds, select_pixels, Frame};
 use super::gauss_polygon::CUT;
 use super::model::{
-    cholesky2, eig2, sigma_of, BoardPolygon, BoxModel, Model, Pixel, Vector, Want, I_A, I_C, I_H,
-    I_SIGMA, NP,
+    cholesky2, eig2, sigma_of, BoardPolygon, BoxModel, Model, Pixel, Vector, Want, I_A, I_BLEED,
+    I_C, I_GAMMA, I_H, I_SIGMA, NP,
 };
 use super::solve::{
     bartlett_bandwidth, hac_covariance, levenberg_marquardt, photometric_vif,
     residual_autocorrelation, sigma_px_gradient, Reparam,
 };
-use super::{BlurDecline, BlurFitQuality, BlurKernel, BlurPattern, CornerBlur};
-use crate::{GrayImageView, Homography};
+use super::varpro::project_ac;
+use super::{
+    BlurDecline, BlurFitQuality, BlurKernel, BlurPattern, CornerBlur, CornerPhotometricFit,
+    PhotometricFitOptions,
+};
+use crate::sym2::Sym2x2;
+use crate::{AxisEstimate, GrayImageView, Homography, PositionCovariance};
 
 /// Window half-widths tried, in cells: start small, grow while the blur is
 /// confounded with the photometry.
@@ -99,12 +108,13 @@ fn sigma_profile(
         let (mut s11, mut s12, mut s22, mut b1, mut b2, mut yy) = (0.0, 0.0, 0.0, 0.0, 0.0, 0.0);
         for (px, bk) in pixels.iter().zip(&b) {
             let f = 1.0 - bk;
+            let y = model.radiometric.inverse(px.value);
             s11 += f * f;
             s12 += f;
             s22 += 1.0;
-            b1 += f * px.value;
-            b2 += px.value;
-            yy += px.value * px.value;
+            b1 += f * y;
+            b2 += y;
+            yy += y * y;
         }
         let det = s11 * s22 - s12 * s12;
         (det > 1e-9 * s11 * s22).then(|| {
@@ -153,7 +163,7 @@ fn sigma_profile(
 
 /// The caller's homography with the profile's isotropic blur and
 /// photometry, no gradient.
-fn seed_from(frame: &Frame, p: &Profile) -> Vector {
+fn seed_from(frame: &Frame, options: &PhotometricFitOptions, p: &Profile) -> Vector {
     let mut th = Vector::zeros();
     for (k, v) in frame.h.iter().enumerate() {
         th[I_H + k] = *v;
@@ -162,6 +172,8 @@ fn seed_from(frame: &Frame, p: &Profile) -> Vector {
     th[I_SIGMA + 2] = p.sigma * p.sigma;
     th[I_A] = p.a;
     th[I_C] = p.c;
+    th[I_GAMMA] = options.radiometric.initial_gamma();
+    th[I_BLEED] = 0.0;
     th
 }
 
@@ -178,26 +190,34 @@ const SEED_PROFILE_PIXELS: usize = 150;
 const BASIN_PROFILE_PIXELS: usize = 64;
 
 /// Initial `θ`: the caller's homography and the seed of [`sigma_profile`].
-fn initial_theta(model: &Model<'_>, frame: &Frame, pixels: &[Pixel]) -> Option<Vector> {
+fn initial_theta(
+    model: &Model<'_>,
+    frame: &Frame,
+    options: &PhotometricFitOptions,
+    pixels: &[Pixel],
+) -> Option<Vector> {
     let mut th = Vector::zeros();
     for (k, v) in frame.h.iter().enumerate() {
         th[I_H + k] = *v;
     }
     let sub = profile_subsample(pixels, SEED_PROFILE_PIXELS);
-    Some(seed_from(frame, &sigma_profile(model, &th, &sub, true)?))
+    Some(seed_from(
+        frame,
+        options,
+        &sigma_profile(model, &th, &sub, true)?,
+    ))
 }
 
 /// A seed in a better basin than the fit `theta`, if there is one.
 ///
 /// The fit nests the isotropic, gradient-free profile at the caller's
 /// homography, so at a global optimum no σ of that profile fits the patch
-/// better. The comparison runs on a subsample of the patch; when the profile
-/// wins there, the fit sits in a worse basin — typically reached when the
-/// blur is wide against the cell and a smaller window could not separate it
-/// from the contrast — and is restarted from the profile's best.
+/// better. The comparison runs on a subsample of the patch in the observed
+/// gray-level objective so linear and radiometric fits compare identically.
 fn better_basin(
     model: &Model<'_>,
     frame: &Frame,
+    options: &PhotometricFitOptions,
     theta: &Vector,
     pixels: &[Pixel],
 ) -> Option<Vector> {
@@ -215,7 +235,19 @@ fn better_basin(
         h[I_H + k] = *v;
     }
     let p = sigma_profile(model, &h, &sub, false)?;
-    (p.sse < fitted.cost).then(|| seed_from(frame, &p))
+    let cand = seed_from(frame, options, &p);
+    let cand_eval = model.evaluate(&cand, &sub, Want::default())?;
+    (cand_eval.cost < fitted.cost).then_some(cand)
+}
+
+/// Shared immutable inputs for one corner fit (`too_many_arguments = deny`).
+struct FitCtx<'a> {
+    image: &'a GrayImageView<'a>,
+    pattern: &'a BlurPattern,
+    polygons: &'a [BoardPolygon],
+    frame: &'a Frame,
+    fixed: [bool; NP],
+    options: &'a PhotometricFitOptions,
 }
 
 /// One window's converged fit.
@@ -232,32 +264,32 @@ struct WindowFit {
 /// `None`), re-selecting the pixels until their margin covers the fitted
 /// blur.
 fn fit_window(
-    image: &GrayImageView<'_>,
-    pattern: &BlurPattern,
-    polygons: &[BoardPolygon],
-    frame: &Frame,
+    ctx: &FitCtx<'_>,
     rho: f64,
     theta: Option<Vector>,
     last: bool,
 ) -> Result<WindowFit, BlurDecline> {
-    let fixed = &[false; NP];
-    let free = fixed.iter().filter(|f| !**f).count();
+    let free = ctx.fixed.iter().filter(|f| !**f).count();
     let margin_for = |t: &Vector| SUPPORT_MARGIN_SIGMAS * eig2(sigma_of(t)).1.sqrt() + 0.5;
     let model_for = |box_model: BoxModel, pixels: &[Pixel]| Model {
-        polygons,
-        c0: frame.c0,
-        scale: frame.scale,
+        polygons: ctx.polygons,
+        c0: ctx.frame.c0,
+        scale: ctx.frame.scale,
         box_model,
-        fixed: *fixed,
+        fixed: ctx.fixed,
         pixel_bounds: pixel_bounds(pixels),
+        radiometric: ctx.options.radiometric,
+        fit_ink_bleed: ctx.options.fit_ink_bleed,
+        blur_gradient: ctx.options.known_blur_gradient,
     };
     let select = |margin: f64| -> Result<Vec<Pixel>, BlurDecline> {
-        let pixels = select_pixels(image, pattern, frame, rho, margin);
+        let pixels = select_pixels(ctx.image, ctx.pattern, ctx.frame, rho, margin);
         if pixels.len() < MIN_PIXELS_PER_PARAM * free {
             return Err(BlurDecline::TooFewPixels);
         }
         Ok(pixels)
     };
+    let varpro = ctx.options.use_varpro && ctx.options.radiometric.is_linear();
     // Seed: the previous window's fit, or the scan on a provisional patch.
     let (mut theta, mut margin_px, mut pixels) = match theta {
         Some(t) => {
@@ -268,7 +300,8 @@ fn fit_window(
             let provisional = select(0.5)?;
             let t = initial_theta(
                 &model_for(BoxModel::Gaussian, &provisional),
-                frame,
+                ctx.frame,
+                ctx.options,
                 &provisional,
             )
             .ok_or(BlurDecline::NotConverged)?;
@@ -282,6 +315,9 @@ fn fit_window(
         if !model.admissible(&theta) {
             return Err(BlurDecline::NotConverged);
         }
+        if varpro {
+            let _ = project_ac(&model, &mut theta, &pixels);
+        }
         let first = model
             .evaluate(
                 &theta,
@@ -293,16 +329,19 @@ fn fit_window(
             )
             .ok_or(BlurDecline::NotConverged)?;
         let mut re = Reparam::new(&model, &theta, &first.jtj, rho);
-        let (mut th, mut eval) = levenberg_marquardt(&model, theta, &pixels, first, &re)?;
+        let (mut th, mut eval) = levenberg_marquardt(&model, theta, &pixels, first, &re, varpro)?;
         // A fit the window will grow past is only a seed; check the basin
         // of the one that may be delivered.
         let delivered = last
-            || (holds_profile(rho, frame, max_sigma(&th))
+            || (holds_profile(rho, ctx.frame, max_sigma(&th))
                 && photometric_vif(&eval.jtj, &re, sigma_of(&th)).is_some_and(|v| v <= MAX_VIF));
-        if let Some(seed) = delivered
-            .then(|| better_basin(&model, frame, &th, &pixels))
+        if let Some(mut seed) = delivered
+            .then(|| better_basin(&model, ctx.frame, ctx.options, &th, &pixels))
             .flatten()
         {
+            if varpro {
+                let _ = project_ac(&model, &mut seed, &pixels);
+            }
             if model.admissible(&seed) {
                 if let Some(first) = model.evaluate(
                     &seed,
@@ -313,7 +352,7 @@ fn fit_window(
                     },
                 ) {
                     let re2 = Reparam::new(&model, &seed, &first.jtj, rho);
-                    let (t2, e2) = levenberg_marquardt(&model, seed, &pixels, first, &re2)?;
+                    let (t2, e2) = levenberg_marquardt(&model, seed, &pixels, first, &re2, varpro)?;
                     if e2.cost < eval.cost {
                         th = t2;
                         eval = e2;
@@ -401,12 +440,13 @@ fn max_sigma(theta: &Vector) -> f64 {
     eig2(sigma_of(theta)).1.sqrt()
 }
 
-/// See [`super::estimate_corner_blur`].
-pub(super) fn estimate(
+/// See [`super::fit_corner_photometric`].
+pub(super) fn fit_photometric(
     image: &GrayImageView<'_>,
     pattern: &BlurPattern,
     board_to_image: &Homography<f64>,
-) -> Result<CornerBlur, BlurDecline> {
+    options: &PhotometricFitOptions,
+) -> Result<CornerPhotometricFit, BlurDecline> {
     let frame = Frame::new(board_to_image).ok_or(BlurDecline::NoGeometry)?;
     let polygons: Vec<BoardPolygon> = pattern
         .polygons
@@ -416,7 +456,18 @@ pub(super) fn estimate(
             weight: *w,
         })
         .collect();
-    let fixed = [false; NP];
+    let mut fixed = [false; NP];
+    fixed[I_GAMMA] = !options.radiometric.is_free_gamma();
+    fixed[I_BLEED] = !options.fit_ink_bleed;
+    let ctx = FitCtx {
+        image,
+        pattern,
+        polygons: &polygons,
+        frame: &frame,
+        fixed,
+        options,
+    };
+
     let mut theta = None;
     let mut best: Option<WindowFit> = None;
     let mut last_err = BlurDecline::TooFewPixels;
@@ -428,7 +479,7 @@ pub(super) fn estimate(
         if theta.is_some_and(|t| !last && !holds_profile(rho, &frame, max_sigma(&t))) {
             continue;
         }
-        match fit_window(image, pattern, &polygons, &frame, rho, theta, last) {
+        match fit_window(&ctx, rho, theta, last) {
             Ok(fit) => {
                 // A larger window that adds no pixels cannot help.
                 let grew = fit.pixels.len() > last_count;
@@ -458,18 +509,53 @@ pub(super) fn estimate(
     {
         return Err(BlurDecline::TooBlurred);
     }
-    finish(&polygons, &frame, &fixed, fit, pattern)
+    finish(&ctx, fit)
 }
 
-/// Covariances, goodness of fit and the remaining decline rules.
-fn finish(
-    polygons: &[BoardPolygon],
-    frame: &Frame,
-    fixed: &[bool; NP],
-    fit: WindowFit,
-    pattern: &BlurPattern,
-) -> Result<CornerBlur, BlurDecline> {
-    let polarity_known = pattern.polarity_known;
+fn axis_from_homography(
+    cov: &super::model::Matrix,
+    h: &[f64],
+    axis: usize,
+) -> Option<(AxisEstimate, [f64; 2])> {
+    let v = if axis == 0 {
+        [h[0] - h[2] * h[6], h[3] - h[5] * h[6]]
+    } else {
+        [h[1] - h[2] * h[7], h[4] - h[5] * h[7]]
+    };
+    let r2 = v[0] * v[0] + v[1] * v[1];
+    if !(r2.is_finite() && r2 > 1e-12) {
+        return None;
+    }
+    let mut g = Vector::zeros();
+    let inv_r2 = 1.0 / r2;
+    if axis == 0 {
+        g[I_H] = -v[1] * inv_r2;
+        g[I_H + 2] = v[1] * h[6] * inv_r2;
+        g[I_H + 3] = v[0] * inv_r2;
+        g[I_H + 5] = -v[0] * h[6] * inv_r2;
+        g[I_H + 6] = (-v[0] * h[5] + v[1] * h[2]) * inv_r2;
+    } else {
+        g[I_H + 1] = -v[1] * inv_r2;
+        g[I_H + 2] = v[1] * h[7] * inv_r2;
+        g[I_H + 4] = v[0] * inv_r2;
+        g[I_H + 5] = -v[0] * h[7] * inv_r2;
+        g[I_H + 7] = (-v[0] * h[5] + v[1] * h[2]) * inv_r2;
+    }
+    let var = (g.transpose() * cov * g)[(0, 0)];
+    let std_err = var.max(0.0).sqrt().min(PI) as f32;
+    let angle = v[1].atan2(v[0]).rem_euclid(PI) as f32;
+    Some((
+        AxisEstimate {
+            angle,
+            fit_std_error: std_err,
+        },
+        v,
+    ))
+}
+
+/// Covariances, refined geometry, goodness of fit and decline separation.
+fn finish(ctx: &FitCtx<'_>, fit: WindowFit) -> Result<CornerPhotometricFit, BlurDecline> {
+    let polarity_known = ctx.pattern.polarity_known;
     let WindowFit {
         rho,
         theta,
@@ -482,12 +568,15 @@ fn finish(
         return Err(BlurDecline::PolarityMismatch);
     }
     let model = Model {
-        polygons,
-        c0: frame.c0,
-        scale: frame.scale,
+        polygons: ctx.polygons,
+        c0: ctx.frame.c0,
+        scale: ctx.frame.scale,
         box_model,
-        fixed: *fixed,
+        fixed: ctx.fixed,
         pixel_bounds: pixel_bounds(&pixels),
+        radiometric: ctx.options.radiometric,
+        fit_ink_bleed: ctx.options.fit_ink_bleed,
+        blur_gradient: ctx.options.known_blur_gradient,
     };
     let full = model
         .evaluate(
@@ -503,11 +592,59 @@ fn finish(
     let bread = reparam
         .inverse(&full.jtj, &[true; NP])
         .ok_or(BlurDecline::Singular)?;
-    let sigma = sigma_of(&theta);
     let autocorrelation = residual_autocorrelation(&pixels, &full.residuals);
     let lag = bartlett_bandwidth(autocorrelation, pixels.len());
     let nfree = reparam.free_count();
     let cov = hac_covariance(&bread, &pixels, &full.scores, lag, nfree);
+
+    let h = &theta.as_slice()[I_H..I_H + 8];
+    let p_raw = [
+        ctx.frame.c0[0] + ctx.frame.scale * h[2],
+        ctx.frame.c0[1] + ctx.frame.scale * h[5],
+    ];
+    let disp = (p_raw[0] - ctx.frame.c0[0]).hypot(p_raw[1] - ctx.frame.c0[1]);
+    if !(disp.is_finite() && disp <= 0.5 * ctx.frame.scale) {
+        return Err(BlurDecline::NotConverged);
+    }
+    let s2 = ctx.frame.scale * ctx.frame.scale;
+    let (p_xx, p_xy, p_yy) = (
+        s2 * cov[(I_H + 2, I_H + 2)],
+        s2 * cov[(I_H + 2, I_H + 5)],
+        s2 * cov[(I_H + 5, I_H + 5)],
+    );
+    if !(p_xx.is_finite()
+        && p_xy.is_finite()
+        && p_yy.is_finite()
+        && p_xx >= 0.0
+        && p_yy >= 0.0
+        && Sym2x2::new(p_xx, p_xy, p_yy).eigenvalues().0 >= -1e-12)
+    {
+        return Err(BlurDecline::Singular);
+    }
+    let position_covariance =
+        PositionCovariance::new(p_xx.max(0.0) as f32, p_xy as f32, p_yy.max(0.0) as f32);
+
+    let (axis0, v0) = axis_from_homography(&cov, h, 0).ok_or(BlurDecline::Singular)?;
+    let (axis1, v1) = axis_from_homography(&cov, h, 1).ok_or(BlurDecline::Singular)?;
+    let display_blur = ctx.options.display.as_ref().map(|d| {
+        d.image_covariance([
+            [ctx.frame.scale * v0[0], ctx.frame.scale * v0[1]],
+            [ctx.frame.scale * v1[0], ctx.frame.scale * v1[1]],
+        ])
+    });
+
+    let n = pixels.len() as f64;
+    let rms = (full.cost / (n - nfree as f64).max(1.0)).sqrt();
+    let contrast = theta[I_A].abs();
+    let fit_quality = BlurFitQuality::new(
+        rho as f32,
+        pixels.len(),
+        contrast as f32,
+        rms as f32,
+        autocorrelation as f32,
+    );
+
+    let sigma = sigma_of(&theta);
     let mut cov3 = [[0.0f64; 3]; 3];
     for (r, row) in cov3.iter_mut().enumerate() {
         for (c, v) in row.iter_mut().enumerate() {
@@ -516,38 +653,57 @@ fn finish(
     }
     let g = sigma_px_gradient(sigma);
     let var = (g.transpose() * cov * g)[(0, 0)];
-    if !(var.is_finite() && var > 0.0) {
-        return Err(BlurDecline::Singular);
-    }
-    // The model's physical domain is Σ ⪰ I/12 (a lens kernel added to the
-    // unit box); an estimate outside it is not a measurement of the model —
-    // a sharpened image, an aperture smaller than the pixel, or a fit the
-    // patch does not support.
-    if eig2(sigma).0 < PIXEL_VAR {
-        return Err(BlurDecline::SharperThanPixel);
-    }
-    // The reported σ ± SE linearises √(tr Σ / 2); that is meaningful only
-    // while the trace is resolved from zero, its 2-SE interval excluding 0
-    // (equivalently SE(σ)/σ < 1/4). Beyond it the kernel is not measured.
-    let var_trace = cov3[0][0] + 2.0 * cov3[0][2] + cov3[2][2];
-    if sigma[0] + sigma[2] <= 2.0 * var_trace.max(0.0).sqrt() {
-        return Err(BlurDecline::Unresolved);
-    }
-    let n = pixels.len() as f64;
-    let rms = (full.cost / (n - nfree as f64).max(1.0)).sqrt();
-    let contrast = theta[I_A].abs();
-    debug_assert!(cholesky2(sigma).is_some());
-    Ok(CornerBlur::new(
-        BlurKernel::new(sigma[0] as f32, sigma[1] as f32, sigma[2] as f32),
-        cov3.map(|row| row.map(|v| v as f32)),
-        BlurFitQuality::new(
-            rho as f32,
-            pixels.len(),
-            contrast as f32,
-            rms as f32,
-            autocorrelation as f32,
-        ),
-    ))
+    let (blur, blur_decline) = if !(var.is_finite() && var > 0.0) {
+        (None, Some(BlurDecline::Singular))
+    } else if eig2(sigma).0 < PIXEL_VAR {
+        // The model's physical domain is Σ ⪰ I/12: a sharp image still yields
+        // converged corner geometry while declining blur measurement.
+        (None, Some(BlurDecline::SharperThanPixel))
+    } else {
+        let var_trace = cov3[0][0] + 2.0 * cov3[0][2] + cov3[2][2];
+        if sigma[0] + sigma[2] <= 2.0 * var_trace.max(0.0).sqrt() {
+            (None, Some(BlurDecline::Unresolved))
+        } else {
+            debug_assert!(cholesky2(sigma).is_some());
+            (
+                Some(CornerBlur::new(
+                    BlurKernel::new(sigma[0] as f32, sigma[1] as f32, sigma[2] as f32),
+                    cov3.map(|row| row.map(|v| v as f32)),
+                    fit_quality,
+                )),
+                None,
+            )
+        }
+    };
+
+    let gamma = ctx
+        .options
+        .radiometric
+        .is_free_gamma()
+        .then_some(theta[I_GAMMA] as f32);
+    let sigma_tr = (0.5 * (sigma[0] + sigma[2])).max(0.0).sqrt();
+    let ink_bleed_cells = ctx
+        .options
+        .fit_ink_bleed
+        .then_some((theta[I_BLEED] * sigma_tr / ctx.frame.scale) as f32);
+
+    let scatter_correction_px = ctx.options.known_blur_gradient.and_then(|grad| {
+        grad.scatter_corner_bias(f64::from(axis0.angle), f64::from(axis1.angle))
+            .map(|bias| [-bias[0] as f32, -bias[1] as f32])
+    });
+
+    Ok(CornerPhotometricFit {
+        position: Point2::new(p_raw[0] as f32, p_raw[1] as f32),
+        position_covariance,
+        axes: [axis0, axis1],
+        blur,
+        blur_decline,
+        display_blur,
+        fit: fit_quality,
+        gamma,
+        ink_bleed_cells,
+        scatter_correction_px,
+    })
 }
 
 #[cfg(test)]

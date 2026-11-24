@@ -26,21 +26,27 @@
 
 use nalgebra::{SMatrix, SVector};
 
-use super::gauss_polygon::{boundary_winding, edge_term, on_segment, CUT};
+use super::gauss_polygon::{boundary_winding, edge_moments, edge_term, on_segment, CUT};
+use super::radiometric::{bleed_eval, RadiometricModel, MAX_BLEED_KAPPA, MAX_GAMMA, MIN_GAMMA};
+use super::BlurGradient;
 
 /// Number of model parameters.
-pub(super) const NP: usize = 15;
+pub(super) const NP: usize = 17;
 /// `Σxx, Σxy, Σyy` (px²).
 pub(super) const I_SIGMA: usize = 0;
-/// Contrast `A` (gray levels).
+/// Contrast `A` (linearised gray levels).
 pub(super) const I_A: usize = 3;
-/// Black level `C` (gray levels).
+/// Black level `C` (linearised gray levels).
 pub(super) const I_C: usize = 4;
 /// Illumination gradient `α`, `β` (per cell).
 pub(super) const I_ALPHA: usize = 5;
 pub(super) const I_BETA: usize = 6;
 /// The eight free homography entries.
 pub(super) const I_H: usize = 7;
+/// Encoding gamma `γ` (`FreeGamma` only).
+pub(super) const I_GAMMA: usize = 15;
+/// Probit ink / microcapsule bleed `κ` (standard deviations).
+pub(super) const I_BLEED: usize = 16;
 
 pub(super) type Vector = SVector<f64, NP>;
 pub(super) type Matrix = SMatrix<f64, NP, NP>;
@@ -173,6 +179,42 @@ pub(super) struct Model<'a> {
     /// Bounding box of the patch's pixel centres `[x0, y0, x1, y1]`: a pass
     /// keeps only the polygons within the kernel's reach of it.
     pub pixel_bounds: [f64; 4],
+    /// Camera tone-response curve applied in the forward model.
+    pub radiometric: RadiometricModel,
+    /// Whether probit ink/microcapsule bleed `κ` (`theta[I_BLEED]`) is enabled.
+    pub fit_ink_bleed: bool,
+    /// Optional known spatial blur gradient `(∂Σ/∂x, ∂Σ/∂y)` for first-order
+    /// 2-D scatter-PSF modeling.
+    pub blur_gradient: Option<BlurGradient>,
+}
+
+struct ScatterPass {
+    g1: [f64; 3],
+    g2: [f64; 3],
+    div: [f64; 2],
+    l_rows: [[f64; 2]; 2],
+    linv: [f64; 3],
+    dls: [[f64; 3]; 3],
+}
+
+impl ScatterPass {
+    fn new(grad: BlurGradient, l: [f64; 3], linv: [f64; 3], dls: [[f64; 3]; 3]) -> Self {
+        let g1 = grad.d_sigma_dx.map(f64::from);
+        let g2 = grad.d_sigma_dy.map(f64::from);
+        Self {
+            g1,
+            g2,
+            div: [g1[0] + g2[1], g1[1] + g2[2]],
+            l_rows: [[l[0], 0.0], [l[1], l[2]]],
+            linv,
+            dls,
+        }
+    }
+}
+
+struct SampleGrad<'a> {
+    dl: &'a mut [f64; 3],
+    dh: Option<&'a mut [f64; 8]>,
 }
 
 /// What an evaluation pass returns.
@@ -321,15 +363,19 @@ impl Model<'_> {
     }
 
     /// Blackness at one sample point `q` (whitened), accumulating the
-    /// gradient with respect to `(l11, l21, l22)` and the homography when
-    /// `grad` is given.
+    /// gradient with respect to `(l11, l21, l22)` and (optionally) the
+    /// homography when `grad` is given, plus `(T1 + T2)` first-order scatter
+    /// edge corrections when `scatter` is given.
     #[inline]
     fn sample(
         polys: &[PassPolygon],
         q: [f64; 2],
-        mut grad: Option<(&mut [f64; 3], &mut [f64; 8])>,
-    ) -> f64 {
+        mut grad: Option<SampleGrad<'_>>,
+        scatter: Option<&ScatterPass>,
+    ) -> (f64, f64) {
         let mut b = 0.0;
+        let mut dt12 = 0.0;
+        let need_term_grad = grad.is_some();
         for poly in polys {
             if q[0] < poly.bbox[0] - CUT
                 || q[0] > poly.bbox[2] + CUT
@@ -370,7 +416,7 @@ impl Model<'_> {
             for e in &poly.edges {
                 let hs = e.ch - (q[0] * e.t[1] - q[1] * e.t[0]);
                 let ya = e.cy - (q[0] * e.t[0] + q[1] * e.t[1]);
-                let Some(term) = edge_term(hs, ya, e.len, grad.is_some()) else {
+                let Some(term) = edge_term(hs, ya, e.len, need_term_grad) else {
                     continue;
                 };
                 if on_segment(hs, ya, e.len) {
@@ -378,18 +424,42 @@ impl Model<'_> {
                 } else {
                     m += poly.orient * term.value;
                 }
-                if let Some((dl, dh)) = grad.as_mut() {
-                    let wk = poly.weight;
-                    for k in 0..8 {
-                        dh[k] += wk * (term.c_a * e.pa[k] + term.c_b * e.pb[k]);
+                let wk = poly.weight;
+                if let Some(g) = grad.as_mut() {
+                    if let Some(dh) = g.dh.as_deref_mut() {
+                        for k in 0..8 {
+                            dh[k] += wk * (term.c_a * e.pa[k] + term.c_b * e.pb[k]);
+                        }
                     }
                     let za = [poly.w[e.a][0] - q[0], poly.w[e.a][1] - q[1]];
                     let zb = [poly.w[e.b][0] - q[0], poly.w[e.b][1] - q[1]];
                     let sx = term.c_a * za[0] + term.c_b * zb[0];
                     let sy = term.c_a * za[1] + term.c_b * zb[1];
-                    dl[0] -= wk * e.m[0] * sx;
-                    dl[1] -= wk * e.m[1] * sx;
-                    dl[2] -= wk * e.m[1] * sy;
+                    g.dl[0] -= wk * e.m[0] * sx;
+                    g.dl[1] -= wk * e.m[1] * sx;
+                    g.dl[2] -= wk * e.m[1] * sy;
+                }
+                if let Some(sp) = scatter {
+                    if let Some([m0, m1, m2]) = edge_moments(hs, ya, e.len) {
+                        dt12 -= 0.5 * wk * (sp.div[0] * e.m[0] + sp.div[1] * e.m[1]) * m0;
+                        let za = [poly.w[e.a][0] - q[0], poly.w[e.a][1] - q[1]];
+                        let zp = [za[0] - ya * e.t[0], za[1] - ya * e.t[1]];
+                        let z00 =
+                            m0 * zp[0] * zp[0] + 2.0 * m1 * zp[0] * e.t[0] + m2 * e.t[0] * e.t[0];
+                        let z01 = m0 * zp[0] * zp[1]
+                            + m1 * (zp[0] * e.t[1] + zp[1] * e.t[0])
+                            + m2 * e.t[0] * e.t[1];
+                        let z11 =
+                            m0 * zp[1] * zp[1] + 2.0 * m1 * zp[1] * e.t[1] + m2 * e.t[1] * e.t[1];
+                        for (k, g) in [sp.g1, sp.g2].iter().enumerate() {
+                            let gm = [g[0] * e.m[0] + g[1] * e.m[1], g[1] * e.m[0] + g[2] * e.m[1]];
+                            let ak = [sp.linv[0] * gm[0], sp.linv[1] * gm[0] + sp.linv[2] * gm[1]];
+                            let rk = sp.l_rows[k];
+                            let quad = ak[0] * (z00 * rk[0] + z01 * rk[1])
+                                + ak[1] * (z01 * rk[0] + z11 * rk[1]);
+                            dt12 -= 0.5 * wk * quad;
+                        }
+                    }
                 }
             }
             if on_boundary {
@@ -401,7 +471,66 @@ impl Model<'_> {
             }
             b += poly.weight * m;
         }
-        b
+        (b, dt12)
+    }
+
+    fn sample_pixel(
+        &self,
+        polys: &[PassPolygon],
+        scatter: Option<&ScatterPass>,
+        px: Pixel,
+        linv: [f64; 3],
+        want_jac: bool,
+    ) -> (f64, [f64; 3], [f64; 8]) {
+        let [i11, i21, i22] = linv;
+        let samples = self.box_model.samples();
+        let inv_n = 1.0 / samples.len() as f64;
+        let p = [f64::from(px.x), f64::from(px.y)];
+        let mut b_raw = 0.0;
+        let mut dl = [0.0; 3];
+        let mut dh = [0.0; 8];
+        for u in samples {
+            let x = [p[0] + u[0], p[1] + u[1]];
+            let q = [i11 * x[0], i21 * x[0] + i22 * x[1]];
+            let mut dl_u = [0.0; 3];
+            let grad = if want_jac {
+                Some(SampleGrad {
+                    dl: &mut dl_u,
+                    dh: Some(&mut dh),
+                })
+            } else if scatter.is_some() {
+                Some(SampleGrad {
+                    dl: &mut dl_u,
+                    dh: None,
+                })
+            } else {
+                None
+            };
+            let (mut bu, dt12) = Self::sample(polys, q, grad, scatter);
+            if let Some(sp) = scatter {
+                let db_ds = [
+                    dl_u[0] * sp.dls[0][0] + dl_u[1] * sp.dls[1][0] + dl_u[2] * sp.dls[2][0],
+                    dl_u[0] * sp.dls[0][1] + dl_u[1] * sp.dls[1][1] + dl_u[2] * sp.dls[2][1],
+                    dl_u[0] * sp.dls[0][2] + dl_u[1] * sp.dls[1][2] + dl_u[2] * sp.dls[2][2],
+                ];
+                let dx_c = x[0] - self.c0[0];
+                let dy_c = x[1] - self.c0[1];
+                let t0 = dx_c * (sp.g1[0] * db_ds[0] + sp.g1[1] * db_ds[1] + sp.g1[2] * db_ds[2])
+                    + dy_c * (sp.g2[0] * db_ds[0] + sp.g2[1] * db_ds[1] + sp.g2[2] * db_ds[2]);
+                bu += t0 + dt12;
+            }
+            if want_jac {
+                for k in 0..3 {
+                    dl[k] += dl_u[k];
+                }
+            }
+            b_raw += bu;
+        }
+        b_raw *= inv_n;
+        if scatter.is_some() {
+            b_raw = b_raw.clamp(0.0, 1.0);
+        }
+        (b_raw, dl, dh)
     }
 
     /// `∂(l11, l21, l22)/∂(Σxx, Σxy, Σyy)` at `Σ_c`.
@@ -422,13 +551,14 @@ impl Model<'_> {
     /// model's domain (`Σ_c` not positive definite).
     pub(super) fn evaluate(&self, theta: &Vector, pixels: &[Pixel], want: Want) -> Option<Eval> {
         let (polys, linv) = self.pass_polygons(theta)?;
-        let [i11, i21, i22] = linv;
         let sv = self.box_model.shift_var();
         let s = sigma_of(theta);
         let l = cholesky2([s[0] - sv, s[1], s[2] - sv])?;
         let dls = Self::dl_dsigma(l);
-        let samples = self.box_model.samples();
-        let inv_n = 1.0 / samples.len() as f64;
+        let scatter = self
+            .blur_gradient
+            .map(|grad| ScatterPass::new(grad, l, linv, dls));
+        let inv_n = 1.0 / self.box_model.samples().len() as f64;
         let (a, c, alpha, beta) = (theta[I_A], theta[I_C], theta[I_ALPHA], theta[I_BETA]);
         let mut out = Eval {
             cost: 0.0,
@@ -445,43 +575,41 @@ impl Model<'_> {
         }
         for px in pixels {
             let p = [f64::from(px.x), f64::from(px.y)];
-            let mut b = 0.0;
-            let mut dl = [0.0; 3];
-            let mut dh = [0.0; 8];
-            for u in samples {
-                let x = [p[0] + u[0], p[1] + u[1]];
-                let q = [i11 * x[0], i21 * x[0] + i22 * x[1]];
-                b += if want.jacobian {
-                    Self::sample(&polys, q, Some((&mut dl, &mut dh)))
-                } else {
-                    Self::sample(&polys, q, None)
-                };
-            }
-            b *= inv_n;
+            let (b_raw, dl, dh) =
+                self.sample_pixel(&polys, scatter.as_ref(), *px, linv, want.jacobian);
+            let (b, db_db, db_dkappa) = bleed_eval(b_raw, theta[I_BLEED], self.fit_ink_bleed);
             let d = [
                 (p[0] - self.c0[0]) / self.scale,
                 (p[1] - self.c0[1]) / self.scale,
             ];
             let shade = 1.0 + alpha * d[0] + beta * d[1];
             let inner = c + a * (1.0 - b);
-            let r = px.value - shade * inner;
+            let lin = shade * inner;
+            let (obs, d_obs_d_lin, d_obs_d_gamma) = self.radiometric.forward(lin, theta[I_GAMMA]);
+            let r = px.value - obs;
             out.cost += r * r;
             if want.residuals {
                 out.residuals.push(r);
             }
             if want.jacobian {
                 let mut j = Vector::zeros();
-                let k = -shade * a * inv_n;
+                let k_b = d_obs_d_lin * (-shade * a * inv_n * db_db);
                 for (si, js) in j.iter_mut().skip(I_SIGMA).take(3).enumerate() {
-                    *js = k * (dl[0] * dls[0][si] + dl[1] * dls[1][si] + dl[2] * dls[2][si]);
+                    *js = k_b * (dl[0] * dls[0][si] + dl[1] * dls[1][si] + dl[2] * dls[2][si]);
                 }
-                j[I_A] = shade * (1.0 - b);
-                j[I_C] = shade;
-                j[I_ALPHA] = d[0] * inner;
-                j[I_BETA] = d[1] * inner;
-                for (hk, jh) in j.iter_mut().skip(I_H).enumerate() {
-                    *jh = k * dh[hk];
+                j[I_A] = d_obs_d_lin * shade * (1.0 - b);
+                j[I_C] = d_obs_d_lin * shade;
+                j[I_ALPHA] = d_obs_d_lin * d[0] * inner;
+                j[I_BETA] = d_obs_d_lin * d[1] * inner;
+                for hk in 0..8 {
+                    j[I_H + hk] = k_b * dh[hk];
                 }
+                j[I_GAMMA] = d_obs_d_gamma;
+                j[I_BLEED] = if self.fit_ink_bleed {
+                    d_obs_d_lin * (-shade * a * db_dkappa)
+                } else {
+                    0.0
+                };
                 for (jk, fixed) in j.iter_mut().zip(self.fixed.iter()) {
                     if *fixed {
                         *jk = 0.0;
@@ -518,6 +646,36 @@ impl Model<'_> {
         Some(out)
     }
 
+    /// Model blackness with optional probit ink bleed and scatter-PSF expansion
+    /// at every pixel, used by VarPro to solve closed-form `(A, C)` without
+    /// Jacobian assembly.
+    pub(super) fn blackness_with_bleed(
+        &self,
+        theta: &Vector,
+        pixels: &[Pixel],
+    ) -> Option<Vec<f64>> {
+        let (polys, linv) = self.pass_polygons(theta)?;
+        let scatter = if let Some(grad) = self.blur_gradient {
+            let sv = self.box_model.shift_var();
+            let s = sigma_of(theta);
+            let l = cholesky2([s[0] - sv, s[1], s[2] - sv])?;
+            let dls = Self::dl_dsigma(l);
+            Some(ScatterPass::new(grad, l, linv, dls))
+        } else {
+            None
+        };
+        Some(
+            pixels
+                .iter()
+                .map(|px| {
+                    let (b_raw, _, _) =
+                        self.sample_pixel(&polys, scatter.as_ref(), *px, linv, false);
+                    bleed_eval(b_raw, theta[I_BLEED], self.fit_ink_bleed).0
+                })
+                .collect(),
+        )
+    }
+
     /// Model blackness at every pixel for an isotropic component
     /// covariance `Σ_c = σ² I`, with the homography of `theta` — the σ
     /// profile's evaluator.
@@ -540,7 +698,7 @@ impl Model<'_> {
                     .iter()
                     .map(|u| {
                         let x = [f64::from(px.x) + u[0], f64::from(px.y) + u[1]];
-                        Self::sample(&polys, [i11 * x[0], i21 * x[0] + i22 * x[1]], None)
+                        Self::sample(&polys, [i11 * x[0], i21 * x[0] + i22 * x[1]], None, None).0
                     })
                     .sum::<f64>()
                     * inv_n
@@ -552,6 +710,15 @@ impl Model<'_> {
 impl Model<'_> {
     /// Whether `θ` is inside the fit's domain.
     pub(super) fn admissible(&self, th: &Vector) -> bool {
+        if th.iter().any(|v| !v.is_finite()) {
+            return false;
+        }
+        if !self.fixed[I_GAMMA] && !(MIN_GAMMA..=MAX_GAMMA).contains(&th[I_GAMMA]) {
+            return false;
+        }
+        if !self.fixed[I_BLEED] && th[I_BLEED].abs() > MAX_BLEED_KAPPA {
+            return false;
+        }
         let (lo, hi) = eig2(sigma_of(th));
         lo >= self.box_model.min_eigenvalue() && hi <= self.scale * self.scale
     }
@@ -581,6 +748,9 @@ mod tests {
             box_model,
             fixed: [false; NP],
             pixel_bounds: [9.0, 8.0, 32.0, 31.0],
+            radiometric: RadiometricModel::FreeGamma { initial_gamma: 2.1 },
+            fit_ink_bleed: true,
+            blur_gradient: None,
         }
     }
 
@@ -597,6 +767,8 @@ mod tests {
         for (k, v) in h.iter().enumerate() {
             t[I_H + k] = *v;
         }
+        t[I_GAMMA] = 2.1;
+        t[I_BLEED] = 0.15;
         t
     }
 
@@ -705,6 +877,9 @@ mod tests {
                     box_model: *box_model,
                     fixed: [false; NP],
                     pixel_bounds: [14.0, 20.0, 26.0, 20.0],
+                    radiometric: RadiometricModel::Linear,
+                    fit_ink_bleed: false,
+                    blur_gradient: None,
                 };
                 let sv = box_model.shift_var();
                 let comp = (total - sv).sqrt();

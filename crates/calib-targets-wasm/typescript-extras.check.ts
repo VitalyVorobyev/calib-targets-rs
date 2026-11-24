@@ -13,24 +13,38 @@
 // next to the declarations; it ships nowhere.
 
 import type {
+  BlurDecline,
+  BlurField,
+  BlurFitQuality,
+  BlurGradient,
+  BlurKernel,
+  BoardPhotometricOptions,
+  BoardPhotometricRefinement,
   CharucoBoardSpec,
   CharucoCorner,
   ChessboardCorner,
   ChessboardDetection,
   ChessConfig,
   Corner,
+  CornerBlur,
+  CornerPhotometricFit,
   DetectionQuality,
+  DisplaySurfaceModel,
   LabeledCorner,
   MarkerBoardCorner,
+  PhotometricFitOptions,
   PositionCovariance,
   PuzzleBoardCorner,
   PuzzleBoardDecodeInfo,
+  PuzzleBoardDetection,
   PuzzleBoardDiagnostics,
   PuzzlePoleCorner,
   PuzzlePoleDecodeConfig,
   PuzzlePoleDetection,
   PuzzlePoleParams,
   PuzzlePoleSpec,
+  RadiometricModel,
+  RefinedDetection,
   DetectionWithDiagnostics,
   Point3,
   DetectionStrategy,
@@ -356,7 +370,7 @@ export const puzzlePoleDecode: PuzzlePoleDecodeConfig = {
   min_bit_confidence: 0.1,
   max_bit_error_rate: 0.15,
   search_all_components: true,
-  sample_radius_rel: 0.25,
+  sample_radius_rel: 0.2,
   scoring_mode: { kind: "soft_log_likelihood" },
   symmetry_mode: { kind: "rotations" },
 };
@@ -414,4 +428,122 @@ export const puzzlePoleDiagnoseResult: DetectionWithDiagnostics<
       score_margin: 12.0,
     },
   },
+};
+
+export const radiometricModels: RadiometricModel[] = [
+  "linear",
+  "srgb",
+  { fixed_gamma: { gamma: 2.2 } },
+  { free_gamma: { initial_gamma: 2.2 } },
+];
+
+export const einkDisplaySurface: DisplaySurfaceModel = {
+  display_pixels_per_cell: 12.0,
+  mtf_sigma_display_px: 0.5,
+  gray_levels: 16,
+  rasterize_curved_features: true,
+};
+
+export const blurGradientSample: BlurGradient = {
+  d_sigma_dx: [0.01, -0.002, 0.005],
+  d_sigma_dy: [-0.003, 0.004, 0.01],
+};
+
+export const photometricFitOpts: PhotometricFitOptions = {
+  radiometric: radiometricModels[1],
+  fit_ink_bleed: false,
+  use_varpro: true,
+  display: einkDisplaySurface,
+  known_blur_gradient: blurGradientSample,
+};
+
+export const boardPhotometricOpts: BoardPhotometricOptions = {
+  fit: photometricFitOpts,
+  puzzle_dot_diameter_rel: 1.0 / 3.0,
+  two_pass_scatter_correction: true,
+};
+
+const sampleBlurKernel: BlurKernel = { xx: 4.0, xy: -0.1, yy: 4.2 };
+
+const sampleBlurQuality: BlurFitQuality = {
+  window_cells: 1.5,
+  pixels: 256,
+  contrast: 150.0,
+  residual_rms: 1.2,
+  residual_autocorrelation: 0.02,
+};
+
+const sampleCornerBlur: CornerBlur = {
+  sigma_px: 2.02,
+  sigma_std_error_px: 0.03,
+  kernel: sampleBlurKernel,
+  kernel_covariance: [
+    [0.01, 0.0, 0.0],
+    [0.0, 0.01, 0.0],
+    [0.0, 0.0, 0.01],
+  ],
+  fit: sampleBlurQuality,
+};
+
+const sampleCornerFit: CornerPhotometricFit = {
+  position: [120.5, 84.25],
+  position_covariance: cov,
+  axes: [
+    { angle: 0.0, fit_std_error: 0.002 },
+    { angle: Math.PI / 2, fit_std_error: 0.002 },
+  ],
+  blur: sampleCornerBlur,
+  blur_decline: null,
+  display_blur: { xx: 0.05, xy: 0.0, yy: 0.05 },
+  fit: sampleBlurQuality,
+  gamma: null,
+  ink_bleed_cells: null,
+  scatter_correction_px: [0.002, -0.001],
+};
+
+const sampleDecline: BlurDecline = "SharperThanPixel";
+
+const sampleBlurField: BlurField = {
+  center: [180.0, 180.0],
+  scale: 150.0,
+  degree: 2,
+  coeffs: [
+    [4.0, 0.01, 0.0, 0.0, 0.0, 0.0],
+    [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    [4.1, 0.0, 0.01, 0.0, 0.0, 0.0],
+  ],
+  sample_count: 16,
+};
+
+export const sampleRefinement: BoardPhotometricRefinement = {
+  corners: [{ Ok: sampleCornerFit }, { Err: sampleDecline }],
+  blur_field: sampleBlurField,
+};
+
+const samplePuzzleCorner: PuzzleBoardCorner = {
+  position: [120.5, 84.25],
+  position_covariance: cov,
+  grid: { u: 2, v: 3 },
+  id: 7,
+  target_position: [6.4, 9.6],
+  score: 42.0,
+};
+
+const samplePuzzleDetection: PuzzleBoardDetection = {
+  corners: [samplePuzzleCorner],
+  alignment: {
+    lattice: "square",
+    matrix: [
+      [1, 0],
+      [0, 1],
+    ],
+    translation: [0, 0],
+  },
+  decode: puzzlePoleDecodeInfo,
+  quality,
+};
+
+export const sampleRefinedPuzzleBoard: RefinedDetection<PuzzleBoardDetection> = {
+  detection: samplePuzzleDetection,
+  refinement: sampleRefinement,
 };

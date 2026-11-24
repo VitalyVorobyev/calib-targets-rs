@@ -3,8 +3,9 @@
 //! heteroskedasticity-and-autocorrelation-consistent covariance.
 
 use super::model::{
-    Eval, Matrix, Model, Pixel, Vector, Want, I_A, I_ALPHA, I_BETA, I_C, I_H, I_SIGMA, NP,
+    Eval, Matrix, Model, Pixel, Vector, Want, I_A, I_ALPHA, I_BETA, I_C, I_GAMMA, I_H, I_SIGMA, NP,
 };
+use super::varpro::{project_ac, schur_reduce_ac};
 use super::BlurDecline;
 
 /// Levenberg–Marquardt iteration cap per window.
@@ -43,7 +44,7 @@ impl Reparam {
     pub(super) fn new(model: &Model<'_>, theta: &Vector, jtj: &Matrix, rho: f64) -> Self {
         let mut t = Matrix::zeros();
         let mut active = [false; NP];
-        for k in 0..I_H {
+        for k in (0..I_H).chain((I_H + 8)..NP) {
             if !model.fixed[k] {
                 t[(k, k)] = 1.0;
                 active[k] = true;
@@ -129,23 +130,38 @@ impl Reparam {
 }
 
 /// Levenberg–Marquardt from `theta` in the parameterisation `re`. Returns
-/// the optimum and the evaluation (with Jacobian) there.
+/// the optimum and the evaluation (with Jacobian) there. When `use_varpro` is
+/// `true` and contrast/black level `(A, C)` enter linearly, eliminates `(A, C)`
+/// via Variable Projection (closed-form projection + Schur complement, i.e.
+/// Kaufman's approximation of the Golub–Pereyra Jacobian).
 pub(super) fn levenberg_marquardt(
     model: &Model<'_>,
     theta: Vector,
     pixels: &[Pixel],
     first: Eval,
     re: &Reparam,
+    use_varpro: bool,
 ) -> Result<(Vector, Eval), BlurDecline> {
     let want = Want {
         jacobian: true,
         ..Want::default()
     };
+    let varpro = use_varpro
+        && model.radiometric.is_linear()
+        && !model.fixed[I_A]
+        && !model.fixed[I_C]
+        && re.active[I_A]
+        && re.active[I_C];
     let mut theta = theta;
     let mut cur = first;
     let mut lambda = 1e-3;
     for _ in 0..MAX_ITER {
-        let (n, g) = re.project(&cur.jtj, &cur.jtr);
+        let (n_raw, g_raw) = re.project(&cur.jtj, &cur.jtr);
+        let (n, g) = if varpro {
+            schur_reduce_ac(&n_raw, &g_raw, &re.active).unwrap_or((n_raw, g_raw))
+        } else {
+            (n_raw, g_raw)
+        };
         let mut a = n;
         for i in 0..NP {
             a[(i, i)] += lambda * n[(i, i)].max(1e-12);
@@ -164,7 +180,10 @@ pub(super) fn levenberg_marquardt(
         if predicted <= STOP_FRACTION * cur.cost / pixels.len() as f64 {
             return Ok((theta, cur));
         }
-        let trial = theta + re.t * step;
+        let mut trial = theta + re.t * step;
+        if varpro && model.admissible(&trial) {
+            let _ = project_ac(model, &mut trial, pixels);
+        }
         let next = if model.admissible(&trial) {
             model.evaluate(&trial, pixels, want)
         } else {
@@ -211,7 +230,7 @@ pub(super) fn photometric_vif(jtj: &Matrix, re: &Reparam, sigma: [f64; 3]) -> Op
     let g = sigma_px_gradient(sigma);
     let all = [true; NP];
     let mut cond = all;
-    for k in [I_A, I_C, I_ALPHA, I_BETA] {
+    for k in [I_A, I_C, I_ALPHA, I_BETA, I_GAMMA] {
         cond[k] = false;
     }
     let v_full = (g.transpose() * re.inverse(jtj, &all)? * g)[(0, 0)];

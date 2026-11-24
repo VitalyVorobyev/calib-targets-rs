@@ -310,6 +310,24 @@ pub(super) fn edge_term(hs: f64, ya: f64, len: f64, gradient: bool) -> Option<Ed
     Some(term)
 }
 
+/// First three raw Gaussian edge moments along `t` (`φ(h) ∫_{ya}^{yb} y^k φ(y) dy`
+/// for `k = 0, 1, 2`), used by the first-order 2-D scatter-PSF expansion.
+#[inline]
+pub(super) fn edge_moments(hs: f64, ya: f64, len: f64) -> Option<[f64; 3]> {
+    let yb = ya + len;
+    let h = hs.abs();
+    if h >= CUT || ya >= CUT || yb <= -CUT {
+        return None;
+    }
+    let (_, pdf_h) = normal(h);
+    let (cdf_a, pdf_a) = normal(ya);
+    let (cdf_b, pdf_b) = normal(yb);
+    let i0 = cdf_b - cdf_a;
+    let i1 = pdf_a - pdf_b;
+    let i2 = ya * pdf_a - yb * pdf_b + i0;
+    Some([pdf_h * i0, pdf_h * i1, pdf_h * i2])
+}
+
 /// Whitened distance below which a sample counts as lying on an edge.
 const ON_EDGE: f64 = 1e-9;
 

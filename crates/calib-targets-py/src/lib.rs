@@ -9,6 +9,7 @@ use serde::de::DeserializeOwned;
 use serde::Serialize;
 use serde_json::{Map, Number, Value};
 
+mod blur;
 mod detect;
 mod diagnose;
 mod pole;
@@ -390,5 +391,10 @@ fn _core(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(printable::render_target_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(printable::render_screen_target, m)?)?;
     m.add_function(wrap_pyfunction!(printable::write_target_bundle, m)?)?;
+    m.add_function(wrap_pyfunction!(blur::refine_chessboard_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(blur::refine_charuco_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(blur::refine_puzzleboard_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(blur::refine_marker_board_corners, m)?)?;
+    m.add_function(wrap_pyfunction!(blur::charuco_blur, m)?)?;
     Ok(())
 }
