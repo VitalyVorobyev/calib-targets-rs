@@ -246,14 +246,18 @@ fn find_best_alignment(
         let take = match &best {
             None => true,
             Some((best_t_idx, best_delta, best_overlap, best_err)) => {
-                if overlap_full != *best_overlap {
-                    overlap_full > *best_overlap
-                } else if (max_err_full - *best_err).abs() > f32::EPSILON {
-                    max_err_full < *best_err
-                } else if t_idx != *best_t_idx {
-                    t_idx < *best_t_idx
-                } else {
-                    (di, dj) < *best_delta
+                match overlap_full.cmp(best_overlap) {
+                    std::cmp::Ordering::Greater => true,
+                    std::cmp::Ordering::Less => false,
+                    std::cmp::Ordering::Equal => match max_err_full.total_cmp(best_err) {
+                        std::cmp::Ordering::Less => true,
+                        std::cmp::Ordering::Greater => false,
+                        std::cmp::Ordering::Equal => match t_idx.cmp(best_t_idx) {
+                            std::cmp::Ordering::Less => true,
+                            std::cmp::Ordering::Greater => false,
+                            std::cmp::Ordering::Equal => (di, dj) < *best_delta,
+                        },
+                    },
                 }
             }
         };
@@ -267,11 +271,11 @@ fn find_best_alignment(
 /// Greedy local merge.
 ///
 /// Strategy: estimate each component's cell size, then for every pair
-/// `(p, q)` (largest-first by labelled count), search for an
-/// alignment that satisfies the cell-size, overlap, and position
-/// tolerances. On success, rewrite `p`'s labels into `q`'s frame and
-/// merge into `q`. Repeat until no further merges are possible or the
-/// `max_components` cap is reached.
+/// `(j, i)` (largest-first by labelled count, so `j` is the larger anchor),
+/// search for an alignment that satisfies the cell-size, overlap, and position
+/// tolerances. On success, rewrite `i`'s labels into `j`'s frame and merge into
+/// `j`. Repeat until no further merges are possible or the `max_components`
+/// cap is reached.
 ///
 /// Every component labels corners out of the **same** `positions` slice: a
 /// component maps `(i, j) → index`, and that index means the same corner in
@@ -293,11 +297,7 @@ pub fn merge_components_local(
     positions: &[Point2<f32>],
     params: &LocalMergeParams,
 ) -> ComponentMergeResult {
-    // Default to the square symmetry group, preserving the historical
-    // byte-identical behaviour for the square callers (topological + seed-and-
-    // grow facades). The lattice-parameterized variant is
-    // [`merge_components_local_for`].
-    merge_components_local_with_transforms(components, positions, params, &GRID_TRANSFORMS_D4)
+    merge_components_local_for(components, positions, params, LatticeKind::Square)
 }
 
 /// Lattice-parameterized [`merge_components_local`]: reunite components under
@@ -310,12 +310,39 @@ pub fn merge_components_local_for(
     params: &LocalMergeParams,
     lattice: LatticeKind,
 ) -> ComponentMergeResult {
-    merge_components_local_with_transforms(
-        components,
-        positions,
-        params,
-        lattice.symmetry_transforms(),
-    )
+    let transforms: &[GridTransform] = match lattice {
+        LatticeKind::Square => &GRID_TRANSFORMS_D4,
+        LatticeKind::Hex => lattice.symmetry_transforms(),
+    };
+    merge_components_local_with_transforms(components, positions, params, transforms, lattice)
+}
+
+fn component_cell_size(
+    labelled: &HashMap<(i32, i32), usize>,
+    positions: &[Point2<f32>],
+    lattice: LatticeKind,
+) -> f32 {
+    match lattice {
+        LatticeKind::Square => median_edge_length(labelled, positions),
+        LatticeKind::Hex => {
+            let mut dists = Vec::new();
+            for (&(q, r), &idx) in labelled {
+                let p = positions[idx];
+                for (dq, dr) in [(1, 0), (0, 1), (1, -1)] {
+                    if let Some(&n_idx) = labelled.get(&(q + dq, r + dr)) {
+                        let q_pos = positions[n_idx];
+                        dists.push(((q_pos.x - p.x).powi(2) + (q_pos.y - p.y).powi(2)).sqrt());
+                    }
+                }
+            }
+            if dists.is_empty() {
+                0.0
+            } else {
+                dists.sort_by(f32::total_cmp);
+                dists[dists.len() / 2]
+            }
+        }
+    }
 }
 
 fn merge_components_local_with_transforms(
@@ -323,6 +350,7 @@ fn merge_components_local_with_transforms(
     positions: &[Point2<f32>],
     params: &LocalMergeParams,
     transforms: &[GridTransform],
+    lattice: LatticeKind,
 ) -> ComponentMergeResult {
     let mut stats = ComponentMergeStats {
         components_in: components.len(),
@@ -339,21 +367,30 @@ fn merge_components_local_with_transforms(
     let mut working: Vec<HashMap<(i32, i32), usize>> = components.to_vec();
     let mut cell_sizes: Vec<f32> = components
         .iter()
-        .map(|labelled| median_edge_length(labelled, positions))
+        .map(|labelled| component_cell_size(labelled, positions, lattice))
         .collect();
 
     let mut alive: Vec<bool> = vec![true; components.len()];
     let mut changed = true;
     while changed {
         changed = false;
-        // Order alive components by size descending; bigger anchors are
-        // more reliable.
+        // Order alive components by size descending (input index breaks ties
+        // deterministically); bigger anchors are more reliable.
         let mut order: Vec<usize> = (0..components.len()).filter(|i| alive[*i]).collect();
-        order.sort_by(|a, b| working[*b].len().cmp(&working[*a].len()));
+        order.sort_by(|a, b| {
+            working[*b]
+                .len()
+                .cmp(&working[*a].len())
+                .then_with(|| a.cmp(b))
+        });
 
-        'outer: for &i in &order {
-            for &j in &order {
-                if i == j || !alive[i] || !alive[j] {
+        'outer: for pos_j in 0..order.len() {
+            let j = order[pos_j];
+            if !alive[j] {
+                continue;
+            }
+            for &i in &order[(pos_j + 1)..] {
+                if !alive[i] {
                     continue;
                 }
                 // Cell-size sanity gate.
@@ -374,7 +411,7 @@ fn merge_components_local_with_transforms(
                 ) else {
                     continue;
                 };
-                // Merge i into j (the larger component is j by ordering).
+                // Merge smaller i into larger j (`working[j].len() >= working[i].len()`).
                 // For each label in i, transform to j's frame and insert it —
                 // subject to *both* directions of the labelling's injectivity:
                 //
@@ -634,5 +671,37 @@ mod tests {
                 "D6 element {relabel} failed to merge"
             );
         }
+    }
+
+    #[test]
+    fn larger_component_keeps_frame_and_labels_on_merge() {
+        // Larger component: 5x5 on axes (+x, +y).
+        // Smaller component: 3x3 rotated 90 deg and shifted, sharing the 3x3
+        // overlap region's corners with one slightly offset coordinate
+        // collision. The larger component's frame (+x, +y) and index must win.
+        let mut positions = Vec::new();
+        let mut large = HashMap::new();
+        for j in 0..5 {
+            for i in 0..5 {
+                let idx = positions.len();
+                large.insert((i, j), idx);
+                positions.push(Point2::new(i as f32 * 10.0, j as f32 * 10.0));
+            }
+        }
+        let mut small = HashMap::new();
+        for j in 0..3 {
+            for i in 0..3 {
+                // Rotate coordinates by 90 deg relative to `large`.
+                small.insert((-j, i), large[&(i, j)]);
+            }
+        }
+        // Put the smaller component first so input order would lose if larger
+        // were merged into smaller.
+        let res = merge_components_local(&[small, large], &positions, &LocalMergeParams::default());
+        assert_eq!(res.components.len(), 1);
+        let merged = &res.components[0];
+        assert_eq!(merged.len(), 25);
+        assert_eq!(positions[merged[&(4, 0)]], Point2::new(40.0, 0.0));
+        assert_eq!(positions[merged[&(0, 4)]], Point2::new(0.0, 40.0));
     }
 }

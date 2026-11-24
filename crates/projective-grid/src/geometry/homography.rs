@@ -284,18 +284,38 @@ pub fn estimate_homography<F: Float>(
 /// Hartley-normalised homogeneous DLT for N >= 4 correspondences: the
 /// homography is the null vector of the normalised `2N × 9` system (the
 /// eigenvector of `AᵀA` for its smallest eigenvalue), so no entry is pinned
-/// to `1` while solving. The caller guarantees `src_pts.len() ==
-/// dst_pts.len() >= 4`.
+/// to `1` while solving. Always accumulates `AᵀA` and solves in `f64` so
+/// `F = f32` does not lose precision squaring the condition number.
+/// The caller guarantees `src_pts.len() == dst_pts.len() >= 4`.
 pub(super) fn estimate_homography_dlt<F: Float>(
     src_pts: &[Point2<F>],
     dst_pts: &[Point2<F>],
 ) -> Option<Homography<F>> {
+    let src_f64: Vec<Point2<f64>> = src_pts
+        .iter()
+        .map(|p| Some(Point2::new(p.x.to_subset()?, p.y.to_subset()?)))
+        .collect::<Option<Vec<_>>>()?;
+    let dst_f64: Vec<Point2<f64>> = dst_pts
+        .iter()
+        .map(|p| Some(Point2::new(p.x.to_subset()?, p.y.to_subset()?)))
+        .collect::<Option<Vec<_>>>()?;
+
+    let h64 = estimate_homography_dlt_f64(&src_f64, &dst_f64)?;
+    let mat: Matrix3<F> = h64.h.map(nalgebra::convert::<f64, F>);
+    if mat.iter().any(|x| !x.is_finite()) {
+        return None;
+    }
+    Some(Homography::new(mat))
+}
+
+fn estimate_homography_dlt_f64(
+    src_pts: &[Point2<f64>],
+    dst_pts: &[Point2<f64>],
+) -> Option<Homography<f64>> {
     let (r, tr) = normalize_points(src_pts);
     let (im, ti) = normalize_points(dst_pts);
 
     let n = src_pts.len();
-    let zero = F::zero();
-    let neg_one = -F::one();
 
     // Accumulate Aᵀ A directly into a stack 9×9 without ever
     // materialising the (2N × 9) matrix A. For correspondence
@@ -303,44 +323,24 @@ pub(super) fn estimate_homography_dlt<F: Float>(
     //   row₂ₖ   = [-x, -y, -1,  0,  0,  0, ux, uy, u]
     //   row₂ₖ₊₁ = [ 0,  0,  0, -x, -y, -1, vx, vy, v]
     // and Aᵀ A = Σₖ (rowᵀ row) summed over both rows of each pair.
-    let mut m: SMatrix<F, 9, 9> = SMatrix::zeros();
+    let mut m: SMatrix<f64, 9, 9> = SMatrix::zeros();
     for k in 0..n {
         let x = r[k].x;
         let y = r[k].y;
         let u = im[k].x;
         let v = im[k].y;
 
-        let row1 = SVector::<F, 9>::from_column_slice(&[
-            -x,
-            -y,
-            neg_one,
-            zero,
-            zero,
-            zero,
-            u * x,
-            u * y,
-            u,
-        ]);
-        let row2 = SVector::<F, 9>::from_column_slice(&[
-            zero,
-            zero,
-            zero,
-            -x,
-            -y,
-            neg_one,
-            v * x,
-            v * y,
-            v,
-        ]);
+        let row1 =
+            SVector::<f64, 9>::from_column_slice(&[-x, -y, -1.0, 0.0, 0.0, 0.0, u * x, u * y, u]);
+        let row2 =
+            SVector::<f64, 9>::from_column_slice(&[0.0, 0.0, 0.0, -x, -y, -1.0, v * x, v * y, v]);
         m += row1 * row1.transpose();
         m += row2 * row2.transpose();
     }
 
     // The right singular vector of A for σ_min is the eigenvector of
     // Aᵀ A for the smallest eigenvalue: A = U Σ Vᵀ ⇒ Aᵀ A = V Σ² Vᵀ.
-    // Hartley normalisation keeps cond(A) ≲ 10³, so cond(Aᵀ A) ≲ 10⁶ —
-    // comfortably within f32 precision. Sign is unconstrained here but
-    // pinned downstream by `normalize_homography` dividing by h[(2,2)].
+    // Sign is unconstrained here and pinned by `normalize_homography`.
     let eig = m.symmetric_eigen();
     let mut min_idx = 0usize;
     let mut min_val = eig.eigenvalues[0];
@@ -352,7 +352,8 @@ pub(super) fn estimate_homography_dlt<F: Float>(
     }
     let h = eig.eigenvectors.column(min_idx);
 
-    let hn = Matrix3::<F>::from_row_slice(&[h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]]);
+    let hn =
+        Matrix3::<f64>::from_row_slice(&[h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], h[8]]);
 
     let h_den = denormalize_homography(hn, tr, ti)?;
     let h_den = normalize_homography(h_den)?;

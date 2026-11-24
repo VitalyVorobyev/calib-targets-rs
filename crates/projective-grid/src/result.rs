@@ -384,12 +384,7 @@ fn canonicalize_to_image_axes(entries: &mut [GridEntry]) -> bool {
     let vu = (vu_sum.0 / vu_n as f32, vu_sum.1 / vu_n as f32);
     let vv = (vv_sum.0 / vv_n as f32, vv_sum.1 / vv_n as f32);
 
-    // Make the axis with the larger |x| component the horizontal (`u`) axis.
-    let swap = vu.0.abs() < vv.0.abs();
-    let new_vu = if swap { vv } else { vu };
-    let new_vv = if swap { vu } else { vv };
-    let flip_u = new_vu.0 < 0.0;
-    let flip_v = new_vv.1 < 0.0;
+    let (swap, flip_u, flip_v) = choose_image_axis_transform(vu, vv);
 
     if !swap && !flip_u && !flip_v {
         return false;
@@ -425,6 +420,79 @@ fn canonicalize_to_image_axes(entries: &mut [GridEntry]) -> bool {
     }
 
     swap
+}
+
+/// Pick the axis transpose / sign flips `(swap, flip_u, flip_v)` that map the
+/// mean lattice steps `vu`, `vv` to image `+x` / `+y`.
+///
+/// The output must be right-handed (`det([u', v']) > 0` in y-down image
+/// coordinates, i.e. `+u` then `+v` turn clockwise on screen, the way `i`
+/// right / `j` down does): a physical board is always seen from its front, so
+/// a reflected labelling would mirror it and break rotation-only (C4) decoders
+/// downstream.
+///
+/// The primary rule makes the axis with the larger `|x|` horizontal and then
+/// fixes each axis's sign. That keeps the labelling of every ordinary view
+/// stable, but under strong shear it can produce a reflection. In that case the
+/// right-handed transform maximising `cos∠(u', +x) + cos∠(v', +y)` is used
+/// instead (ties keep the earlier candidate, identity first, so the choice is
+/// deterministic). A degenerate (collinear) step pair has no handedness and
+/// keeps the primary rule.
+fn choose_image_axis_transform(vu: (f32, f32), vv: (f32, f32)) -> (bool, bool, bool) {
+    let swap = vu.0.abs() < vv.0.abs();
+    let (new_vu, new_vv) = if swap { (vv, vu) } else { (vu, vv) };
+    let flip_u = new_vu.0 < 0.0;
+    let flip_v = new_vv.1 < 0.0;
+    let sign = |flip: bool| if flip { -1.0 } else { 1.0 };
+    let (ux, uy) = (sign(flip_u) * new_vu.0, sign(flip_u) * new_vu.1);
+    let (vx, vy) = (sign(flip_v) * new_vv.0, sign(flip_v) * new_vv.1);
+    let det_primary = ux * vy - uy * vx;
+    let det_in = vu.0 * vv.1 - vu.1 * vv.0;
+    if det_primary > 0.0 || det_in == 0.0 || !det_in.is_finite() {
+        return (swap, flip_u, flip_v);
+    }
+    best_aligned_right_handed_transform(vu, vv)
+}
+
+/// The right-handed `(swap, flip_u, flip_v)` whose axes best align with image
+/// `+x` / `+y` (see [`choose_image_axis_transform`]).
+fn best_aligned_right_handed_transform(vu: (f32, f32), vv: (f32, f32)) -> (bool, bool, bool) {
+    let unit = |p: (f32, f32)| {
+        let n = p.0.hypot(p.1);
+        if n > 0.0 && n.is_finite() {
+            (p.0 / n, p.1 / n)
+        } else {
+            (0.0, 0.0)
+        }
+    };
+    let (vu, vv) = (unit(vu), unit(vv));
+    let det_in = vu.0 * vv.1 - vu.1 * vv.0;
+    let mut best = (false, false, false);
+    let mut best_score = f32::NEG_INFINITY;
+    for swap in [false, true] {
+        for flip_u in [false, true] {
+            for flip_v in [false, true] {
+                let (mut u, mut v) = if swap { (vv, vu) } else { (vu, vv) };
+                if flip_u {
+                    u = (-u.0, -u.1);
+                }
+                if flip_v {
+                    v = (-v.0, -v.1);
+                }
+                // Swapping or a single flip each negate the determinant.
+                let det_out = u.0 * v.1 - u.1 * v.0;
+                if det_in != 0.0 && det_out <= 0.0 {
+                    continue;
+                }
+                let score = u.0 + v.1;
+                if score > best_score {
+                    best_score = score;
+                    best = (swap, flip_u, flip_v);
+                }
+            }
+        }
+    }
+    best
 }
 
 fn bbox_for_entries(entries: &[GridEntry]) -> Option<(Coord, Coord)> {
@@ -589,5 +657,73 @@ mod tests {
         let grid = LabelledGrid::new(LatticeKind::Square, vec![], None);
         let report = ConsistencyReport::new(true, grid, make_identity_fit(), vec![rejected]);
         assert_eq!(report.rejected()[0].source_index, 5);
+    }
+
+    #[test]
+    fn normalize_preserves_right_handedness_under_perspective_shear() {
+        // Right-handed sheared axes where `|vu.x| < |vv.x|` triggers a swap:
+        // vu = (5.0, 1.0), vv = (5.1, 8.6), det(vu, vv) = +37.9 > 0.
+        // Without a handedness guard, swapping u <-> v without flipping one
+        // axis produces det < 0 (a reflection outside C4).
+        let entries = vec![
+            mk_entry(0, 0, 100.0, 100.0),
+            mk_entry(1, 0, 105.0, 101.0),
+            mk_entry(0, 1, 105.1, 108.6),
+            mk_entry(1, 1, 110.1, 109.6),
+        ];
+        let mut grid = LabelledGrid::new(LatticeKind::Square, entries, None);
+        grid.normalize();
+        let by_coord: HashMap<(i32, i32), Point2<f32>> = grid
+            .entries()
+            .iter()
+            .map(|e| ((e.coord.u, e.coord.v), e.image_position))
+            .collect();
+        let o = by_coord[&(0, 0)];
+        let du = by_coord[&(1, 0)] - o;
+        let dv = by_coord[&(0, 1)] - o;
+        let det = du.x * dv.y - du.y * dv.x;
+        assert!(
+            det > 0.0,
+            "normalized square grid must be right-handed, got det={det}"
+        );
+        // The input is already right-handed with +u ≈ +x (11°) and +v ≈ +y
+        // (59°), so canonicalization must keep it as is rather than transpose
+        // and flip into a right-handed but mis-oriented frame.
+        assert!(
+            (du.x - 5.0).abs() < 1e-4 && (du.y - 1.0).abs() < 1e-4,
+            "+u must stay the (5, 1) step, got {du:?}"
+        );
+        assert!(
+            (dv.x - 5.1).abs() < 1e-4 && (dv.y - 8.6).abs() < 1e-4,
+            "+v must stay the (5.1, 8.6) step, got {dv:?}"
+        );
+    }
+
+    #[test]
+    fn image_axis_transform_picks_best_aligned_right_handed_frame() {
+        // Already canonical.
+        assert_eq!(
+            choose_image_axis_transform((1.0, 0.0), (0.0, 1.0)),
+            (false, false, false)
+        );
+        // Lattice rotated 90° clockwise on screen: +u points down, +v left.
+        // The right-handed fix is a transpose with +v flipped to point down.
+        let (swap, flip_u, flip_v) = choose_image_axis_transform((0.0, 1.0), (-1.0, 0.0));
+        assert!(swap);
+        let (u, v) = ((-1.0_f32, 0.0_f32), (0.0_f32, 1.0_f32));
+        let u = if flip_u { (-u.0, -u.1) } else { u };
+        let v = if flip_v { (-v.0, -v.1) } else { v };
+        assert_eq!((u, v), ((1.0, 0.0), (0.0, 1.0)));
+        // A left-handed labelling (+v pointing up) is made right-handed by
+        // flipping +v.
+        assert_eq!(
+            choose_image_axis_transform((1.0, 0.0), (0.0, -1.0)),
+            (false, false, true)
+        );
+        // Sheared but right-handed input: keep it.
+        assert_eq!(
+            choose_image_axis_transform((5.0, 1.0), (5.1, 8.6)),
+            (false, false, false)
+        );
     }
 }

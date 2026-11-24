@@ -236,12 +236,7 @@ impl PuzzleBoardDetector {
                             let both_well_supported = prev.result.decode.edges_matched >= min_edges
                                 && decoded.result.decode.edges_matched >= min_edges;
                             if both_well_supported
-                                && origins_conflict(
-                                    prev.result.decode.master_origin_row,
-                                    prev.result.decode.master_origin_col,
-                                    decoded.result.decode.master_origin_row,
-                                    decoded.result.decode.master_origin_col,
-                                )
+                                && components_conflict(&prev.result, &decoded.result)
                             {
                                 return (
                                     Err(PuzzleBoardDetectError::InconsistentPosition),
@@ -570,8 +565,10 @@ impl PuzzleBoardDetector {
 /// Call this **before** both functions to guarantee the invariant:
 /// `target_position == Point2::new((id % 501) * cell, (id / 501) * cell)`.
 pub(crate) fn wrap_master(master_i: i32, master_j: i32) -> (i32, i32) {
-    let cols = MASTER_COLS as i32;
-    (master_i.rem_euclid(cols), master_j.rem_euclid(cols))
+    (
+        master_i.rem_euclid(MASTER_COLS as i32),
+        master_j.rem_euclid(MASTER_ROWS as i32),
+    )
 }
 
 /// Compute the flat corner id from already-wrapped master coordinates in `[0, 501)`.
@@ -591,14 +588,77 @@ pub(crate) fn master_target_position(master_i: i32, master_j: i32, cell_size: f3
     Point2::new(master_i as f32 * cell_size, master_j as f32 * cell_size)
 }
 
-/// Return `true` if two master origins are inconsistent (i.e. they map to
-/// different positions on the 501×501 cyclic master grid).
-fn origins_conflict(row_a: i32, col_a: i32, row_b: i32, col_b: i32) -> bool {
-    let ra = row_a.rem_euclid(MASTER_ROWS as i32);
-    let ca = col_a.rem_euclid(MASTER_COLS as i32);
-    let rb = row_b.rem_euclid(MASTER_ROWS as i32);
-    let cb = col_b.rem_euclid(MASTER_COLS as i32);
-    (ra, ca) != (rb, cb)
+fn median_grid_pitch_px(detections: &[&PuzzleBoardDetection]) -> f32 {
+    let mut dists = Vec::new();
+    for det in detections {
+        let mut by_grid = std::collections::BTreeMap::new();
+        for c in &det.corners {
+            by_grid.insert((c.grid.u, c.grid.v), c.position);
+        }
+        for (&(u, v), &p) in &by_grid {
+            for next in [(u + 1, v), (u, v + 1)] {
+                if let Some(&q) = by_grid.get(&next) {
+                    let d = (q - p).norm();
+                    if d.is_finite() && d > 0.0 {
+                        dists.push(d);
+                    }
+                }
+            }
+        }
+    }
+    if dists.is_empty() {
+        return 0.0;
+    }
+    dists.sort_by(f32::total_cmp);
+    dists[dists.len() / 2]
+}
+
+/// Return `true` if two decoded board components contradict each other:
+/// either the same master corner `id` maps further than `max(2.0, 0.25 * est_pitch)` px
+/// apart, or the same image pixel (within `1.0` px) is assigned different master IDs.
+fn components_conflict(a: &PuzzleBoardDetection, b: &PuzzleBoardDetection) -> bool {
+    let est_pitch = median_grid_pitch_px(&[a, b]);
+    let pos_tol = 2.0f32.max(0.25 * est_pitch);
+
+    let mut b_by_id = std::collections::BTreeMap::new();
+    let mut b_by_x: Vec<(f32, f32, u32)> = Vec::with_capacity(b.corners.len());
+    for cb in &b.corners {
+        b_by_id.insert(cb.id, cb.position);
+        if cb.position.x.is_finite() && cb.position.y.is_finite() {
+            b_by_x.push((cb.position.x, cb.position.y, cb.id));
+        }
+    }
+    b_by_x.sort_by(|lhs, rhs| {
+        lhs.0
+            .total_cmp(&rhs.0)
+            .then_with(|| lhs.1.total_cmp(&rhs.1))
+            .then_with(|| lhs.2.cmp(&rhs.2))
+    });
+
+    for ca in &a.corners {
+        if let Some(&pb) = b_by_id.get(&ca.id) {
+            let d = (ca.position - pb).norm();
+            if !d.is_finite() || d > pos_tol {
+                return true;
+            }
+        }
+        if ca.position.x.is_finite() && ca.position.y.is_finite() {
+            let start = b_by_x.partition_point(|&(bx, _, _)| bx < ca.position.x - 1.0);
+            for &(bx, by, bid) in &b_by_x[start..] {
+                if bx > ca.position.x + 1.0 {
+                    break;
+                }
+                if bid != ca.id {
+                    let dx = ca.position.x - bx;
+                    let dy = ca.position.y - by;
+                    if dx * dx + dy * dy <= 1.0 {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 fn cmp_higher(candidate: f32, current: f32) -> Option<bool> {
@@ -1115,22 +1175,87 @@ mod tests {
 
     // --- existing tests ----------------------------------------------------------
 
-    #[test]
-    fn origins_conflict_catches_distinct_positions() {
-        // Two clearly different origins should conflict.
-        assert!(origins_conflict(0, 0, 1, 0));
-        assert!(origins_conflict(0, 0, 0, 1));
-        assert!(origins_conflict(10, 20, 11, 20));
+    fn synthetic_component_corner(
+        id: u32,
+        u: i32,
+        v: i32,
+        x: f32,
+        y: f32,
+    ) -> crate::detector::result::PuzzleBoardCorner {
+        crate::detector::result::PuzzleBoardCorner::new(
+            Point2::new(x, y),
+            Coord::new(u, v),
+            id,
+            Point2::new(u as f32, v as f32),
+            1.0,
+        )
+    }
+
+    fn synthetic_detection(
+        corners: Vec<crate::detector::result::PuzzleBoardCorner>,
+    ) -> PuzzleBoardDetection {
+        let len = corners.len();
+        PuzzleBoardDetection::new(
+            corners,
+            calib_targets_core::GridAlignment::IDENTITY,
+            PuzzleBoardDecodeInfo {
+                edges_observed: len,
+                edges_matched: len,
+                mean_confidence: 1.0,
+                bit_error_rate: 0.0,
+                logical_bits: len,
+                logical_bit_error_rate: 0.0,
+                dot_dissent_rate: 0.0,
+                master_origin_row: 0,
+                master_origin_col: 0,
+            },
+        )
     }
 
     #[test]
-    fn origins_conflict_same_position_no_conflict() {
-        // Identical origins do not conflict.
-        assert!(!origins_conflict(5, 7, 5, 7));
-        // Cyclic equivalents within 501×501 also don't conflict.
-        let m = MASTER_ROWS as i32;
-        assert!(!origins_conflict(3, 4, 3 + m, 4));
-        assert!(!origins_conflict(3, 4, 3, 4 + m));
+    fn components_conflict_allows_consistent_and_disjoint_split_fragments() {
+        // Two fragments of the same board spaced at 20 px pitch: overlapping corners
+        // match in ID and position, and disjoint corners with different IDs/positions agree.
+        let a = synthetic_detection(vec![
+            synthetic_component_corner(1, 0, 0, 100.0, 100.0),
+            synthetic_component_corner(2, 1, 0, 120.0, 100.0),
+            synthetic_component_corner(100, 0, 1, 100.0, 120.0),
+        ]);
+        let b_consistent = synthetic_detection(vec![
+            synthetic_component_corner(2, 1, 0, 121.0, 100.5),
+            synthetic_component_corner(3, 2, 0, 140.0, 100.0),
+            synthetic_component_corner(102, 2, 1, 140.0, 120.0),
+        ]);
+        assert!(!components_conflict(&a, &b_consistent));
+
+        let b_disjoint = synthetic_detection(vec![
+            synthetic_component_corner(10, 8, 0, 260.0, 100.0),
+            synthetic_component_corner(11, 9, 0, 280.0, 100.0),
+            synthetic_component_corner(110, 8, 1, 260.0, 120.0),
+        ]);
+        assert!(!components_conflict(&a, &b_disjoint));
+    }
+
+    #[test]
+    fn components_conflict_catches_contradictory_fragments() {
+        let a = synthetic_detection(vec![
+            synthetic_component_corner(1, 0, 0, 100.0, 100.0),
+            synthetic_component_corner(2, 1, 0, 120.0, 100.0),
+            synthetic_component_corner(100, 0, 1, 100.0, 120.0),
+        ]);
+        // Same master corner ID mapped far (> max(2.0, 0.25 * 20) = 5.0 px) apart.
+        let b_same_id_far = synthetic_detection(vec![
+            synthetic_component_corner(1, 0, 0, 200.0, 100.0),
+            synthetic_component_corner(2, 1, 0, 220.0, 100.0),
+        ]);
+        assert!(components_conflict(&a, &b_same_id_far));
+
+        // Same image pixel (within 1.0 px) mapped to two different master corner IDs.
+        let b_same_pixel_diff_id = synthetic_detection(vec![
+            synthetic_component_corner(50, 5, 5, 100.5, 100.0),
+            synthetic_component_corner(51, 6, 5, 120.5, 100.0),
+        ]);
+        assert!(components_conflict(&a, &b_same_pixel_diff_id));
     }
 
     #[test]

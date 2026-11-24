@@ -1,12 +1,12 @@
 use std::path::Path;
 use std::{env, fs, path::PathBuf};
 
-use calib_targets_chessboard::{
-    detect_corners, ChessCorner as TargetCorner, ChessboardParamsError, DetectorConfig,
-};
+use calib_targets_chessboard::{detect_corners, ChessCorner as TargetCorner, DetectorConfig};
 use calib_targets_core::io::{self, IoError};
 use calib_targets_core::{GrayImageView, GridAlignment, TargetDetection};
-use calib_targets_marker::{MarkerBoardDetection, MarkerBoardDetector, MarkerBoardParams};
+use calib_targets_marker::{
+    MarkerBoardDetection, MarkerBoardDetector, MarkerBoardParams, MarkerBoardParamsError,
+};
 use image::ImageReader;
 use serde::{Deserialize, Serialize};
 
@@ -49,7 +49,7 @@ impl MarkerBoardDetectConfig {
     }
 
     /// Build a detector from this config.
-    fn build_detector(&self) -> Result<MarkerBoardDetector, ChessboardParamsError> {
+    fn build_detector(&self) -> Result<MarkerBoardDetector, MarkerBoardParamsError> {
         MarkerBoardDetector::new(self.marker.clone())
     }
 }

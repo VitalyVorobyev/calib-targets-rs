@@ -815,6 +815,9 @@ fn run_fit_with_residual_drop(
     if kept.len() < 4 {
         return Ok(None);
     }
+    // Dropping a border row or column can lift bbox-min above `(0, 0)`. Rebase
+    // before the refit so both `entries` and `fit` satisfy the `(0, 0)` invariant.
+    crate::lattice::rebase::rebase_slice_to_origin(kept, |item| &mut item.0);
     let refit = fit_component(kept, features, positions, lattice, params)?;
     // Preserve the first pass's over-threshold attribution.
     Ok(Some(FitComponentResult {

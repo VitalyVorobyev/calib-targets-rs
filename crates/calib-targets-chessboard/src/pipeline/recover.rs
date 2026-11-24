@@ -72,13 +72,21 @@ fn estimate_grid_steps(
             v_n += 1;
         }
     }
+    let normalize = |v: Vector2<f32>, fallback: Vector2<f32>| {
+        let n = v.norm();
+        if n.is_finite() && n > 1e-6 {
+            v / n
+        } else {
+            fallback
+        }
+    };
     let u = if u_n > 0 {
-        u_sum / u_n as f32
+        normalize(u_sum / u_n as f32, Vector2::new(1.0, 0.0))
     } else {
         Vector2::new(1.0, 0.0)
     };
     let v = if v_n > 0 {
-        v_sum / v_n as f32
+        normalize(v_sum / v_n as f32, Vector2::new(0.0, 1.0))
     } else {
         Vector2::new(0.0, 1.0)
     };
@@ -179,8 +187,11 @@ fn shared_corner_alignment(
             *votes.entry(delta).or_default() += 1;
         }
         for (delta, overlap) in votes {
-            let rank = (overlap, usize::MAX - t_idx, delta);
-            if best.map(|b| rank > b).unwrap_or(true) {
+            let rank = (overlap, std::cmp::Reverse(t_idx), std::cmp::Reverse(delta));
+            let take = best.is_none_or(|(bo, bt, bd)| {
+                rank > (bo, std::cmp::Reverse(bt), std::cmp::Reverse(bd))
+            });
+            if take {
                 best = Some((overlap, t_idx, delta));
             }
         }
@@ -327,6 +338,7 @@ pub(super) fn recover_topological_components(
                 &mut grow,
                 recovery_cell_size.max(cell_size),
                 &blacklist,
+                &before,
                 params,
             );
             geometry_only_additions.extend(
@@ -418,25 +430,23 @@ pub(super) fn build_topological_detections(
             rebase_j_mod2: 0,
         };
 
-        // Mandatory geometry check before shipping a detection. The
-        // check can only drop labelled corners (line collinearity /
-        // local-H residual / largest cardinal component) — it never
-        // adds wrong labels — and it sets `detection_refused` if too
-        // few survive. Skip when cell_size is degenerate (would
-        // divide-by-zero in validate).
-        if cell_size > 0.0 {
-            let mut blacklist: HashSet<usize> = HashSet::new();
-            let trace = run_geometry_check(
-                &mut augs,
-                &mut grow,
-                centers,
-                cell_size,
-                &mut blacklist,
-                params,
-            );
-            if trace.detection_refused {
-                continue;
-            }
+        // Mandatory geometry check before shipping a detection. A degenerate
+        // `cell_size` cannot be validated and must be refused rather than
+        // shipped unchecked.
+        if !(cell_size.is_finite() && cell_size > 0.0) {
+            continue;
+        }
+        let mut blacklist: HashSet<usize> = HashSet::new();
+        let trace = run_geometry_check(
+            &mut augs,
+            &mut grow,
+            centers,
+            cell_size,
+            &mut blacklist,
+            params,
+        );
+        if trace.detection_refused {
+            continue;
         }
         if grow.labelled.len() < params.min_labeled_corners {
             continue;
@@ -448,4 +458,66 @@ pub(super) fn build_topological_detections(
     out.sort_by_key(|d| std::cmp::Reverse(d.corners.len()));
     out.truncate(params.max_components.max(1) as usize);
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn estimate_grid_steps_returns_unit_vectors() {
+        let positions = vec![
+            Point2::new(10.0, 10.0),
+            Point2::new(35.0, 10.0),
+            Point2::new(10.0, 35.0),
+            Point2::new(35.0, 35.0),
+        ];
+        let labelled = HashMap::from([((0, 0), 0), ((1, 0), 1), ((0, 1), 2), ((1, 1), 3)]);
+        let (u, v) = estimate_grid_steps(&labelled, &positions);
+        assert!((u.norm() - 1.0).abs() < 1e-6);
+        assert!((v.norm() - 1.0).abs() < 1e-6);
+        assert!((u.x - 1.0).abs() < 1e-6 && u.y.abs() < 1e-6);
+        assert!(v.x.abs() < 1e-6 && (v.y - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn shared_corner_alignment_prefers_identity_deterministically() {
+        // Two collinear shared corners (0,0)->10, (1,0)->11 are matched with
+        // full overlap by both the identity and the y-flip (x, -y); the tie
+        // must resolve to the identity with zero offset.
+        let sym = HashMap::from([((0, 0), 10), ((1, 0), 11)]);
+        let (t, delta) = shared_corner_alignment(&sym, &sym, 2).expect("alignment");
+        assert_eq!(t, GRID_TRANSFORMS_D4[0]);
+        assert_eq!(delta, (0, 0));
+    }
+
+    #[test]
+    fn build_topological_detections_drops_zero_cell_size_component() {
+        let positions = vec![Point2::new(5.0, 5.0); 9];
+        let mut labelled = HashMap::new();
+        for j in 0..3 {
+            for i in 0..3 {
+                labelled.insert((i, j), (j * 3 + i) as usize);
+            }
+        }
+        let augs: Vec<CornerAug> = positions
+            .iter()
+            .enumerate()
+            .map(|(i, &p)| CornerAug {
+                input_index: i,
+                position: p,
+                position_covariance: None,
+                strength: 1.0,
+                axes: [
+                    calib_targets_core::AxisEstimate::from_angle(0.0),
+                    calib_targets_core::AxisEstimate::from_angle(std::f32::consts::FRAC_PI_2),
+                ],
+                stage: CornerStage::Raw,
+                label: None,
+            })
+            .collect();
+        let params = ChessboardParams::default();
+        let out = build_topological_detections(vec![labelled], &positions, &augs, None, &params);
+        assert!(out.is_empty());
+    }
 }

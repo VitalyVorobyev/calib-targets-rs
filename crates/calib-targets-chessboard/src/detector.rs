@@ -20,6 +20,7 @@ use crate::corner::ChessCorner;
 pub use pipeline::{ChessboardCorner, ChessboardDetection};
 
 /// Top-level detector.
+#[derive(Debug)]
 pub struct ChessboardDetector {
     /// The parameters every `detect*` call on this detector runs with.
     pub params: ChessboardParams,

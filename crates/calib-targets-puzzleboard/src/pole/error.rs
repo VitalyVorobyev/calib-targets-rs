@@ -1,18 +1,22 @@
 //! Failures a PuzzlePole detection can report.
 
 use crate::PuzzlePoleSpecError;
+use calib_targets_chessboard::ChessboardParamsError;
 
 /// Why a PuzzlePole detection did not produce a result.
 ///
-/// Every variant is a **miss**, never a wrong answer. The contract this
-/// workspace gives is asymmetric — a miss is acceptable, a wrong corner ID is
-/// not — so each of these is a place the detector declined to guess.
+/// Most variants represent a **miss** (no decodable fragment in the image),
+/// while configuration errors ([`Self::Spec`], [`Self::Chessboard`]) report
+/// invalid caller parameters (`is_not_found() == false`).
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
 pub enum PuzzlePoleDetectError {
     /// The pole specification is not one that can be built.
     #[error(transparent)]
     Spec(#[from] PuzzlePoleSpecError),
+    /// The chessboard detector parameters were invalid.
+    #[error(transparent)]
+    Chessboard(#[from] ChessboardParamsError),
     /// No chessboard grid was assembled from the corner cloud.
     #[error("no chessboard grid was found")]
     ChessboardNotDetected,
@@ -80,10 +84,10 @@ pub enum PuzzlePoleDetectError {
 
 impl PuzzlePoleDetectError {
     /// Whether this is a miss — no pole fragment in the image decodes to a
-    /// unique position — rather than a misuse (an invalid pole spec).
+    /// unique position — rather than a misuse (an invalid pole spec or params).
     pub fn is_not_found(&self) -> bool {
         match self {
-            Self::Spec(_) => false,
+            Self::Spec(_) | Self::Chessboard(_) => false,
             Self::ChessboardNotDetected
             | Self::NotEnoughEdges { .. }
             | Self::FragmentTooSmall { .. }

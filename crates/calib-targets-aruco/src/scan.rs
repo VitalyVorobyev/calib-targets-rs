@@ -7,7 +7,7 @@ use calib_targets_core::{
 };
 use nalgebra::Point2;
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::HashSet;
 #[cfg(feature = "tracing")]
 use tracing::instrument;
 
@@ -322,7 +322,7 @@ pub struct CellSamples {
     pub mean_grid: Vec<u8>,
     /// Otsu threshold computed from dense interior samples; in `[0, 255]`.
     pub otsu_threshold: u8,
-    /// Fraction of border cells that are darker than [`Self::otsu_threshold`],
+    /// Fraction of border cells that are at or below [`Self::otsu_threshold`],
     /// in `[0, 1]`. `1.0` means every border sample is black. Useful as a
     /// confidence weight.
     pub border_black_fraction: f32,
@@ -407,7 +407,7 @@ pub fn sample_cell(
                     continue;
                 }
                 border_total += 1;
-                if mean_grid[cy * cells + cx] < otsu {
+                if mean_grid[cy * cells + cx] <= otsu {
                     border_black += 1;
                 }
             }
@@ -697,7 +697,7 @@ fn binarize_and_score(
     for cy in 0..cells {
         for cx in 0..cells {
             let m = samples[cy * cells + cx];
-            let mut is_black = m < thr;
+            let mut is_black = m <= thr;
             if inverted {
                 is_black = !is_black;
             }
@@ -764,6 +764,11 @@ fn decode_samples(
 
     if multi_threshold {
         let candidates = compute_threshold_candidates(otsu, grid.samples, grid.cells, grid.border);
+        // Only *exact* dictionary hits are accepted across the candidate
+        // thresholds and polarities: each extra trial is another chance for a
+        // noisy code to land within `max_hamming` of a wrong marker, so an
+        // approximate match is only ever taken from the single Otsu
+        // observation below (matched by the caller within `max_hamming`).
         let mut best_matched: Option<MarkerObservation> = None;
 
         'outer: for &thr in &candidates {
@@ -779,17 +784,14 @@ fn decode_samples(
                 ) else {
                     continue;
                 };
-                if let Some(m) = matcher.match_code(obs.code) {
-                    if m.hamming == 0 {
-                        let is_better = best_matched
-                            .as_ref()
-                            .map(|b| obs.border_score > b.border_score)
-                            .unwrap_or(true);
-                        if is_better {
-                            best_matched = Some(obs);
-                            if obs.border_score >= 0.85 {
-                                break 'outer;
-                            }
+                if matcher.match_code(obs.code).is_some_and(|m| m.hamming == 0) {
+                    let is_better = best_matched
+                        .as_ref()
+                        .is_none_or(|b| obs.border_score > b.border_score);
+                    if is_better {
+                        best_matched = Some(obs);
+                        if obs.border_score >= 0.85 {
+                            break 'outer;
                         }
                     }
                 }
@@ -829,17 +831,19 @@ fn decode_samples(
 fn dedup_by_id_keep_best(mut dets: Vec<MarkerDetection>) -> Vec<MarkerDetection> {
     dets.sort_by(|a, b| {
         b.score
-            .partial_cmp(&a.score)
-            .unwrap_or(std::cmp::Ordering::Equal)
+            .total_cmp(&a.score)
+            .then_with(|| a.id.cmp(&b.id))
+            .then_with(|| a.hamming.cmp(&b.hamming))
+            .then_with(|| a.rotation.cmp(&b.rotation))
+            .then_with(|| a.gc.v.cmp(&b.gc.v))
+            .then_with(|| a.gc.u.cmp(&b.gc.u))
     });
-    let mut seen: HashMap<u32, ()> = HashMap::new();
+    let mut seen: HashSet<u32> = HashSet::with_capacity(dets.len());
     let mut out = Vec::with_capacity(dets.len());
     for d in dets {
-        if seen.contains_key(&d.id) {
-            continue;
+        if seen.insert(d.id) {
+            out.push(d);
         }
-        seen.insert(d.id, ());
-        out.push(d);
     }
     out
 }
@@ -877,12 +881,19 @@ fn sample_mean_3x3(img: &GrayImageView<'_>, x: f32, y: f32) -> Option<u8> {
 }
 
 fn sample_mean_3x3_clamped(img: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
+    if img.width == 0 || img.height == 0 || !x.is_finite() || !y.is_finite() {
+        return 0;
+    }
     let ix = x.floor() as i32;
     let iy = y.floor() as i32;
+    let max_x = img.width as i32 - 1;
+    let max_y = img.height as i32 - 1;
     let mut sum = 0u32;
     for dy in -1..=1 {
+        let cy = (iy + dy).clamp(0, max_y);
         for dx in -1..=1 {
-            sum += get_gray(img, ix + dx, iy + dy) as u32;
+            let cx = (ix + dx).clamp(0, max_x);
+            sum += img.data[cy as usize * img.width + cx as usize] as u32;
         }
     }
     (sum / 9) as u8
@@ -1003,5 +1014,83 @@ mod tests {
         assert_eq!(dets.len(), 1);
         assert_eq!(dets[0].id, 0);
         assert_eq!(dets[0].hamming, 0);
+    }
+
+    #[test]
+    fn sample_mean_3x3_clamped_replicates_edge_pixels() {
+        let data = vec![240u8; 4 * 4];
+        let view = GrayImageView {
+            width: 4,
+            height: 4,
+            data: &data,
+        };
+        assert_eq!(sample_mean_3x3_clamped(&view, 0.0, 0.0), 240);
+        assert_eq!(sample_mean_3x3_clamped(&view, 3.0, 3.0), 240);
+        assert_eq!(sample_mean_3x3_clamped(&view, f32::NAN, 0.0), 0);
+        let empty = GrayImageView {
+            width: 0,
+            height: 0,
+            data: &[],
+        };
+        assert_eq!(sample_mean_3x3_clamped(&empty, 0.0, 0.0), 0);
+    }
+
+    #[test]
+    fn otsu_boundary_pixel_equal_to_threshold_is_black() {
+        // Two intensities: 10 (black) and 11 (white) -> two-bin Otsu midpoint = 10.
+        let samples = vec![
+            10, 10, 10, 10, 10, 10, // border row 0
+            10, 11, 10, 10, 11, 10, // row 1
+            10, 10, 11, 10, 10, 10, // row 2
+            10, 11, 11, 10, 10, 10, // row 3
+            10, 10, 10, 10, 10, 10, // row 4
+            10, 10, 10, 10, 10, 10, // row 5
+        ];
+        let thr = otsu_threshold_from_samples(&samples);
+        assert_eq!(thr, 10);
+        let obs = binarize_and_score(&samples, 6, 4, 1, thr, false, 0.9)
+            .expect("border values equal to thr=10 must classify as black");
+        assert!((obs.border_score - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn multi_threshold_recovers_single_bit_error_within_max_hamming() {
+        let dict = builtins::builtin_dictionary("DICT_4X4_50").expect("builtin dict");
+        let matcher = Matcher::new(dict, 1);
+        let cfg = ScanDecodeConfig {
+            border_bits: 1,
+            inset_frac: 0.0,
+            marker_size_rel: 1.0,
+            min_border_score: 0.9,
+            dedup_by_id: false,
+            multi_threshold: true,
+        };
+        let code_with_one_bit_flip = dict.codes()[0] ^ 1;
+        let img = build_marker_image(code_with_one_bit_flip, dict.marker_size(), 1, 10);
+        let view = GrayImageView {
+            width: img.width,
+            height: img.height,
+            data: &img.data,
+        };
+        let s = img.width as f32;
+        let dets = scan_decode_markers(&view, 1, 1, s, &cfg, &matcher);
+        assert_eq!(dets.len(), 1);
+        assert_eq!(dets[0].id, 0);
+        assert_eq!(dets[0].hamming, 1);
+    }
+
+    #[test]
+    fn dedup_by_id_keep_best_is_deterministic_on_ties_and_nan() {
+        let rect = [Point2::origin(); 4];
+        let dets = vec![
+            MarkerDetection::new(3, Coord::new(1, 0), 1, 0, 0, rect).with_scores(0.5, 1.0),
+            MarkerDetection::new(3, Coord::new(0, 0), 0, 0, 0, rect).with_scores(0.5, 1.0),
+            MarkerDetection::new(2, Coord::new(2, 0), 0, 0, 0, rect).with_scores(f32::NAN, 1.0),
+        ];
+        let out = dedup_by_id_keep_best(dets);
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].id, 2); // NaN sorts first under descending total_cmp
+        assert_eq!(out[1].id, 3);
+        assert_eq!(out[1].rotation, 0); // lower rotation tie-breaker wins cleanly
     }
 }

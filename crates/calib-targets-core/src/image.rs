@@ -53,6 +53,9 @@ fn get_gray(src: &GrayImageView<'_>, x: i32, y: i32) -> u8 {
 /// pixels as `0` (zero-padding). Returns the interpolated value as `f32`.
 #[inline]
 pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
+    if src.width == 0 || src.height == 0 || !x.is_finite() || !y.is_finite() {
+        return 0.0;
+    }
     let x0 = x.floor() as i32;
     let y0 = y.floor() as i32;
     let fx = x - x0 as f32;
@@ -76,6 +79,9 @@ pub fn sample_bilinear(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
 /// footprints fall back to [`sample_bilinear`] (zero-padding semantics).
 #[inline]
 pub fn sample_bilinear_fast(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
+    if src.width == 0 || src.height == 0 || !x.is_finite() || !y.is_finite() {
+        return 0.0;
+    }
     let x0 = x.floor() as i32;
     let y0 = y.floor() as i32;
 
@@ -99,9 +105,68 @@ pub fn sample_bilinear_fast(src: &GrayImageView<'_>, x: f32, y: f32) -> f32 {
 
 /// Bilinearly sample a grayscale image and round the result to `u8`.
 ///
-/// Wraps [`sample_bilinear`], clamping the interpolated value to
-/// `0..=255` before truncation.
+/// Wraps [`sample_bilinear`], rounding and clamping the interpolated value to
+/// `0..=255` before casting.
 #[inline]
 pub fn sample_bilinear_u8(src: &GrayImageView<'_>, x: f32, y: f32) -> u8 {
-    sample_bilinear(src, x, y).clamp(0.0, 255.0) as u8
+    sample_bilinear(src, x, y).round().clamp(0.0, 255.0) as u8
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bilinear_guards_empty_and_non_finite_inputs() {
+        let empty = GrayImageView {
+            width: 0,
+            height: 0,
+            data: &[],
+        };
+        assert_eq!(sample_bilinear(&empty, 0.0, 0.0), 0.0);
+        assert_eq!(sample_bilinear_fast(&empty, 0.0, 0.0), 0.0);
+
+        let data = [10u8, 20, 30, 40];
+        let view = GrayImageView {
+            width: 2,
+            height: 2,
+            data: &data,
+        };
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert_eq!(sample_bilinear(&view, bad, 0.5), 0.0);
+            assert_eq!(sample_bilinear(&view, 0.5, bad), 0.0);
+            assert_eq!(sample_bilinear_fast(&view, bad, 0.5), 0.0);
+            assert_eq!(sample_bilinear_fast(&view, 0.5, bad), 0.0);
+        }
+    }
+
+    #[test]
+    fn bilinear_fast_matches_slow_on_oob_and_interior() {
+        let data = [10u8, 20, 30, 40];
+        let view = GrayImageView {
+            width: 2,
+            height: 2,
+            data: &data,
+        };
+        for &(x, y) in &[(-1.5, 0.0), (0.0, 0.0), (0.5, 0.5), (1.0, 1.0), (2.5, 1.0)] {
+            assert_eq!(
+                sample_bilinear(&view, x, y),
+                sample_bilinear_fast(&view, x, y)
+            );
+        }
+    }
+
+    #[test]
+    fn sample_bilinear_u8_rounds_to_nearest() {
+        let data = [0u8, 1, 0, 1];
+        let view = GrayImageView {
+            width: 2,
+            height: 2,
+            data: &data,
+        };
+        // At x = 0.6, exact value is 0.6 -> rounds to 1 (truncation would give 0).
+        assert_eq!(sample_bilinear_u8(&view, 0.6, 0.0), 1);
+        // At x = 0.4, exact value is 0.4 -> rounds to 0.
+        assert_eq!(sample_bilinear_u8(&view, 0.4, 0.0), 0);
+    }
 }

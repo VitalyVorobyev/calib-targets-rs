@@ -347,6 +347,39 @@ pub(super) fn row_major_min_origin(
     optimal_h: &[(usize, usize)],
     optimal_v: &[(usize, usize)],
 ) -> Option<(i32, i32)> {
+    if optimal_h.is_empty() || optimal_v.is_empty() {
+        return None;
+    }
+    if optimal_h.len().saturating_mul(optimal_v.len()) > SEPARATION_PRODUCT_CAP {
+        // Factorized O(501) CRT minimum: `(va, ha)` fixes `mr` uniquely and
+        // `(hb, vb)` fixes `mc` uniquely via the coprime moduli 3 and 167.
+        let mut h_mask = [0u8; H_ROWS];
+        for &(ha, hb) in optimal_h {
+            h_mask[ha] |= 1u8 << hb;
+        }
+        let mut v_has = [[false; V_COLS]; V_ROWS];
+        let mut v_any = [false; V_ROWS];
+        for &(va, vb) in optimal_v {
+            v_has[va][vb] = true;
+            v_any[va] = true;
+        }
+        for mr in 0..MASTER_ROWS as i32 {
+            let ha = (mr % H_ROWS as i32) as usize;
+            let va = (mr % V_ROWS as i32) as usize;
+            let mask = h_mask[ha];
+            if mask == 0 || !v_any[va] {
+                continue;
+            }
+            for mc in 0..MASTER_COLS as i32 {
+                let hb = (mc % H_COLS as i32) as usize;
+                let vb = (mc % V_COLS as i32) as usize;
+                if ((mask >> hb) & 1) != 0 && v_has[va][vb] {
+                    return Some((mr, mc));
+                }
+            }
+        }
+        return None;
+    }
     let mut best_origin: Option<(i32, i32)> = None;
     for &(ha, hb) in optimal_h {
         for &(va, vb) in optimal_v {

@@ -199,11 +199,11 @@ pub struct GrowResult {
     pub ambiguous: HashSet<(i32, i32)>,
     /// Positions with no accepted candidate.
     pub holes: HashSet<(i32, i32)>,
-    /// Grid `i`-axis vector (pixels per cell) carried forward — overlays
-    /// and boosters use it.
+    /// Unit grid `i`-axis direction vector carried forward — overlays,
+    /// predictions, and boosters use it (scaled by `cell_size`).
     pub axis_i: Vector2<f32>,
-    /// Grid `j`-axis vector (pixels per cell) carried forward — overlays
-    /// and boosters use it.
+    /// Unit grid `j`-axis direction vector carried forward — overlays,
+    /// predictions, and boosters use it (scaled by `cell_size`).
     pub axis_j: Vector2<f32>,
     /// Mod-2 `i` component of the coordinate shift removed by the
     /// final rebase.

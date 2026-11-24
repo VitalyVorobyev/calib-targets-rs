@@ -7,6 +7,45 @@ This project follows [Semantic Versioning](https://semver.org/).
 Older releases are archived under [`docs/changelog/`](docs/changelog/);
 see [Older releases](#older-releases) at the bottom for the index.
 
+## Unreleased
+
+### Breaking
+
+- `MarkerBoardDetector::new` returns `MarkerBoardParamsError` (was
+  `ChessboardParamsError`) and validates the board layout and circle
+  parameters; the facade reports these as the new
+  `DetectError::MarkerBoardParams` instead of `DetectError::ChessboardParams`.
+- ChArUco `MarkerDetection::score` is now the geometric-mean bit likelihood
+  `exp(mean log-likelihood)` in `(0, 1]`; it was `sigmoid(mean log-likelihood)`,
+  which never exceeded 0.5.
+
+### Fixed
+
+- **Grid orientation is always right-handed.** Canonicalizing a labelled grid
+  to image axes picked the transpose from a single coordinate comparison, so a
+  strongly sheared view could come out mirrored (a reflection that
+  rotation-only decoders cannot undo) or with `+i` pointing down. It now picks,
+  among the four handedness-preserving transforms, the one whose axes best
+  align with image `+x` / `+y`.
+- **ChArUco fragment merge checks every fragment geometrically.** Fragments
+  were grouped by alignment rotation alone and merged without a position
+  check; they are now merged only when their corners agree with the merged
+  board's homography within half the local cell pitch, so a fragment decoded
+  one cell off can never join, and a fragment that cannot be checked is left
+  out.
+- **Chessboard recall is higher with no new wrong labels.** Grid growth,
+  hole filling, local-homography validation and component merge were fixed
+  (merge direction, deterministic tie-breaks, unit step vectors, collinear
+  local bases, diagonal-only hole candidates, an `f64` DLT), and a
+  scale-free local-shape check now removes gross kinks and their dangling
+  frontier leaves on components of any size. Dense, strongly distorted
+  boards gain many corners; a few blurred frontier corners are dropped.
+- Correctness and determinism fixes across the detectors: mesh-warp bounds and
+  quad winding, Otsu `<=` polarity in ArUco and ChArUco, edge-clamped ArUco
+  sampling, deterministic marker dedup, PuzzleBoard component-conflict checks
+  in pixel space, PuzzlePole spec validation, marker-board probe bounds, and
+  non-finite / empty-image guards in the bilinear samplers.
+
 ## 0.17.0
 
 Per-corner blur measurement, and two fixes that stop wrong labels on boards

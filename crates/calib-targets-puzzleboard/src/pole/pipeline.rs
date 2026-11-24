@@ -21,29 +21,43 @@
 use super::code::PoleCode;
 use super::error::PuzzlePoleDetectError;
 use super::params::{required_edges_rect, required_logical_bits_rect};
-use super::{PuzzlePoleCorner, PuzzlePoleDetection, PuzzlePoleParams};
-use crate::code_maps::PuzzleBoardObservedEdge;
+use super::{PuzzlePoleCorner, PuzzlePoleDetection, PuzzlePoleParams, PuzzlePoleSpec};
+use crate::code_maps::{EdgeOrientation, PuzzleBoardObservedEdge};
 use crate::detector::consensus::EdgeConsensus;
-use crate::detector::decode::{decode_fixed_hard, decode_fixed_soft, BoardRect, CodeGeometry};
+use crate::detector::decode::{
+    decode_fixed_hard, decode_fixed_soft, match_stats_with_geometry, BoardRect, CodeGeometry,
+};
 use crate::detector::edge_sampling::sample_all_edges;
 use crate::detector::{PuzzleBoardDecodeInfo, PuzzleBoardScoringMode};
 use calib_targets_chessboard::{
     detect_corner_frame, ChessCorner, ChessboardCorner, ChessboardDetector,
 };
-use calib_targets_core::{GrayImageView, LabeledCorner};
+use calib_targets_core::{Coord, GrayImageView, LabeledCorner};
 
 /// Detects PuzzlePole targets.
 pub struct PuzzlePoleDetector {
     params: PuzzlePoleParams,
     chessboard: ChessboardDetector,
+    code: PoleCode,
 }
 
 impl PuzzlePoleDetector {
     /// Build a detector for the configured pole.
     pub fn new(params: PuzzlePoleParams) -> Result<Self, PuzzlePoleDetectError> {
-        let chessboard = ChessboardDetector::new(params.chessboard.clone())
-            .map_err(|_| PuzzlePoleDetectError::ChessboardNotDetected)?;
-        Ok(Self { params, chessboard })
+        let spec = PuzzlePoleSpec::with_placement(
+            params.pole.circumference_squares,
+            params.pole.start_row,
+            params.pole.axial_start_col,
+            params.pole.axial_squares,
+            params.pole.cell_size_mm,
+        )?;
+        let chessboard = ChessboardDetector::new(params.chessboard.clone())?;
+        let code = PoleCode::new(spec.period());
+        Ok(Self {
+            params,
+            chessboard,
+            code,
+        })
     }
 
     /// The parameters in force.
@@ -161,8 +175,7 @@ impl PuzzlePoleDetector {
             });
         }
 
-        let code = PoleCode::new(spec.period());
-        let geometry = CodeGeometry::pole(code.patterns());
+        let geometry = CodeGeometry::pole(self.code.patterns());
         let board = BoardRect::pole(
             spec.circumference_squares,
             spec.axial_start_col,
@@ -229,11 +242,11 @@ impl PuzzlePoleDetector {
             });
         }
 
-        // **The window floor, in the pole's own axes.** Only now is it known
-        // which way round the fragment sat: a patch 5 corners one way and 8 the
-        // other decodes if the 8 runs along the axis and not if it runs around
-        // the circumference, and nothing before the decode distinguishes those.
-        let (circumference, axial) = pole_span(&out, period);
+        // **The window floor, in the pole's own axes.** Measure over corners
+        // incident to post-confidence `filtered` edges (only those that carried
+        // usable code observations), now that orientation is fixed.
+        let filtered_coords = filtered_pole_coords(&filtered, &decoded.alignment, spec, period);
+        let (circumference, axial) = pole_span_coords(&filtered_coords, period);
         if circumference < cfg.min_circumference_span || axial < cfg.min_axial_span {
             return Err(PuzzlePoleDetectError::FragmentTooSmall {
                 circumference,
@@ -243,14 +256,15 @@ impl PuzzlePoleDetector {
             });
         }
 
-        let matched = decoded.edges_matched;
+        let physical_stats = match_stats_with_geometry(&filtered, &decoded.alignment, &geometry);
+        let logical_stats = match_stats_with_geometry(&logical, &decoded.alignment, &geometry);
         let info = PuzzleBoardDecodeInfo {
-            edges_observed: decoded.edges_observed,
-            edges_matched: matched,
-            mean_confidence: decoded.mean_confidence,
-            bit_error_rate: decoded.bit_error_rate,
-            logical_bits: logical.len(),
-            logical_bit_error_rate: decoded.bit_error_rate,
+            edges_observed: physical_stats.observed,
+            edges_matched: physical_stats.matched,
+            mean_confidence: physical_stats.mean_confidence,
+            bit_error_rate: physical_stats.bit_error_rate,
+            logical_bits: logical_stats.observed,
+            logical_bit_error_rate: logical_stats.bit_error_rate,
             dot_dissent_rate: consensus.dissent_rate(),
             master_origin_row: decoded.master_origin_row,
             master_origin_col: decoded.master_origin_col,
@@ -272,18 +286,53 @@ impl PuzzlePoleDetector {
 /// pole. The span is therefore the shortest arc containing every index — found
 /// as the ring minus its largest gap, which is what "shortest containing arc"
 /// means on a cycle.
+fn filtered_pole_coords(
+    filtered: &[PuzzleBoardObservedEdge],
+    alignment: &calib_targets_core::GridAlignment,
+    spec: &PuzzlePoleSpec,
+    period: i32,
+) -> Vec<(i32, i32)> {
+    let mut filtered_grid = std::collections::BTreeSet::new();
+    for e in filtered {
+        filtered_grid.insert((e.col, e.row));
+        match e.orientation {
+            EdgeOrientation::Horizontal => {
+                filtered_grid.insert((e.col + 1, e.row));
+            }
+            EdgeOrientation::Vertical => {
+                filtered_grid.insert((e.col, e.row + 1));
+            }
+        }
+    }
+    filtered_grid
+        .into_iter()
+        .filter_map(|(u, v)| {
+            let master = alignment.apply(Coord::new(u, v));
+            let axial = master.u - spec.axial_start_col as i32;
+            if axial < 0 || axial > spec.axial_squares as i32 {
+                return None;
+            }
+            let cyclic = (master.v - spec.start_row as i32).rem_euclid(period);
+            Some((axial, cyclic))
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn pole_span(corners: &[PuzzlePoleCorner], period: i32) -> (u32, u32) {
-    if corners.is_empty() {
+    let coords: Vec<(i32, i32)> = corners.iter().map(|c| (c.grid.u, c.grid.v)).collect();
+    pole_span_coords(&coords, period)
+}
+
+fn pole_span_coords(coords: &[(i32, i32)], period: i32) -> (u32, u32) {
+    if coords.is_empty() {
         return (0, 0);
     }
-    let axial_lo = corners.iter().map(|c| c.grid.u).min().unwrap_or(0);
-    let axial_hi = corners.iter().map(|c| c.grid.u).max().unwrap_or(0);
+    let axial_lo = coords.iter().map(|&(a, _)| a).min().unwrap_or(0);
+    let axial_hi = coords.iter().map(|&(a, _)| a).max().unwrap_or(0);
     let axial = (axial_hi - axial_lo + 1) as u32;
 
-    let mut used: Vec<i32> = corners
-        .iter()
-        .map(|c| c.grid.v.rem_euclid(period))
-        .collect();
+    let mut used: Vec<i32> = coords.iter().map(|&(_, c)| c.rem_euclid(period)).collect();
     used.sort_unstable();
     used.dedup();
     if used.len() as i32 >= period {
@@ -346,5 +395,43 @@ mod tests {
     #[test]
     fn an_empty_fragment_spans_nothing() {
         assert_eq!(pole_span(&[], 12), (0, 0));
+    }
+
+    #[test]
+    fn invalid_pole_spec_fails_in_new() {
+        let mut params = PuzzlePoleParams::for_pole(spec());
+        params.pole.circumference_squares = 7; // unsupported period, simulating bad deserialization
+        let err = match PuzzlePoleDetector::new(params) {
+            Err(err) => err,
+            Ok(_) => panic!("expected invalid pole spec error"),
+        };
+        assert!(matches!(err, PuzzlePoleDetectError::Spec(_)));
+        assert!(!err.is_not_found());
+
+        let mut bad_cell = PuzzlePoleParams::for_pole(spec());
+        bad_cell.pole.cell_size_mm = -1.0;
+        let err_cell = match PuzzlePoleDetector::new(bad_cell) {
+            Err(err) => err,
+            Ok(_) => panic!("expected invalid cell_size_mm error"),
+        };
+        assert!(matches!(err_cell, PuzzlePoleDetectError::Spec(_)));
+        assert!(!err_cell.is_not_found());
+    }
+
+    #[test]
+    fn filtered_incident_span_ignores_disconnected_corners() {
+        let spec = spec();
+        let period = spec.circumference_squares as i32;
+        let alignment = calib_targets_core::GridAlignment::IDENTITY
+            .with_translation([0, spec.start_row as i32]);
+        // Suppose the filtered edge set spans only rows 0..=1 (circumference span = 2),
+        // even if extra isolated corners lived on rows 4..=6.
+        let filtered = vec![
+            crate::detector::edge_sampling::observed_horizontal_edge(0, 0, 0, 1.0),
+            crate::detector::edge_sampling::observed_vertical_edge(0, 0, 1, 1.0),
+            crate::detector::edge_sampling::observed_vertical_edge(0, 1, 0, 1.0),
+        ];
+        let coords = filtered_pole_coords(&filtered, &alignment, &spec, period);
+        assert_eq!(pole_span_coords(&coords, period), (2, 2));
     }
 }

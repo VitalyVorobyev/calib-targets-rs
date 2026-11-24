@@ -74,11 +74,59 @@ impl<'a> ConsistencyRequest<'a> {
 /// Check whether caller-supplied coordinate hypotheses are geometrically
 /// consistent under the requested lattice family.
 pub fn check_consistency(request: ConsistencyRequest<'_>) -> Result<ConsistencyReport> {
+    if request.params.max_residual_px.is_nan() || request.params.max_residual_px < 0.0 {
+        return Err(GridError::InconsistentInput(
+            "max_residual_px must be non-negative or +infinity".to_owned(),
+        ));
+    }
+    if let Some(dimensions) = request.dimensions {
+        if dimensions.width == 0 || dimensions.height == 0 {
+            return Err(GridError::InconsistentInput(
+                "grid dimensions count feature positions and must be non-zero".to_owned(),
+            ));
+        }
+    }
+
     let positions_by_source = validate_features(request.features)?;
     validate_hypotheses(request.hypotheses, &positions_by_source)?;
 
     if request.hypotheses.len() < 4 {
         return Err(GridError::InsufficientEvidence);
+    }
+
+    if let Some(dimensions) = request.dimensions {
+        let min_u = request
+            .hypotheses
+            .iter()
+            .map(|h| i64::from(h.coord.u))
+            .min()
+            .unwrap_or(0);
+        let max_u = request
+            .hypotheses
+            .iter()
+            .map(|h| i64::from(h.coord.u))
+            .max()
+            .unwrap_or(0);
+        let min_v = request
+            .hypotheses
+            .iter()
+            .map(|h| i64::from(h.coord.v))
+            .min()
+            .unwrap_or(0);
+        let max_v = request
+            .hypotheses
+            .iter()
+            .map(|h| i64::from(h.coord.v))
+            .max()
+            .unwrap_or(0);
+        let span_u = max_u - min_u + 1;
+        let span_v = max_v - min_v + 1;
+        if span_u > dimensions.width as i64 || span_v > dimensions.height as i64 {
+            return Err(GridError::InconsistentInput(format!(
+                "hypothesis coordinate span ({span_u}x{span_v}) exceeds declared dimensions ({}x{})",
+                dimensions.width, dimensions.height
+            )));
+        }
     }
 
     let mut model_points = Vec::with_capacity(request.hypotheses.len());
@@ -184,4 +232,55 @@ fn distance(a: Point2<f32>, b: Point2<f32>) -> f32 {
     let dx = a.x - b.x;
     let dy = a.y - b.y;
     (dx * dx + dy * dy).sqrt()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Coord;
+
+    #[test]
+    fn check_consistency_rejects_nan_residual_and_invalid_dimensions() {
+        let features = vec![
+            PointFeature::new(0, Point2::new(0.0, 0.0)),
+            PointFeature::new(1, Point2::new(10.0, 0.0)),
+            PointFeature::new(2, Point2::new(0.0, 10.0)),
+            PointFeature::new(3, Point2::new(10.0, 10.0)),
+        ];
+        let hypotheses = vec![
+            CoordinateHypothesis::new(0, Coord::new(0, 0), None),
+            CoordinateHypothesis::new(1, Coord::new(1, 0), None),
+            CoordinateHypothesis::new(2, Coord::new(0, 1), None),
+            CoordinateHypothesis::new(3, Coord::new(1, 1), None),
+        ];
+        let err = check_consistency(ConsistencyRequest::new(
+            LatticeKind::Square,
+            &features,
+            &hypotheses,
+            None,
+            ConsistencyParams::new(f32::NAN),
+        ))
+        .unwrap_err();
+        assert!(matches!(err, GridError::InconsistentInput(_)));
+
+        let err_zero = check_consistency(ConsistencyRequest::new(
+            LatticeKind::Square,
+            &features,
+            &hypotheses,
+            Some(GridDimensions::new(0, 2)),
+            ConsistencyParams::default(),
+        ))
+        .unwrap_err();
+        assert!(matches!(err_zero, GridError::InconsistentInput(_)));
+
+        let err_span = check_consistency(ConsistencyRequest::new(
+            LatticeKind::Square,
+            &features,
+            &hypotheses,
+            Some(GridDimensions::new(1, 2)),
+            ConsistencyParams::default(),
+        ))
+        .unwrap_err();
+        assert!(matches!(err_span, GridError::InconsistentInput(_)));
+    }
 }

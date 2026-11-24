@@ -16,7 +16,7 @@
 use crate::circle_score::CircleCandidate;
 use crate::coords::CellOffset;
 use crate::types::{CircleMatch, CircleMatchParams, MarkerCircleSpec};
-use calib_targets_core::{Coord, GridAlignment, GRID_TRANSFORMS_C4};
+use calib_targets_core::{cell_to_corner_alignment, Coord, GridAlignment, GRID_TRANSFORMS_C4};
 
 /// One frame hypothesis: which `C4` relabelling, and the integer translation
 /// that carries detected cell coordinates onto board cell coordinates.
@@ -48,6 +48,20 @@ pub(crate) struct FrameSearch {
     pub ambiguous: bool,
 }
 
+/// Re-express an accepted cell-space board frame in inner-corner coordinates.
+pub(crate) fn corner_frame(alignment: GridAlignment) -> GridAlignment {
+    let [di, dj] = cell_to_corner_alignment(alignment).translation();
+    alignment.with_translation([di - 1, dj - 1])
+}
+
+/// Optional inner-corner grid bounds used to discard candidate board frames
+/// that place zero detected corners inside `[0, cols) × [0, rows)`.
+pub(crate) struct BoardCornerBounds<'a> {
+    pub cols: u32,
+    pub rows: u32,
+    pub detected_corners: &'a [Coord],
+}
+
 /// Enumerate every board frame consistent with at least one circle, and accept
 /// the one that explains the layout outright.
 ///
@@ -56,10 +70,23 @@ pub(crate) struct FrameSearch {
 /// requirement is not a tie-break convenience: two frames that explain the
 /// layout equally well mean the marker constellation failed at its only job,
 /// and picking either one would ship a wrong `(i, j)` label on every corner.
+#[cfg(test)]
 pub(crate) fn resolve_board_frame(
     expected: &[MarkerCircleSpec],
     candidates: &[CircleCandidate],
     params: &CircleMatchParams,
+) -> FrameSearch {
+    resolve_board_frame_with_bounds(expected, candidates, params, None)
+}
+
+/// Bounded variant of [`resolve_board_frame`] that additionally discards any
+/// hypothesis whose corner frame places zero detected chessboard corners
+/// inside `[0, cols) × [0, rows)`.
+pub(crate) fn resolve_board_frame_with_bounds(
+    expected: &[MarkerCircleSpec],
+    candidates: &[CircleCandidate],
+    params: &CircleMatchParams,
+    bounds: Option<BoardCornerBounds<'_>>,
 ) -> FrameSearch {
     let unmatched = || {
         expected
@@ -95,7 +122,27 @@ pub(crate) fn resolve_board_frame(
     let mut runner_up_inliers = 0usize;
     let mut ambiguous = false;
 
+    let bounds_limits = bounds.as_ref().map(|b| {
+        (
+            i32::try_from(b.cols).unwrap_or(i32::MAX),
+            i32::try_from(b.rows).unwrap_or(i32::MAX),
+            b.detected_corners,
+        )
+    });
+
     for frame in frames {
+        if let Some((cols, rows, detected_corners)) = bounds_limits {
+            let cf = corner_frame(
+                GRID_TRANSFORMS_C4[frame.transform].with_translation(frame.translation),
+            );
+            let any_in_bounds = detected_corners.iter().any(|&gc| {
+                let mapped = cf.apply(gc);
+                (0..cols).contains(&mapped.u) && (0..rows).contains(&mapped.v)
+            });
+            if !any_in_bounds {
+                continue;
+            }
+        }
         let (assignment, inliers) = verify_frame(expected, candidates, frame);
         let best_inliers = best.as_ref().map(|(_, _, n)| *n).unwrap_or(0);
         if inliers > best_inliers {
@@ -348,5 +395,36 @@ mod tests {
             assert_eq!(again.inliers, first.inliers);
             assert_eq!(again.runner_up_inliers, first.runner_up_inliers);
         }
+    }
+
+    #[test]
+    fn bounded_resolution_rejects_off_board_frames() {
+        // Detected chessboard corners span u=0..=5, v=0..=5.
+        let mut detected_corners = Vec::new();
+        for v in 0..=5 {
+            for u in 0..=5 {
+                detected_corners.push(Coord::new(u, v));
+            }
+        }
+        // Only spurious off-board candidates exist around (-20, -20): the resolved
+        // frame puts every detected corner outside 0..8 × 0..6 and must be ignored.
+        let expected = layout();
+        let candidates = vec![
+            candidate(CellCoords { i: -20, j: -20 }, CirclePolarity::White),
+            candidate(CellCoords { i: -19, j: -20 }, CirclePolarity::Black),
+            candidate(CellCoords { i: -19, j: -19 }, CirclePolarity::White),
+        ];
+        let search = resolve_board_frame_with_bounds(
+            &expected,
+            &candidates,
+            &params(3),
+            Some(BoardCornerBounds {
+                cols: 8,
+                rows: 6,
+                detected_corners: &detected_corners,
+            }),
+        );
+        assert!(search.alignment.is_none());
+        assert_eq!(search.inliers, 0);
     }
 }

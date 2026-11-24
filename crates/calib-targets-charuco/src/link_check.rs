@@ -199,7 +199,10 @@ pub fn validate_marker_corner_links(
         }
     }
 
-    for (marker_id, reported) in by_marker {
+    let mut marker_entries: Vec<(u32, Vec<u32>)> = by_marker.into_iter().collect();
+    marker_entries.sort_unstable_by_key(|&(marker_id, _)| marker_id);
+
+    for (marker_id, reported) in marker_entries {
         let MarkerExpectation::Expected { corners } = expected_cache
             .get(&marker_id)
             .copied()
@@ -222,7 +225,8 @@ pub fn validate_marker_corner_links(
         }
 
         if det.mode == LinkCheckMode::MustMatchAll4 {
-            let missing: Vec<u32> = expected_set.difference(&seen).copied().collect();
+            let mut missing: Vec<u32> = expected_set.difference(&seen).copied().collect();
+            missing.sort_unstable();
             if !missing.is_empty() {
                 violations.push(LinkViolation {
                     marker_id,

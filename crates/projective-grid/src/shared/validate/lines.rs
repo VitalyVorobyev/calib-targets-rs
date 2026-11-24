@@ -76,16 +76,16 @@ fn flag_line(
         sxy += dx * dy;
         syy += dy * dy;
     }
-    let trace = sxx + syy;
-    let det = sxx * syy - sxy * sxy;
-    let disc = (trace * trace * 0.25 - det).max(0.0).sqrt();
-    let lambda = trace * 0.5 + disc;
-    let (vx, vy) = if sxy.abs() > f32::EPSILON {
-        (sxy, lambda - sxx)
-    } else if sxx >= syy {
+    let half_trace = 0.5 * (sxx + syy);
+    let half_diff = 0.5 * (sxx - syy);
+    let disc = half_diff.hypot(sxy);
+    let lambda = half_trace + disc;
+    let (vx, vy) = if sxy.abs() <= f32::EPSILON && half_diff.abs() <= f32::EPSILON {
         (1.0, 0.0)
+    } else if sxx >= syy {
+        (lambda - syy, sxy)
     } else {
-        (0.0, 1.0)
+        (sxy, lambda - sxx)
     };
     let vn = (vx * vx + vy * vy).sqrt().max(f32::EPSILON);
     let ux = vx / vn;

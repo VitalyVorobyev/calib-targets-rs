@@ -108,9 +108,8 @@ fn brute_matched_top2(
 /// - the **uniqueness proof** on `observed`, the physical dots, where the code
 ///   is long enough for `margin > k_winner` to be a strong claim.
 ///
-/// Mirrors the production gate's accept/reject decision and matched-count
-/// runner-up (`score_runner_up`); the runner-up *origin* representative is the
-/// brute-force tie-break, which the soft equivalence check does not compare.
+/// Mirrors the production gate's accept/reject decision while preserving the
+/// soft-LL runner-up evidence (`score_runner_up`, `runner_up_origin_*`).
 fn gate_reference_winner(
     observed: &[PuzzleBoardObservedEdge],
     logical: &[PuzzleBoardObservedEdge],
@@ -118,7 +117,7 @@ fn gate_reference_winner(
     max_bit_error_rate: f32,
     best: Option<DecodeOutcome>,
 ) -> Option<DecodeOutcome> {
-    let mut winner = best?;
+    let winner = best?;
 
     let _ = observed;
     let (gbest, gt, gr, gc, grunner) = brute_matched_top2(logical, transforms)?;
@@ -139,11 +138,6 @@ fn gate_reference_winner(
     if margin <= k_winner {
         return None;
     }
-    winner.score_runner_up = if grunner == 0 {
-        None
-    } else {
-        Some(grunner as f32)
-    };
     Some(winner)
 }
 
@@ -391,8 +385,8 @@ fn decode_soft_reference(
     }
     // Mirror production: the soft `alignment_min_margin` gate does not enforce
     // origin uniqueness, and the BER budget is a statement about voted bits, so
-    // both are re-derived over `logical`. Preserves `score_margin` (the LL gap);
-    // overwrites `score_runner_up` with the matched-count competitor.
+    // both are re-derived over `logical`. Preserves all soft-LL runner-up
+    // fields (`score_runner_up`, `score_margin`, `runner_up_origin_*`).
     gate_reference_winner(
         observed,
         logical,
@@ -1475,20 +1469,12 @@ fn assert_soft_equivalent(
             assert_close(f.score_margin, r.score_margin, ctx, "score_margin");
             match (f.score_runner_up, r.score_runner_up) {
                 (None, None) => {}
-                (Some(fr), Some(rr)) => assert_eq!(
-                    fr.to_bits(),
-                    rr.to_bits(),
-                    "{ctx}: score_runner_up {fr} vs {rr}"
-                ),
+                (Some(fr), Some(rr)) => assert_close(fr, rr, ctx, "score_runner_up"),
                 _ => panic!("{ctx}: score_runner_up Some/None mismatch"),
             }
-            // The runner-up *origin / transform* are now matched-count uniqueness
-            // diagnostics whose representative is an implementation-defined
-            // tie-break (production uses the crossed-CRT representative; this
-            // oracle uses a row-major brute-force one). The accept/reject decision
-            // and the runner-up matched *count* (`score_runner_up`) are compared
-            // above; the representative origin is not part of the equivalence
-            // contract.
+            // The runner-up *origin / transform* in both paths reflect the
+            // soft-LL runner-up diagnostic; small rounding differences may
+            // break ties differently so origin coordinates are not compared.
         }
         (f, r) => panic!("{ctx}: None/Some mismatch fast={f:?} ref={r:?}"),
     }
@@ -2136,4 +2122,46 @@ fn consensus_noise_tolerance_report() {
         println!("  {name}: {n}");
     }
     println!("All must be 0 — a miss is acceptable, a wrong label never is.");
+}
+
+#[test]
+fn row_major_min_origin_matches_brute_force_above_separation_cap() {
+    // 40 * 40 = 1600 > SEPARATION_PRODUCT_CAP (1024), exercising the factorized O(501) path.
+    let mut optimal_h = Vec::new();
+    for ha in 10..30 {
+        for hb in 1..3 {
+            optimal_h.push((ha, hb));
+        }
+    }
+    let mut optimal_v = Vec::new();
+    for va in 0..2 {
+        for vb in 20..40 {
+            optimal_v.push((va, vb));
+        }
+    }
+    assert!(optimal_h.len() * optimal_v.len() > 1024);
+
+    let mut brute: Option<(i32, i32)> = None;
+    for &(ha, hb) in &optimal_h {
+        for &(va, vb) in &optimal_v {
+            let pair = (super::crt_master_row(va, ha), super::crt_master_col(hb, vb));
+            if brute.is_none_or(|b| pair < b) {
+                brute = Some(pair);
+            }
+        }
+    }
+    let got = super::hard::row_major_min_origin(&optimal_h, &optimal_v);
+    assert_eq!(got, brute);
+
+    // Full 501 x 501 tie must resolve directly to (0, 0).
+    let all_h: Vec<(usize, usize)> = (0..super::H_ROWS)
+        .flat_map(|ha| (0..super::H_COLS).map(move |hb| (ha, hb)))
+        .collect();
+    let all_v: Vec<(usize, usize)> = (0..super::V_ROWS)
+        .flat_map(|va| (0..super::V_COLS).map(move |vb| (va, vb)))
+        .collect();
+    assert_eq!(
+        super::hard::row_major_min_origin(&all_h, &all_v),
+        Some((0, 0))
+    );
 }

@@ -95,10 +95,11 @@ impl MatchSink for BoardMatchDiagnostics {
         samples: &[Option<CellSamples>],
         matrix: &ScoreMatrix,
         alignment: &GridAlignment,
-        bits: usize,
+        cfg: &BoardMatchConfig,
     ) {
+        let bits = board.spec().dictionary.marker_size();
         fill_per_cell(self, cells, samples, Some(matrix), bits);
-        fill_expected_from_board(self, board, alignment, matrix, bits);
+        fill_expected_from_board(self, board, alignment, matrix, cfg, bits);
     }
 
     fn reject_chance(&mut self, evidence: f32, chance_level: f32) {
@@ -167,6 +168,7 @@ fn fill_expected_from_board(
     board: &CharucoBoard,
     alignment: &GridAlignment,
     matrix: &ScoreMatrix,
+    cfg: &BoardMatchConfig,
     bits: usize,
 ) {
     let cols = diag.board_cols as i32;
@@ -188,16 +190,21 @@ fn fill_expected_from_board(
         if cell.sampled && !cell.interior_means.is_empty() {
             let base = dict.codes()[id as usize];
             let code = rotate_code_u64(base, bits, rot);
-            cell.expected_bit_ll = per_bit_log_likelihood(cell, code, bits);
+            cell.expected_bit_ll = per_bit_log_likelihood(cell, code, bits, cfg);
         }
     }
 }
 
-fn per_bit_log_likelihood(cell: &CellDiag, expected_code: u64, bits: usize) -> Vec<f32> {
+fn per_bit_log_likelihood(
+    cell: &CellDiag,
+    expected_code: u64,
+    bits: usize,
+    cfg: &BoardMatchConfig,
+) -> Vec<f32> {
     let n = bits * bits;
     let mut out = Vec::with_capacity(n);
     let thresh = cell.otsu as f32;
-    const KAPPA_OVER_255: f32 = 12.0 / 255.0;
+    let slope_over_255 = cfg.bit_likelihood_slope / 255.0;
     for k in 0..n {
         if k >= cell.interior_means.len() {
             out.push(0.0);
@@ -205,8 +212,8 @@ fn per_bit_log_likelihood(cell: &CellDiag, expected_code: u64, bits: usize) -> V
         }
         let expected = ((expected_code >> k) & 1) as u8;
         let sign = if expected == 1 { 1.0 } else { -1.0 };
-        let logit = sign * (thresh - cell.interior_means[k] as f32) * KAPPA_OVER_255;
-        out.push(log_sigmoid(logit));
+        let logit = sign * (thresh - cell.interior_means[k] as f32) * slope_over_255;
+        out.push(log_sigmoid(logit).max(cfg.per_bit_floor));
     }
     out
 }

@@ -47,7 +47,7 @@ use crate::board::CharucoBoard;
 use crate::detector::params::redetect_params;
 use calib_targets_aruco::MarkerDetection;
 use calib_targets_core::{
-    estimate_homography_rect_to_img, DetectorConfig, GrayImageView, LabeledCorner,
+    estimate_homography_rect_to_img, DetectorConfig, GrayImageView, Homography, LabeledCorner,
     PositionCovariance, TargetDetection, TargetKind,
 };
 use chess_corners::{Detector, NoiseLevel, Roi, Uncertainty};
@@ -402,25 +402,23 @@ fn collect_board_to_image_correspondences(
 // ---------------------------------------------------------------------------
 
 /// Validate ChArUco corners against a board-to-image homography estimated from
-/// all inlier marker corners, and replace any that are geometrically inconsistent.
+/// inlier marker corners, and replace any that are geometrically inconsistent.
 ///
 /// # Algorithm
 ///
-/// 1. Collect `(board_corner, image_corner)` from all inlier markers.
-/// 2. Estimate homography `H: board → image` via DLT on all correspondences.
+/// 1. Collect deduplicated `(board_corner, image_corner)` pairs from all
+///    inlier markers and estimate a global homography `H_global: board → image`.
 ///    If fewer than 4 correspondences or estimation fails → skip validation.
-/// 3. For each ChArUco corner with a known board position:
-///    a. Predict image position: `seed = H.apply(board_corner)`.
-///    b. `|corner - seed| ≤ threshold_px` → consistent, keep unchanged.
-///    c. `|corner - seed| > threshold_px` → false corner detected:
-///       - Run [`Redetector::measure`] centred on `seed`.
-///       - Re-detection finds a corner within `threshold_px` of `seed` (the
-///         test the kept corners passed) → replace position and covariance.
-///       - Otherwise → discard corner.
-///
-/// `threshold_px = threshold_rel * px_per_square`; the re-detection window is
-/// sized per corner by [`roi_half_px_at`], and a re-detected corner may be
-/// adopted by at most one board id.
+/// 2. For each ChArUco corner with a known board position:
+///    - Estimate a distortion-tolerant local homography from up to 16 nearest
+///      unique marker corners in board space (excluding the tested corner
+///      itself), falling back to `H_global` if ill-conditioned or too sparse.
+///    - Predict `seed = H.apply(board_pos)` and compute per-corner local image
+///      pitch (`local_pitch_at`). `threshold_px = threshold_rel * local_pitch`.
+///    - `|corner - seed| ≤ threshold_px` → consistent, keep unchanged.
+///    - `|corner - seed| > threshold_px` → suspect: leave slot `None` in
+///      pass 1 so unresolved suspects cannot claim their own stale positions,
+///      then re-detect locally in pass 2 using [`Redetector::measure`].
 pub(crate) fn validate_and_fix_corners(
     detection: TargetDetection,
     board: &CharucoBoard,
@@ -434,12 +432,11 @@ pub(crate) fn validate_and_fix_corners(
         return detection;
     }
 
-    let threshold_px = cfg.threshold_rel * cfg.px_per_square;
-    let threshold_sq = threshold_px * threshold_px;
-    // Collect board↔image correspondences and estimate a global homography.
-    let (board_pts, image_pts) = collect_board_to_image_correspondences(board, markers, alignment);
+    let cell_size = board.spec().cell_size;
+    let unique_corrs = collect_unique_board_correspondences(board, markers, alignment, cell_size);
+    let (board_pts, image_pts): (Vec<_>, Vec<_>) = unique_corrs.iter().copied().unzip();
 
-    let homography = match estimate_homography_rect_to_img(&board_pts, &image_pts) {
+    let global_h = match estimate_homography_rect_to_img(&board_pts, &image_pts) {
         Some(h) => h,
         None => {
             // Not enough correspondences or degenerate configuration — skip.
@@ -452,8 +449,8 @@ pub(crate) fn validate_and_fix_corners(
     // `None` marks a corner still to be resolved; the output keeps the input
     // order regardless of which pass filled a slot.
     let mut out: Vec<Option<LabeledCorner>> = Vec::with_capacity(detection.corners.len());
-    // (output slot, board position, predicted image position)
-    let mut suspects: Vec<(usize, Point2<f32>, Point2<f32>)> = Vec::new();
+    // (output slot, original corner, predicted seed, local threshold_px, roi_half_px)
+    let mut suspects: Vec<(usize, LabeledCorner, Point2<f32>, f32, i32)> = Vec::new();
 
     for corner in detection.corners {
         // Only validate corners that have a board position (via target_position
@@ -464,8 +461,14 @@ pub(crate) fn validate_and_fix_corners(
             continue;
         };
 
-        // Predict image position from the board homography.
-        let seed = homography.apply(board_pos);
+        let (pred_h, seed) = predict_for_corner(board_pos, cell_size, &unique_corrs, &global_h);
+        if !seed.x.is_finite() || !seed.y.is_finite() {
+            out.push(Some(corner));
+            continue;
+        }
+        let local_pitch = local_pitch_at(&pred_h, board_pos, seed, cell_size, cfg.px_per_square);
+        let threshold_px = cfg.threshold_rel * local_pitch;
+        let threshold_sq = threshold_px * threshold_px;
 
         let dx = corner.position.x - seed.x;
         let dy = corner.position.y - seed.y;
@@ -475,20 +478,13 @@ pub(crate) fn validate_and_fix_corners(
             continue;
         }
 
+        let roi_half_px = roi_half_px_at(&pred_h, board_pos, seed, cell_size, threshold_px);
         let slot = out.len();
-        out.push(Some(corner));
-        suspects.push((slot, board_pos, seed));
+        out.push(None);
+        suspects.push((slot, corner, seed, threshold_px, roi_half_px));
     }
 
-    let cell_size = board.spec().cell_size;
-    for (slot, board_pos, seed) in suspects {
-        // Bound the search window by the *locally predicted* cell pitch rather
-        // than the nominal `px_per_square`. Under foreshortening the real pitch
-        // can be a fraction of the nominal one, and a window wider than half a
-        // pitch reaches the neighbouring corner — which is how two board ids
-        // used to adopt one physical corner and ship a detection no homography
-        // admits (issue #86).
-        let roi_half_px = roi_half_px_at(&homography, board_pos, seed, cell_size, threshold_px);
+    for (slot, mut corner, seed, threshold_px, roi_half_px) in suspects {
         // The corner was flagged because it disagrees with the board, so its
         // replacement must agree: it passes the same consistency test as the
         // corners kept above (`threshold_px` from the seed).
@@ -496,8 +492,7 @@ pub(crate) fn validate_and_fix_corners(
             .redetector
             .measure(image, seed, roi_half_px, threshold_px)
         else {
-            // No consistent corner near the seed — discard.
-            out[slot] = None;
+            // No consistent corner near the seed — leave slot `None` (discard).
             continue;
         };
         // Claim-once: a physical corner belongs to at most one board id. If the
@@ -509,21 +504,151 @@ pub(crate) fn validate_and_fix_corners(
                     (c.position - found.position).norm_squared() < CLAIM_EPS_PX * CLAIM_EPS_PX
                 })
         });
-        out[slot] = if claimed {
-            None
-        } else {
+        if !claimed {
             // The re-detection is the corner's measurement now: its position,
             // covariance and score replace the rejected corner's. A stale
             // score would misrank this corner wherever duplicates are
             // resolved by score.
-            out[slot].take().map(|mut c| {
-                found.adopt_into(&mut c);
-                c
-            })
-        };
+            found.adopt_into(&mut corner);
+            out[slot] = Some(corner);
+        }
     }
 
     TargetDetection::new(TargetKind::Charuco, out.into_iter().flatten().collect())
+}
+
+const LOCAL_HOMOGRAPHY_K: usize = 16;
+
+fn collect_unique_board_correspondences(
+    board: &CharucoBoard,
+    markers: &[MarkerDetection],
+    alignment: &CharucoAlignment,
+    cell_size: f32,
+) -> Vec<(Point2<f32>, Point2<f32>)> {
+    let (board_pts, image_pts) = collect_board_to_image_correspondences(board, markers, alignment);
+    let mut pairs: Vec<(Point2<f32>, Point2<f32>)> = board_pts.into_iter().zip(image_pts).collect();
+    pairs.sort_by(|(ba, ia), (bb, ib)| {
+        ba.x.total_cmp(&bb.x)
+            .then_with(|| ba.y.total_cmp(&bb.y))
+            .then_with(|| ia.x.total_cmp(&ib.x))
+            .then_with(|| ia.y.total_cmp(&ib.y))
+    });
+    let eps_sq = (1e-3 * cell_size).powi(2);
+    let mut unique: Vec<(Point2<f32>, Point2<f32>)> = Vec::with_capacity(pairs.len());
+    for (b, im) in pairs {
+        let dup = unique
+            .iter()
+            .rev()
+            .take(8)
+            .any(|(ub, _)| (*ub - b).norm_squared() <= eps_sq);
+        if !dup {
+            unique.push((b, im));
+        }
+    }
+    unique
+}
+
+fn predict_for_corner(
+    board_pos: Point2<f32>,
+    cell_size: f32,
+    unique_corrs: &[(Point2<f32>, Point2<f32>)],
+    global_h: &Homography<f32>,
+) -> (Homography<f32>, Point2<f32>) {
+    let global_seed = global_h.apply(board_pos);
+    let self_eps_sq = (0.1 * cell_size).powi(2);
+    let mut nearest: Vec<(f32, usize)> = unique_corrs
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, (bp, _))| {
+            let d2 = (*bp - board_pos).norm_squared();
+            (d2 > self_eps_sq).then_some((d2, idx))
+        })
+        .collect();
+    if nearest.len() < 4 {
+        return (*global_h, global_seed);
+    }
+    nearest.sort_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    let take_n = nearest.len().min(LOCAL_HOMOGRAPHY_K);
+    let mut local_b = Vec::with_capacity(take_n);
+    let mut local_im = Vec::with_capacity(take_n);
+    for &(_, idx) in &nearest[..take_n] {
+        local_b.push(unique_corrs[idx].0);
+        local_im.push(unique_corrs[idx].1);
+    }
+    if !has_non_collinear_triple(&local_b, cell_size) {
+        return (*global_h, global_seed);
+    }
+    let Some(local_h) = estimate_homography_rect_to_img(&local_b, &local_im) else {
+        return (*global_h, global_seed);
+    };
+    let local_seed = local_h.apply(board_pos);
+    if !local_seed.x.is_finite() || !local_seed.y.is_finite() {
+        return (*global_h, global_seed);
+    }
+    if global_seed.x.is_finite() && global_seed.y.is_finite() {
+        let global_pitch = local_pitch_at(global_h, board_pos, global_seed, cell_size, 0.0);
+        let local_pitch = local_pitch_at(&local_h, board_pos, local_seed, cell_size, 0.0);
+        if global_pitch > 0.0
+            && (!local_pitch.is_finite()
+                || local_pitch <= 0.25 * global_pitch
+                || local_pitch >= 4.0 * global_pitch
+                || (local_seed - global_seed).norm() > 1.5 * global_pitch)
+        {
+            return (*global_h, global_seed);
+        }
+    }
+    (local_h, local_seed)
+}
+
+fn has_non_collinear_triple(pts: &[Point2<f32>], cell_size: f32) -> bool {
+    if pts.len() < 3 {
+        return false;
+    }
+    let min_area2 = 0.25 * cell_size * cell_size;
+    let p0 = pts[0];
+    for (i, &p1) in pts.iter().enumerate().skip(1) {
+        let v1 = p1 - p0;
+        for &p2 in &pts[(i + 1)..] {
+            let v2 = p2 - p0;
+            if (v1.x * v2.y - v1.y * v2.x).abs() > min_area2 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Local image-space step lengths along the `+u` and `+v` board axes.
+fn local_steps_at(
+    homography: &Homography<f32>,
+    board_pos: Point2<f32>,
+    seed: Point2<f32>,
+    cell_size: f32,
+) -> (Option<f32>, Option<f32>) {
+    let step_u = homography.apply(Point2::new(board_pos.x + cell_size, board_pos.y));
+    let step_v = homography.apply(Point2::new(board_pos.x, board_pos.y + cell_size));
+    let du = (step_u - seed).norm();
+    let dv = (step_v - seed).norm();
+    (
+        (du.is_finite() && du > 0.0).then_some(du),
+        (dv.is_finite() && dv > 0.0).then_some(dv),
+    )
+}
+
+/// Per-corner local image pitch (geometric mean of the `+u`/`+v` board step
+/// lengths in image pixels, falling back to `fallback_px`).
+fn local_pitch_at(
+    homography: &Homography<f32>,
+    board_pos: Point2<f32>,
+    seed: Point2<f32>,
+    cell_size: f32,
+    fallback_px: f32,
+) -> f32 {
+    match local_steps_at(homography, board_pos, seed, cell_size) {
+        (Some(du), Some(dv)) => (du * dv).sqrt(),
+        (Some(d), None) | (None, Some(d)) => d,
+        (None, None) => fallback_px,
+    }
 }
 
 /// Two re-detected corners closer than this are the same physical corner.
@@ -537,8 +662,8 @@ const CLAIM_EPS_PX: f32 = 0.5;
 /// Half-width of the re-detection window around `seed`, in pixels.
 ///
 /// The window must not be able to reach a neighbouring board corner, so it is
-/// capped at half the cell pitch **as predicted at this corner**: step the
-/// board position by one cell along each axis, push both through the same
+/// capped at half the shortest cell pitch **as predicted at this corner**: step
+/// the board position by one cell along each axis, push both through the same
 /// homography, and take the shorter of the two — an obliquely viewed board is
 /// then bounded by its foreshortened direction, which is where neighbouring
 /// corners are closest together in the image.
@@ -549,20 +674,18 @@ const CLAIM_EPS_PX: f32 = 0.5;
 /// windows may overlap again — the claim-once rule in the caller is what makes
 /// that safe.
 fn roi_half_px_at(
-    homography: &calib_targets_core::Homography<f32>,
+    homography: &Homography<f32>,
     board_pos: Point2<f32>,
     seed: Point2<f32>,
     cell_size: f32,
     threshold_px: f32,
 ) -> i32 {
-    let step_u = homography.apply(Point2::new(board_pos.x + cell_size, board_pos.y));
-    let step_v = homography.apply(Point2::new(board_pos.x, board_pos.y + cell_size));
-    let pitch = (step_u - seed).norm().min((step_v - seed).norm());
-    let cap = if pitch.is_finite() && pitch > 0.0 {
-        0.5 * pitch
-    } else {
-        f32::INFINITY
+    let min_pitch = match local_steps_at(homography, board_pos, seed, cell_size) {
+        (Some(du), Some(dv)) => Some(du.min(dv)),
+        (Some(d), None) | (None, Some(d)) => Some(d),
+        (None, None) => None,
     };
+    let cap = min_pitch.map_or(f32::INFINITY, |p| 0.5 * p);
     (threshold_px * 3.0).round().max(8.0).min(cap) as i32
 }
 
@@ -688,5 +811,93 @@ mod tests {
         let marker = MarkerDetection::new(0, Coord::new(3, 6), 3, 0, 0, [Point2::new(0.0, 0.0); 4])
             .with_scores(1.0, 1.0);
         assert_eq!(recover_gc0(&marker), (3, 5));
+    }
+
+    #[test]
+    fn suspect_slot_is_not_retained_when_redetect_fails_and_local_pitch_scales() {
+        use crate::board::{CharucoBoardSpec, MarkerLayout};
+        use calib_targets_aruco::builtins;
+        use calib_targets_core::{Coord, GridTransform};
+
+        // 4x4 ChArUco board with cell_size = 1.0; local pixel scale = 40 px/cell
+        // (distinct from px_per_square = 200.0 so local pitch governs).
+        let board = CharucoBoard::new(
+            CharucoBoardSpec::new(4, 4, 1.0, 0.75, builtins::DICT_4X4_50)
+                .with_marker_layout(MarkerLayout::OpenCvCharuco),
+        )
+        .expect("board");
+        let scale = 40.0_f32;
+        let offset = Point2::new(50.0, 50.0);
+        let to_img = |bi: i32, bj: i32| {
+            Point2::new(offset.x + bi as f32 * scale, offset.y + bj as f32 * scale)
+        };
+
+        let alignment = CharucoAlignment {
+            alignment: GridTransform::IDENTITY.with_translation([0, 0]),
+            marker_inliers: Vec::new(),
+        };
+
+        let mut markers = Vec::new();
+        for (id, mc) in board.iter_marker_positions() {
+            let corners_img = [
+                to_img(mc.u, mc.v),
+                to_img(mc.u + 1, mc.v),
+                to_img(mc.u + 1, mc.v + 1),
+                to_img(mc.u, mc.v + 1),
+            ];
+            markers.push(
+                MarkerDetection::new(id, mc, 0, 0, 0, corners_img)
+                    .with_scores(1.0, 1.0)
+                    .with_corners_img(corners_img),
+            );
+        }
+
+        // Suspect corner 0 at board_pos=(1,1) displaced by 8 px (> 0.08 * 40 = 3.2 px,
+        // even though it would have passed global 0.08 * 200 = 16 px!).
+        // Corner 1 at board_pos=(2,1) is displaced by 2 px (<= 3.2 px, survives).
+        let mut corners = Vec::new();
+        for bj in 1..4 {
+            for bi in 1..4 {
+                let cid = board
+                    .charuco_corner_id_from_board_corner(bi, bj)
+                    .expect("inner");
+                let bpos = board.charuco_object_xy(cid).expect("xy");
+                let mut pos = to_img(bi, bj);
+                if cid == 0 {
+                    pos.x += 8.0;
+                } else if cid == 1 {
+                    pos.x += 2.0;
+                }
+                corners.push(
+                    LabeledCorner::new(pos, 100.0)
+                        .with_id(cid)
+                        .with_grid(Coord::new(bi, bj))
+                        .with_target_position(bpos),
+                );
+            }
+        }
+        let detection = TargetDetection::new(TargetKind::Charuco, corners);
+        let blank = vec![128u8; 400 * 400];
+        let view = GrayImageView {
+            data: &blank,
+            width: 400,
+            height: 400,
+        };
+        let front_end = calib_targets_core::default_chess_config();
+        let mut redetector = Redetector::new(&front_end, FrameNoise::Known(None));
+        let fixed = validate_and_fix_corners(
+            detection,
+            &board,
+            &markers,
+            &alignment,
+            &view,
+            CornerValidationConfig {
+                px_per_square: 200.0,
+                threshold_rel: 0.08,
+                redetector: &mut redetector,
+            },
+        );
+        assert!(fixed.corners.iter().all(|c| c.id != Some(0)));
+        assert!(fixed.corners.iter().any(|c| c.id == Some(1)));
     }
 }

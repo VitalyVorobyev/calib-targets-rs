@@ -7,6 +7,20 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- `LabelledGrid::normalize` always yields a right-handed frame: among the four
+  handedness-preserving D4 transforms it picks the one whose axes best align
+  with image `+x` / `+y`, instead of choosing the transpose from one
+  coordinate comparison (which could mirror a sheared grid).
+- Component merge folds the smaller component into the larger, with
+  deterministic tie-breaks; `estimate_homography` solves the DLT in `f64`;
+  hole filling ignores diagonal-only candidates; local-homography bases skip
+  three collinear points; the line-fit eigenvector is cancellation-safe.
+- The topological wrong-label check gains a scale-free local-shape criterion
+  (gross continuation kinks and degenerate quads) that runs on components of
+  any size and also removes the dangling frontier leaf of a kink.
+
 ## [0.14.6] - 2026-11-22
 
 Additive: two expert exports that target detectors share with the crate. No

@@ -133,7 +133,7 @@ trait MatchSink {
         _samples: &[Option<CellSamples>],
         _matrix: &ScoreMatrix,
         _alignment: &GridAlignment,
-        _bits: usize,
+        _cfg: &BoardMatchConfig,
     ) {
     }
     /// The chosen hypothesis's evidence did not exceed what the best of the
@@ -217,7 +217,7 @@ fn match_board_core<S: MatchSink>(
     // corner) onto its board cell. Emission and diagnostics look markers up
     // by cell; the corner-mapping stage needs the corner alignment below.
     let cell_align = hypothesis_to_alignment(&best);
-    sink.fill_cells_and_expected(board, cells, &samples, &matrix, &cell_align, bits);
+    sink.fill_cells_and_expected(board, cells, &samples, &matrix, &cell_align, cfg);
 
     // Significance before uniqueness: a placement no better than the best
     // chance placement is not evidence of the board, however far it stands

@@ -252,6 +252,7 @@ pub(crate) struct DiskProbe {
     patch_size: f32,
     radii: SampleRadii,
     dirs: Vec<(f32, f32)>,
+    harmonic_dirs: Vec<(f32, f32)>,
 }
 
 impl DiskProbe {
@@ -274,6 +275,7 @@ impl DiskProbe {
                 r1: r_ring + ring_half_th,
             },
             dirs: build_unit_circle_lut(params.samples)?,
+            harmonic_dirs: build_unit_circle_lut(HARMONIC_SAMPLES)?,
         })
     }
 
@@ -325,6 +327,7 @@ impl DiskProbe {
                 patch_size: self.patch_size,
                 contrast,
             },
+            &self.harmonic_dirs,
         )
     }
 
@@ -374,7 +377,9 @@ impl DiskProbe {
                     continue;
                 }
                 let c = Point2::new(centre0.x + dx as f32, centre0.y + dy as f32);
-                let levels = self.levels_at(img, h_img_from_patch, c)?;
+                let Some(levels) = self.levels_at(img, h_img_from_patch, c) else {
+                    continue;
+                };
                 if departure(levels).abs() > departure(best.1).abs() {
                     best = (c, levels);
                 }
@@ -440,7 +445,21 @@ struct SampleParams<'a> {
     stride: usize,
 }
 
+#[inline]
+fn in_image_bounds(img: &GrayImageView<'_>, q: Point2<f32>) -> bool {
+    img.width > 0
+        && img.height > 0
+        && q.x.is_finite()
+        && q.y.is_finite()
+        && q.x >= 0.0
+        && q.y >= 0.0
+        && q.x <= (img.width - 1) as f32
+        && q.y <= (img.height - 1) as f32
+}
+
 /// Sample disk and ring means using a shared unit-circle LUT (no per-sample trig).
+///
+/// Returns `None` if any probe sample lands outside image bounds.
 fn sample_disk_and_ring(
     img: &GrayImageView<'_>,
     h: &Homography,
@@ -463,6 +482,9 @@ fn sample_disk_and_ring(
             center_patch.y + params.radii.rad_disk * uy,
         );
         let q_disk = h.apply(p_disk);
+        if !in_image_bounds(img, q_disk) {
+            return None;
+        }
         sum_disk += sample_bilinear_fast(img, q_disk.x, q_disk.y);
 
         let p_r0 = Point2::new(
@@ -470,6 +492,9 @@ fn sample_disk_and_ring(
             center_patch.y + params.radii.r0 * uy,
         );
         let q_r0 = h.apply(p_r0);
+        if !in_image_bounds(img, q_r0) {
+            return None;
+        }
         sum_r0 += sample_bilinear_fast(img, q_r0.x, q_r0.y);
 
         let p_r1 = Point2::new(
@@ -477,6 +502,9 @@ fn sample_disk_and_ring(
             center_patch.y + params.radii.r1 * uy,
         );
         let q_r1 = h.apply(p_r1);
+        if !in_image_bounds(img, q_r1) {
+            return None;
+        }
         sum_r1 += sample_bilinear_fast(img, q_r1.x, q_r1.y);
         count += 1;
     }
@@ -499,17 +527,21 @@ struct ProbeGeometry {
 
 /// Strongest normalised 4-fold excess over the probe ladder.
 ///
-/// Returns `None` only when the direction table cannot be built.
+/// Returns `None` when the direction table is empty or a probe ring leaves
+/// image bounds.
 fn measure_squareness(
     img: &GrayImageView<'_>,
     h: &Homography,
     center_patch: Point2<f32>,
     geometry: &ProbeGeometry,
+    dirs: &[(f32, f32)],
 ) -> Option<f32> {
+    if dirs.is_empty() {
+        return None;
+    }
     if geometry.contrast <= 0.0 {
         return Some(0.0);
     }
-    let dirs = build_unit_circle_lut(HARMONIC_SAMPLES)?;
     let max_radius = PROBE_MAX_PATCH_FRAC * geometry.patch_size;
     let mut worst = 0.0f32;
     let mut radius = PROBE_INNER_FRAC * geometry.radius;
@@ -519,7 +551,7 @@ fn measure_squareness(
         if ring > 0 && radius > max_radius {
             break;
         }
-        let (twofold, fourfold) = harmonics_on_ring(img, h, center_patch, radius, &dirs);
+        let (twofold, fourfold) = harmonics_on_ring(img, h, center_patch, radius, dirs)?;
         worst = worst.max((fourfold - twofold) / geometry.contrast);
         radius *= PROBE_RATIO;
     }
@@ -530,14 +562,15 @@ fn measure_squareness(
 /// sampled on one probe ring, in the same `0..255` units as the contrast.
 ///
 /// The phase factors come from the unit-direction table by two double-angle
-/// steps, so the ladder costs no extra trigonometry.
+/// steps, so the ladder costs no extra trigonometry. Returns `None` if any
+/// probe point leaves image bounds.
 fn harmonics_on_ring(
     img: &GrayImageView<'_>,
     h: &Homography,
     center_patch: Point2<f32>,
     radius: f32,
     dirs: &[(f32, f32)],
-) -> (f32, f32) {
+) -> Option<(f32, f32)> {
     let mut re2 = 0.0f32;
     let mut im2 = 0.0f32;
     let mut re4 = 0.0f32;
@@ -545,6 +578,9 @@ fn harmonics_on_ring(
     for &(ux, uy) in dirs {
         let p = Point2::new(center_patch.x + radius * ux, center_patch.y + radius * uy);
         let q = h.apply(p);
+        if !in_image_bounds(img, q) {
+            return None;
+        }
         let value = sample_bilinear_fast(img, q.x, q.y);
         let (cos2, sin2) = (ux * ux - uy * uy, 2.0 * ux * uy);
         let (cos4, sin4) = (cos2 * cos2 - sin2 * sin2, 2.0 * cos2 * sin2);
@@ -554,7 +590,7 @@ fn harmonics_on_ring(
         im4 += value * sin4;
     }
     let scale = 2.0 / dirs.len() as f32;
-    (scale * re2.hypot(im2), scale * re4.hypot(im4))
+    Some((scale * re2.hypot(im2), scale * re4.hypot(im4)))
 }
 
 #[cfg(test)]
@@ -728,6 +764,7 @@ mod tests {
             Point2::new(0.0, s),
         ];
         let h = homography_from_4pt(&patch, &patch).expect("identity homography");
+        let dirs = build_unit_circle_lut(HARMONIC_SAMPLES).expect("harmonic lut");
         measure_squareness(
             &view,
             &h,
@@ -737,6 +774,7 @@ mod tests {
                 patch_size: s,
                 contrast: 255.0,
             },
+            &dirs,
         )
         .expect("squareness")
     }
@@ -801,5 +839,30 @@ mod tests {
                 CirclePolarity::Black => (),
             }
         }
+    }
+
+    #[test]
+    fn probe_outside_image_bounds_returns_none() {
+        let params = CircleScoreParams::default();
+        let probe = DiskProbe::new(0.5, &params).expect("valid probe");
+        let data = vec![128u8; IMG * IMG];
+        let view = GrayImageView {
+            width: IMG,
+            height: IMG,
+            data: &data,
+        };
+        let s = IMG as f32;
+        // Shift square so part of the outer ring extends past x = IMG - 1.
+        let oob_corners = [
+            Point2::new(0.5 * s, 0.0),
+            Point2::new(1.5 * s, 0.0),
+            Point2::new(1.5 * s, s),
+            Point2::new(0.5 * s, s),
+        ];
+        let h = probe.rectify(&oob_corners).expect("homography");
+        assert!(
+            probe.levels_at_centre(&view, &h).is_none(),
+            "probe leaving image bounds must be skipped cleanly"
+        );
     }
 }
