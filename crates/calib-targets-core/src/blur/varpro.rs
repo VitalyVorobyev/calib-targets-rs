@@ -1,5 +1,6 @@
-//! Golub–Pereyra / Schur-complement Variable Projection (VarPro) for linear
-//! photometric amplitude & black level `(A, C)`.
+//! Schur-complement Variable Projection (VarPro) for linear photometric
+//! amplitude & black level `(A, C)`, with Kaufman's (1975) approximation of
+//! the Golub–Pereyra (1973) reduced Jacobian.
 //!
 //! When the radiometric response is linear (`I(p) = S(p) · (C + A · (1 - B(p)))`),
 //! `(A, C)` enters strictly linearly once the nonlinear parameters `η`

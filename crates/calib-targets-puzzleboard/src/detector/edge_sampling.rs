@@ -29,6 +29,15 @@ const INTERIOR_GRID: [f32; 3] = [0.32, 0.50, 0.68];
 const EDGE_U_OFFSETS: [f32; 5] = [-1.0, -0.5, 0.0, 0.5, 1.0];
 const EDGE_D_OFFSETS: [f32; 3] = [0.25, 0.60, 0.95];
 
+/// Largest lens-curvature offset applied to the edge filter, as a fraction of
+/// the edge length. Real lens sagitta over one cell is around 1 % of the edge,
+/// so this only bounds a corrupt cubic fit (e.g. a mislocated neighbour
+/// corner); it sits just above the standard dot radius (`1/6`), past which a
+/// shifted filter could no longer overlap the dot anyway.
+/// TODO: decline the edge (confidence 0) instead of clamping once the effect
+/// on recall is measured.
+const MAX_ARCH_REL: f32 = 0.20;
+
 struct EdgeSampleCtx<'a> {
     view: &'a GrayImageView<'a>,
     cell_a: [Point2<f32>; 4],
@@ -185,15 +194,21 @@ fn sample_edge_matched(ctx: &EdgeSampleCtx<'_>) -> (u8, f32) {
     }
 
     let linear_mid = Point2::new(0.5 * (ctx.p_u.x + ctx.p_v.x), 0.5 * (ctx.p_u.y + ctx.p_v.y));
-    let mut delta_curve = match quadratic_midpoint(ctx.prev, ctx.p_u, ctx.p_v, ctx.next) {
-        Some(qmid) => Vector2::new(qmid.x - linear_mid.x, qmid.y - linear_mid.y),
-        None => Vector2::zeros(),
+    let qmid = quadratic_midpoint(ctx.prev, ctx.p_u, ctx.p_v, ctx.next);
+    // Lens curvature of the grid line, as the offset of the cubic midpoint from
+    // a reference midpoint, clamped to `MAX_ARCH_REL` of the edge.
+    let arch_from = |reference: Point2<f32>| {
+        let Some(q) = qmid else {
+            return Vector2::zeros();
+        };
+        let mut delta = Vector2::new(q.x - reference.x, q.y - reference.y);
+        let len = delta.norm();
+        let max_arch = MAX_ARCH_REL * edge_len;
+        if len > max_arch && len > 0.0 {
+            delta *= max_arch / len;
+        }
+        delta
     };
-    let delta_len = delta_curve.norm();
-    let max_arch = 0.20 * edge_len;
-    if delta_len > max_arch && delta_len > 0.0 {
-        delta_curve *= max_arch / delta_len;
-    }
 
     let r = ctx.sample_radius_rel.clamp(0.02, 0.22);
     let sigma_w = 0.5 * r;
@@ -204,6 +219,14 @@ fn sample_edge_matched(ctx: &EdgeSampleCtx<'_>) -> (u8, f32) {
         homography_from_4pt(&rect, &ctx.cell_a),
         homography_from_4pt(&rect, &ctx.cell_b),
     ) {
+        // The cell homographies already place `u = 0.5` at the *projective*
+        // edge midpoint, so only the curvature beyond it is added; measuring
+        // it from the chord midpoint would count the perspective shift twice.
+        let projective_mid = match ctx.orientation {
+            EdgeOrientation::Horizontal => ha.apply(Point2::new(0.5, 1.0)),
+            EdgeOrientation::Vertical => ha.apply(Point2::new(1.0, 0.5)),
+        };
+        let delta_curve = arch_from(projective_mid);
         let mut sum_w = 0.0f32;
         let mut sum_val = 0.0f32;
         for &su in &EDGE_U_OFFSETS {
@@ -240,6 +263,7 @@ fn sample_edge_matched(ctx: &EdgeSampleCtx<'_>) -> (u8, f32) {
     // Gaussian matched filter around the clamped curve midpoint.
     let t = Vector2::new(dx / edge_len, dy / edge_len);
     let n = Vector2::new(-t.y, t.x);
+    let delta_curve = arch_from(linear_mid);
     let center = Point2::new(linear_mid.x + delta_curve.x, linear_mid.y + delta_curve.y);
     let r_px = (edge_len * r).max(1.0);
     let sigma_px = 0.5 * r_px;

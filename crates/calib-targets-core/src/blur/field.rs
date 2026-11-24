@@ -107,8 +107,9 @@ impl BlurField {
     /// Automatically chooses degree 2 for `>= 12` samples, degree 1 for
     /// `>= 5` samples, and constant degree 0 below that, falling back to lower
     /// degree if the design matrix is ill-conditioned (e.g. collinear corners).
-    /// Uses inverse-variance weighting plus 4 iterations of Huber IRLS so an
-    /// isolated outlier corner cannot corrupt spatial blur derivatives.
+    /// Uses inverse-variance weighting plus IRLS (two Huber warm-up passes,
+    /// then Tukey biweight passes that zero gross outliers) so an isolated
+    /// outlier corner cannot corrupt spatial blur derivatives.
     pub fn fit(samples: &[(Point2<f32>, &CornerBlur)]) -> Option<Self> {
         let valid: Vec<(Point2<f32>, &CornerBlur)> = samples
             .iter()

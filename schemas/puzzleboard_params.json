@@ -657,9 +657,10 @@
         },
         "sample_radius_rel": {
           "default": 0.16666667,
-          "description": "Sample radius for edge-midpoint disk (fraction of the edge length).",
-          "exclusiveMinimum": 0.0,
+          "description": "Scale of the edge-dot matched filter, as a fraction of the edge length:\nthe filter averages symmetric sample pairs across the edge out to this\ndistance (Gaussian weight of width `r / 2`). Values are clamped to\n`[0.02, 0.22]` so the filter stays inside the standard dot (radius\n`1/6`); the default is `1/6`.",
           "format": "float",
+          "maximum": 0.22,
+          "minimum": 0.02,
           "type": "number"
         },
         "scoring_mode": {

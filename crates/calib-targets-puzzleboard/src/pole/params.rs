@@ -138,12 +138,13 @@ pub struct PuzzlePoleDecodeConfig {
     /// Try every detected grid component, not just the largest.
     #[serde(default = "default_search_all_components")]
     pub search_all_components: bool,
-    /// Dot sampling radius, as a fraction of the edge length.
+    /// Scale of the edge-dot matched filter, as a fraction of the edge length:
+    /// the filter averages symmetric sample pairs across the edge out to this
+    /// distance (Gaussian weight of width `r / 2`). Values are clamped to
+    /// `[0.02, 0.22]` so the filter stays inside the standard dot (radius
+    /// `1/6`); the default is `1/6`.
     #[serde(default = "default_sample_radius_rel")]
-    #[cfg_attr(
-        feature = "schemars",
-        schemars(extend("exclusiveMinimum" = 0.0), range(max = 0.5))
-    )]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 0.02, max = 0.22)))]
     pub sample_radius_rel: f32,
     /// Hard-weighted or soft log-likelihood scoring.
     #[serde(default)]

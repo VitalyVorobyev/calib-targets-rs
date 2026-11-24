@@ -132,8 +132,8 @@ impl Reparam {
 /// Levenberg–Marquardt from `theta` in the parameterisation `re`. Returns
 /// the optimum and the evaluation (with Jacobian) there. When `use_varpro` is
 /// `true` and contrast/black level `(A, C)` enter linearly, eliminates `(A, C)`
-/// via Golub–Pereyra Variable Projection (closed-form projection + Schur
-/// complement).
+/// via Variable Projection (closed-form projection + Schur complement, i.e.
+/// Kaufman's approximation of the Golub–Pereyra Jacobian).
 pub(super) fn levenberg_marquardt(
     model: &Model<'_>,
     theta: Vector,

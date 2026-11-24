@@ -163,3 +163,26 @@ Cameras with Tilt Lenses.* International Journal of Computer Vision 123(2),
 [doi:10.1007/s11263-016-0964-8](https://doi.org/10.1007/s11263-016-0964-8).
 The geometric camera model for tilt lenses, including perspective and
 telecentric cases, with a calibration algorithm.
+
+<a id="golubpereyra1973"></a>
+**Golub & Pereyra 1973.** G. H. Golub, V. Pereyra. *The Differentiation of
+Pseudo-Inverses and Nonlinear Least Squares Problems Whose Variables
+Separate.* SIAM Journal on Numerical Analysis 10(2), 413–432, 1973.
+[doi:10.1137/0710036](https://doi.org/10.1137/0710036).
+Variable projection: eliminate the linear parameters of a separable least
+squares problem in closed form. The sparse photometric patch residual uses
+its exact reduced Jacobian.
+
+<a id="kaufman1975"></a>
+**Kaufman 1975.** L. Kaufman. *A Variable Projection Method for Solving
+Separable Nonlinear Least Squares Problems.* BIT Numerical Mathematics 15,
+49–57, 1975. [doi:10.1007/BF01932995](https://doi.org/10.1007/BF01932995).
+The cheaper approximation of the variable-projection Jacobian that the
+per-corner photometric fit uses for its contrast and black level.
+
+<a id="moffat1969"></a>
+**Moffat 1969.** A. F. J. Moffat. *A Theoretical Investigation of Focal
+Stellar Images in the Photographic Emulsion and Application to Photographic
+Photometry.* Astronomy & Astrophysics 3, 455–461, 1969.
+The heavy-tailed point spread function the accuracy suite renders alongside
+the Gaussian and Airy kernels.

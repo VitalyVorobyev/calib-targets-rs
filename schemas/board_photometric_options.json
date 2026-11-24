@@ -105,7 +105,7 @@
         },
         "use_varpro": {
           "default": true,
-          "description": "Eliminate linear contrast & black level `(A, C)` via Golub–Pereyra\nVariable Projection when `radiometric` is `Linear`. Default: `true`.",
+          "description": "Eliminate linear contrast & black level `(A, C)` via Variable\nProjection (Kaufman's approximation) when `radiometric` is `Linear`. Default: `true`.",
           "type": "boolean"
         }
       },

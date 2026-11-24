@@ -370,7 +370,7 @@ export const puzzlePoleDecode: PuzzlePoleDecodeConfig = {
   min_bit_confidence: 0.1,
   max_bit_error_rate: 0.15,
   search_all_components: true,
-  sample_radius_rel: 0.25,
+  sample_radius_rel: 0.2,
   scoring_mode: { kind: "soft_log_likelihood" },
   symmetry_mode: { kind: "rotations" },
 };

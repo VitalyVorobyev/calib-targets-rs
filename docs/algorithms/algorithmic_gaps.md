@@ -444,6 +444,24 @@ threshold that lets the same evidence through.
 
 ---
 
+### Gap 34 — Precision follow-ups from the 0.18 review — **open**
+
+- **PuzzleBoard multi-component tripwire.** With `search_all_components`, two
+  well-supported components now conflict only if they share an id at
+  different pixels or put different ids on one pixel. Disjoint components
+  whose decodes contradict each other are no longer refused (the old
+  master-origin comparison refused every legitimate split). Only the best
+  component is returned, so no wrong label reaches the output through this,
+  but the cross-check is weaker. Principled check: both components must fit
+  one smooth master → image mapping.
+- **PuzzleBoard edge-filter curvature clamp.** The lens-curvature offset of
+  the edge filter is clamped at 0.2 edge (`MAX_ARCH_REL`); beyond the dot
+  radius the bit should rather be declined (confidence 0). Real sagitta is
+  ~1 % of an edge, so the clamp only meets corrupt cubic fits.
+- **Gross local-shape check constants.** `TOPO_GROSS_*` (2× length ratio,
+  45° turn) are first-order magnitudes; a second-order criterion (line
+  spacing smoothness) would generalize better.
+
 ## Architectural-direction summary
 
 The next architectural move is the **distortion-recall** line: recovering

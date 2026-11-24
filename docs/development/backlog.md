@@ -35,6 +35,8 @@ here.
 | [B-23](#b-23) | Unreferenced scripts and tools | P3 | S | none |
 | [B-25](#b-25) | Vestigial algorithm slug in the bench | P3 | S | none |
 | [B-26](#b-26) | PuzzlePole lives in the PuzzleBoard crate | P3 | M | semver |
+| [B-27](#b-27) | Photometric blur API is Rust-only in places | P2 | M | additive |
+| [B-28](#b-28) | Photometric fit: pass-2 trigger and outer-solver smoothness | P3 | M | none |
 
 ---
 
@@ -256,3 +258,31 @@ this item when they are resolved.
 - **Problem.** `crates/calib-targets-puzzleboard/src/pole/` is a separate target
   family inside the PuzzleBoard crate.
 - **Fix.** Optionally split it into its own crate (lowest priority).
+
+## <a id="b-27"></a>B-27 · Photometric blur API is Rust-only in places
+**Sev P2 · Effort M · API additive**
+
+- **Problem.** The C ABI exposes none of the blur / photometric functions;
+  WASM has `refine_*` but not `*_blur` / `*_photometric`; Python has
+  `refine_*` and `charuco_blur` only, returning untyped dicts with no
+  round-trip test; the `*_patches` extractors are in no binding. PuzzlePole
+  `diagnose_*` is also missing from the C ABI (it has no PuzzlePole support).
+- **Fix.** Bring the bindings to parity per `conventions.md`, with typed
+  wrappers and dict-key round-trip tests.
+
+## <a id="b-28"></a>B-28 · Photometric fit: pass-2 trigger and outer-solver smoothness
+**Sev P3 · Effort M · API none**
+
+- **Problem.** The facade's two-pass scatter correction runs pass 2 whenever
+  the predicted shift exceeds `1e-4 px`, i.e. almost always, doubling cost
+  and applying noise-driven corrections from a degree-2 blur field fitted to
+  few corners. `PatchResidual::evaluate` switches its pixel-box model at
+  `σ = 1.3 px` (a residual discontinuity for an outer solver), takes the blur
+  kernel in `f32`, and with non-linear radiometry re-solves `(A, C)` without
+  differentiating through it. `PatchResidual::extract`'s support margin is not
+  tied to `σ`.
+- **Fix.** Gate pass 2 on a significance test (predicted shift against the
+  position standard error or the gradient's own uncertainty); make the patch
+  residual smooth in `Σ`, `f64` end to end, and require `fixed_ac` when the
+  radiometry is non-linear; size the patch margin in units of `σ`.
+

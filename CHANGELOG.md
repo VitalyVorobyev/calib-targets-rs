@@ -49,6 +49,20 @@ See the [0.18.0 migration guide](docs/migrations/0.18.0.md).
 
 ### Added
 
+- **Blur-aware photometric corner refinement.**
+  `calib_targets_core::blur::fit_corner_photometric` jointly fits each
+  corner's sub-pixel position (with a correlation-robust covariance), the
+  local axes, an anisotropic blur covariance `Σ`, the radiometric response
+  (linear, sRGB or free gamma) and optionally print ink bleed, eliminating
+  contrast and black level by variable projection. A blur field fitted over
+  the board feeds a first-order correction of the corner bias a spatially
+  varying blur causes. The facade adds `*_photometric` and
+  `refine_*_corners` for chessboard, ChArUco, PuzzleBoard and marker boards
+  (`schemas/board_photometric_options.json`), with `refine_*` in Python and
+  WASM. `DisplaySurfaceModel` (e.g. `pocketbook_eink`) models e-ink display
+  targets: pixel pitch, display MTF and gray quantization. `charuco_blur`
+  joins the per-corner blur functions. Opt-in: detection results are
+  unchanged unless you call these.
 - **PuzzlePole parity:** `diagnose_puzzlepole{,_with_corners}` in Rust,
   Python and WASM, the WASM PuzzlePole detect / params functions,
   `schemas/puzzlepole_params.json`, and the TypeScript declarations.
@@ -65,6 +79,16 @@ See the [0.18.0 migration guide](docs/migrations/0.18.0.md).
   lines (large modules split, no behaviour change); the CLI's target-geometry
   flags are shared between `init`, `gen` and `gen-screen` (names and defaults
   unchanged).
+
+- **PuzzleBoard / PuzzlePole edge-dot sampling** reads each dot with a
+  matched filter of sample pairs placed symmetrically across the edge in the
+  two adjacent cells, corrected for the grid line's lens curvature, against
+  bright/dark references taken from each cell's dot-free interior; it used to
+  keep the most confident of a few disk samples. This can change which bits
+  decode, and therefore which frames decode. `sample_radius_rel` now scales
+  that filter and is clamped to `[0.02, 0.22]`.
+- `chessboard_blur`, `puzzleboard_blur` and `marker_board_blur` use the
+  variable-projection solver by default; their numbers move slightly.
 
 ### Fixed
 

@@ -445,8 +445,8 @@ pub struct PhotometricFitOptions {
     /// analytic scatter-PSF corner bias removal.
     #[serde(default)]
     pub known_blur_gradient: Option<BlurGradient>,
-    /// Eliminate linear contrast & black level `(A, C)` via Golub–Pereyra
-    /// Variable Projection when `radiometric` is `Linear`. Default: `true`.
+    /// Eliminate linear contrast & black level `(A, C)` via Variable
+    /// Projection (Kaufman's approximation) when `radiometric` is `Linear`. Default: `true`.
     #[serde(default = "default_true")]
     pub use_varpro: bool,
 }
@@ -492,7 +492,7 @@ impl PhotometricFitOptions {
         self
     }
 
-    /// Enable or disable Golub–Pereyra VarPro `(A, C)` elimination.
+    /// Enable or disable VarPro `(A, C)` elimination.
     #[must_use]
     pub fn with_use_varpro(mut self, use_varpro: bool) -> Self {
         self.use_varpro = use_varpro;
@@ -585,8 +585,15 @@ pub struct CornerPhotometricFit {
     /// Estimated ink/microcapsule bleed in board cells (`κ · σ / scale`) when
     /// `fit_ink_bleed` was enabled.
     pub ink_bleed_cells: Option<f32>,
-    /// Additive scatter-PSF corner correction `[Δx, Δy]` (px) applied to the
-    /// constant-`Σ` fitted corner (`position = raw + scatter_correction_px`).
+    /// Scatter-PSF corner correction `[Δx, Δy]` (px): how far a spatially
+    /// varying blur moves this corner relative to a constant-`Σ` fit.
+    /// **Already included in [`Self::position`]** — informational, never add it
+    /// again. A fit run with
+    /// [`known_blur_gradient`](PhotometricFitOptions::known_blur_gradient)
+    /// reports the analytic first-order estimate (its forward model already
+    /// contains the gradient); [`Self::apply_scatter_correction`] reports the
+    /// shift it applied; the facade's two-pass `*_photometric` helpers report
+    /// the measured pass-2 minus pass-1 shift. `None` when no gradient was used.
     pub scatter_correction_px: Option<[f32; 2]>,
 }
 
