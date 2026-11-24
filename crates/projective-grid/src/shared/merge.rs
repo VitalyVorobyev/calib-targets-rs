@@ -83,6 +83,7 @@ impl Default for LocalMergeParams {
 
 /// Output of [`merge_components_local`].
 #[derive(Clone, Debug, Default)]
+#[non_exhaustive]
 pub struct ComponentMergeResult {
     /// One labelling per surviving component. Each is rebased to start
     /// at `(0, 0)`. Corners in the input may appear in multiple

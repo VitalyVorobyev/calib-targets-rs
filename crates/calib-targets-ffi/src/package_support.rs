@@ -210,7 +210,7 @@ pub fn usage_for(command: &str) -> &'static str {
             "usage: cargo run -p calib-targets-ffi --bin stage-cmake-package -- --lib-dir <cargo-lib-dir> --prefix <package-prefix>"
         }
         "package-release-archive" => {
-            "usage: cargo run -p calib-targets-ffi --bin package-release-archive -- --lib-dir <cargo-lib-dir> --output-dir <archive-dir> [--platform-id <platform-id>]"
+            "usage: cargo run -p calib-targets-ffi --features package-archive --bin package-release-archive -- --lib-dir <cargo-lib-dir> --output-dir <archive-dir> [--platform-id <platform-id>]"
         }
         _ => "usage unavailable",
     }

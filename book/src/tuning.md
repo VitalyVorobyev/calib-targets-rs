@@ -32,7 +32,7 @@ The chessboard detector's ChESS corner config is **not** carried inside
 `ChessboardParams` — it's a separate argument via
 `calib_targets::detect::default_chess_config()` (used automatically by
 the `detect_chessboard*` facade helpers). If you need to override it,
-call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
+call `calib_targets::detect::detect_corners(&gray_view(&img), &custom_chess_config)`
 directly and pass the resulting corner cloud into
 `calib_targets::chessboard::ChessboardDetector::new(params)?.detect(&corners)`.
 

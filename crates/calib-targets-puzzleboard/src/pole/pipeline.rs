@@ -20,7 +20,9 @@
 
 use super::code::PoleCode;
 use super::error::PuzzlePoleDetectError;
-use super::params::{required_edges_rect, required_logical_bits_rect};
+use super::params::{
+    required_edges_rect, required_logical_bits_rect, MIN_AXIAL_SPAN, MIN_CIRCUMFERENCE_SPAN,
+};
 use super::{PuzzlePoleCorner, PuzzlePoleDetection, PuzzlePoleParams, PuzzlePoleSpec};
 use crate::code_maps::{EdgeOrientation, PuzzleBoardObservedEdge};
 use crate::detector::consensus::EdgeConsensus;
@@ -57,6 +59,17 @@ impl PuzzlePoleDetector {
             params.pole.cell_size_mm,
         )?;
         let chessboard = ChessboardDetector::new(params.chessboard.clone())?;
+        let window = &params.decode;
+        if window.min_circumference_span < MIN_CIRCUMFERENCE_SPAN
+            || window.min_axial_span < MIN_AXIAL_SPAN
+        {
+            return Err(PuzzlePoleDetectError::WindowBelowFloor {
+                circumference: window.min_circumference_span,
+                axial: window.min_axial_span,
+                min_circumference: MIN_CIRCUMFERENCE_SPAN,
+                min_axial: MIN_AXIAL_SPAN,
+            });
+        }
         let code = PoleCode::new(spec.period());
         Ok(Self {
             params,
@@ -436,6 +449,27 @@ mod tests {
 
     fn corner_at(spec: &PuzzlePoleSpec, axial: u32, cyclic: u32) -> PuzzlePoleCorner {
         PuzzlePoleCorner::new(spec, Point2::new(0.0, 0.0), axial, cyclic, 1.0)
+    }
+
+    #[test]
+    fn a_decode_window_below_the_uniqueness_floor_is_refused() {
+        let mut params = PuzzlePoleParams::for_pole(spec());
+        assert!(PuzzlePoleDetector::new(params.clone()).is_ok());
+        params.decode.min_axial_span = MIN_AXIAL_SPAN - 1;
+        let Err(err) = PuzzlePoleDetector::new(params.clone()) else {
+            panic!("an axial span below the floor must be refused");
+        };
+        assert!(matches!(
+            err,
+            PuzzlePoleDetectError::WindowBelowFloor { .. }
+        ));
+        assert!(!err.is_not_found());
+        params.decode.min_axial_span = MIN_AXIAL_SPAN;
+        params.decode.min_circumference_span = MIN_CIRCUMFERENCE_SPAN - 1;
+        assert!(matches!(
+            PuzzlePoleDetector::new(params),
+            Err(PuzzlePoleDetectError::WindowBelowFloor { .. })
+        ));
     }
 
     #[test]

@@ -434,7 +434,6 @@ pub fn detect_marker_board_with_corners(
     Ok(marker::MarkerBoardDetector::new(params.clone())?.detect_with_corners(img, corners)?)
 }
 
-// ---------------------------------------------------------------------------
 /// Detect a PuzzlePole — the PuzzleBoard pattern wrapped round a cylinder.
 ///
 /// Unlike every other target here, the result carries a **3-D** object point

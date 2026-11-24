@@ -132,8 +132,8 @@ let result = detect::detect_puzzleboard_best(&detect::gray_view(&img), &configs)
 ## Features
 
 - `image` (default): re-exports `image` and enables `detect::gray_view` and
-  `ImagePreprocessConfig` (`calib_targets::detect` itself works without it via
-  `GrayImageView`).
+  `detect::preprocess` (optional Gaussian pre-blur; `calib_targets::detect` itself works
+  without it via `GrayImageView`).
 - `tracing`: enables tracing output across the subcrates.
 - `diagnostics` (off): forwards to the `diagnostics` feature of the
   chessboard, ChArUco, puzzleboard, and marker subcrates, gating their

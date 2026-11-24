@@ -708,7 +708,7 @@
           "default": 8,
           "description": "Corner columns along the axis a fragment must span.",
           "format": "uint32",
-          "minimum": 5,
+          "minimum": 8,
           "type": "integer"
         },
         "min_bit_confidence": {
@@ -723,7 +723,7 @@
           "default": 5,
           "description": "Corner rows around the circumference a fragment must span.",
           "format": "uint32",
-          "minimum": 4,
+          "minimum": 5,
           "type": "integer"
         },
         "sample_radius_rel": {

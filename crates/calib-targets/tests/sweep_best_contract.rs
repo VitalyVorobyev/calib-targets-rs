@@ -115,7 +115,9 @@ fn ties_resolve_first_wins_and_strictly_better_wins_on_marker_and_chessboard() {
     let swept = detect::detect_chessboard_best(&view, &chess_cfg, &[strict, loose]).expect("best");
     assert_eq!(swept.corners.len(), single_loose.corners.len());
 
-    // On a tie, the first config (preserving first-wins) must be chosen.
+    // A tie on corner count returns a detection of that count (the
+    // first-of-tied rule itself is pinned by the unit tests in
+    // `detect/sweep.rs`).
     let mut first = MarkerBoardParams::for_board(marker_board());
     first.match_params.max_candidates_per_polarity = 6;
     let mut second = MarkerBoardParams::for_board(marker_board());

@@ -121,11 +121,11 @@ impl PuzzlePoleParams {
 pub struct PuzzlePoleDecodeConfig {
     /// Corner rows around the circumference a fragment must span.
     #[serde(default = "default_min_circumference_span")]
-    #[cfg_attr(feature = "schemars", schemars(range(min = 4)))]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 5)))]
     pub min_circumference_span: u32,
     /// Corner columns along the axis a fragment must span.
     #[serde(default = "default_min_axial_span")]
-    #[cfg_attr(feature = "schemars", schemars(range(min = 5)))]
+    #[cfg_attr(feature = "schemars", schemars(range(min = 8)))]
     pub min_axial_span: u32,
     /// Minimum per-bit confidence for a sampled dot to count.
     #[serde(default = "default_min_bit_confidence")]

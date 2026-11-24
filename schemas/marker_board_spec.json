@@ -21,7 +21,7 @@
       "type": "object"
     },
     "CirclePolarity": {
-      "description": "Whether the circle marker prints as white-on-black or black-on-white.\n\n# Adding a variant\n\n`#[non_exhaustive]` forces external matchers to use a `_` arm. When you\nadd a variant you MUST also update every adapter site in lockstep\n(guarded by `circle_polarity_variant_guard` in this file's tests):\n- `crates/calib-targets-print/src/render.rs` (SVG/PNG renderer)",
+      "description": "Whether the circle marker prints as white-on-black or black-on-white.\n\n# Adding a variant\n\n`#[non_exhaustive]` forces external matchers to use a `_` arm. When you\nadd a variant you MUST also update every adapter site in lockstep\n(guarded by `circle_polarity_variant_guard` in this file's tests):\n- `crates/calib-targets-print/src/render/mod.rs` (SVG/PNG renderer)",
       "enum": [
         "white",
         "black"

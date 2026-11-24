@@ -265,3 +265,58 @@ pub fn detect_marker_board_best(
 fn charuco_score(r: &charuco::CharucoDetection) -> (usize, usize) {
     (r.markers.len(), r.corners.len())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn miss() -> DetectError {
+        DetectError::NoDetection {
+            target: core::TargetKind::Chessboard,
+        }
+    }
+
+    #[test]
+    fn sweep_best_keeps_the_first_of_tied_best_results() {
+        // Configs 2 and 3 tie on the top rank; the earlier one must win.
+        let best = sweep_best("t", &[1u32, 2, 3], |&c| Ok(c), |&c| u32::from(c != 1));
+        assert_eq!(best.unwrap(), 2);
+        // A strictly better later result still wins.
+        let best = sweep_best("t", &[1u32, 2, 3], |&c| Ok(c), |&c| c);
+        assert_eq!(best.unwrap(), 3);
+    }
+
+    #[test]
+    fn sweep_best_skips_misses_and_stops_on_misuse() {
+        let best = sweep_best(
+            "t",
+            &[1u32, 2],
+            |&c| if c == 1 { Err(miss()) } else { Ok(c) },
+            |&c| c,
+        );
+        assert_eq!(best.unwrap(), 2);
+
+        let all_miss = sweep_best("t", &[1u32, 2], |_| Err::<u32, _>(miss()), |&c| c);
+        assert!(all_miss.unwrap_err().is_not_found());
+
+        let empty = sweep_best("t", &[] as &[u32], |&c| Ok(c), |&c| c);
+        assert!(matches!(empty, Err(DetectError::EmptySweep { op: "t" })));
+
+        let misuse = sweep_best(
+            "t",
+            &[1u32, 2],
+            |&c| {
+                if c == 1 {
+                    Err(DetectError::EmptySweep { op: "inner" })
+                } else {
+                    Ok(c)
+                }
+            },
+            |&c| c,
+        );
+        assert!(matches!(
+            misuse,
+            Err(DetectError::EmptySweep { op: "inner" })
+        ));
+    }
+}
