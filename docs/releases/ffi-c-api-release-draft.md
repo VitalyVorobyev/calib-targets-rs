@@ -1,12 +1,13 @@
-# calib-targets 0.17.0
+# calib-targets 0.18.0
 
-Two fixes that stop wrong labels on boards blurred past readability: ChArUco
-no longer places the board on a marker read no stronger than chance, and the
-chessboard's final wrong-label check now also runs on small detections. Both
-apply to the native library unchanged in shape. The Rust crates add per-corner
-blur measurement (not yet in the C API) and remove some rarely used Rust
-surface; see the
-[workspace changelog](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/CHANGELOG.md#0170).
+More chessboard corners on dense, strongly distorted boards with no new wrong
+labels, and two precision fixes: a labelled grid is always right-handed (a
+strongly sheared view can no longer come out mirrored), and a ChArUco fragment
+joins the board only when its corners agree with the board's geometry. Both
+reach the native library unchanged in shape. The Rust crates add an opt-in
+blur-aware photometric corner refiner and a physical defocus model (not yet in
+the C API); see the
+[workspace changelog](https://github.com/VitalyVorobyev/calib-targets-rs/blob/main/CHANGELOG.md#0180).
 
 ## Native C API archives
 
@@ -21,12 +22,12 @@ The C ABI carries **its own version**, independent of the Rust workspace,
 because it evolves on a different cadence. The archive filename is the ABI
 version, not the workspace version.
 
-## ABI 6.0.3
+## ABI 6.0.4
 
-Workspace 0.17.0 ships the 6.0.3 native ABI, a fix with no type, layout or
-symbol change since 6.0.0: a caller built against 6.0.0–6.0.2 links and runs
-unchanged. ChArUco
-diagnostics JSON can now carry the `evidence_at_chance` rejection. A caller
+Workspace 0.18.0 ships the 6.0.4 native ABI, with no type, layout or symbol
+change since 6.0.0: a caller built against 6.0.0–6.0.3 links and runs
+unchanged. Detection results change as described above, and a tightly packed
+image (`stride == width`) is no longer copied before detection. A caller
 built against 5.x or earlier must relink and rebuild every caller-allocated
 array, because several structs differ in size. Older ABI history is in
 [`CHANGELOG.md`](../../CHANGELOG.md) and the
