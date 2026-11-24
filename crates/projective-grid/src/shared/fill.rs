@@ -444,14 +444,9 @@ mod tests {
             }
         }
 
-        // Two diagonal-only corners around (0, 0): (1, 1) and (-1, -1) are
-        // unlabelled? No, place labelled corners at (0, 0) and (2, 0) and
-        // diagonally adjacent to (1, 1) only: label (-1, 0), (1, 0) etc.?
-        // Specifically: label (0, 0), (1, 0), (0, 1) -> bbox is 0..=1, 0..=1.
-        // Wait: (1, 1) would have cardinal neighbours (1, 0) and (0, 1).
-        // Put labelled corners at (0, 0), (2, 0), (0, 2), (2, 2).
-        // Then cell (1, 1) is an interior bbox cell whose ONLY labelled
-        // neighbours are diagonal!
+        // Labelled corners at (0, 0), (2, 0), (0, 2), (2, 2): the interior
+        // bbox hole (1, 1) has only diagonal labelled neighbours, so no
+        // cardinal edge can vouch for a candidate there.
         let s = 20.0_f32;
         let positions = vec![
             Point2::new(0.0, 0.0),

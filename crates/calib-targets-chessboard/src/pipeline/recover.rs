@@ -482,18 +482,13 @@ mod tests {
 
     #[test]
     fn shared_corner_alignment_prefers_identity_deterministically() {
-        let comp = HashMap::from([((0, 0), 0), ((1, 0), 1), ((0, 1), 2), ((1, 1), 3)]);
-        // Identity (t_idx = 0) and 180-deg rotation both produce overlap = 4 on
-        // a symmetric 2x2 shared index block; wait, indices differ under
-        // rotation! Give identical indices (0..4) only under identity vs
-        // self-map: use 2 corners with swapped coordinates? No: two corners
-        // (0,0)->0, (1,0)->1 match (0,0)->0, (1,0)->1 under BOTH t_idx=0
-        // (identity) and t_idx=5 (flip y: (x, -y))!
+        // Two collinear shared corners (0,0)->10, (1,0)->11 are matched with
+        // full overlap by both the identity and the y-flip (x, -y); the tie
+        // must resolve to the identity with zero offset.
         let sym = HashMap::from([((0, 0), 10), ((1, 0), 11)]);
         let (t, delta) = shared_corner_alignment(&sym, &sym, 2).expect("alignment");
         assert_eq!(t, GRID_TRANSFORMS_D4[0]);
         assert_eq!(delta, (0, 0));
-        let _ = comp;
     }
 
     #[test]

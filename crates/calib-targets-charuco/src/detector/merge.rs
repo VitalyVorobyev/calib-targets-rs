@@ -209,10 +209,15 @@ fn component_is_consistent(
         }
     }
 
-    // Check global geometric plausibility when the merged set pins a planar
-    // board-to-image homography. Scale tolerance with board-space distance from
-    // the primary centroid so strongly barrel-distorted distant fragments still
-    // merge cleanly while bogus rotated/mirrored fragments are rejected.
+    // Check global geometric plausibility against the planar board-to-image
+    // homography of the merged set. The tolerance grows with board-space
+    // distance from the merged centroid so mildly distorted distant fragments
+    // still merge, but it is capped at half the *local* image pitch at the
+    // predicted position: within that radius a corner can belong to only one
+    // board cell, so a fragment whose decode is off by a whole cell (its
+    // residual is ≈ one pitch everywhere) can never pass, however far away it
+    // sits. Without enough merged corners to pin the homography the gate cannot
+    // be evaluated, and the fragment is refused rather than merged unchecked.
     let mut merged_list: Vec<&CharucoCorner> = merged_corners.values().collect();
     merged_list.sort_by_key(|c| c.id);
     let mut board_pts = Vec::with_capacity(merged_list.len());
@@ -221,41 +226,62 @@ fn component_is_consistent(
         board_pts.push(c.target_position);
         img_pts.push(c.position);
     }
-    if board_pts.len() >= 4 {
-        let mut cell_step = f32::INFINITY;
-        for a in 0..board_pts.len() {
-            for b in (a + 1)..board_pts.len() {
-                let d = (board_pts[b] - board_pts[a]).norm();
-                if d > 1e-4 && d < cell_step {
-                    cell_step = d;
-                }
+    if cand.corners.is_empty() {
+        return true;
+    }
+    if board_pts.len() < 4 {
+        return false;
+    }
+    let mut cell_step = f32::INFINITY;
+    for a in 0..board_pts.len() {
+        for b in (a + 1)..board_pts.len() {
+            let d = (board_pts[b] - board_pts[a]).norm();
+            if d > 1e-4 && d < cell_step {
+                cell_step = d;
             }
         }
-        if cell_step.is_finite() {
-            if let Some(h) = estimate_homography_rect_to_img(&board_pts, &img_pts) {
-                let n = board_pts.len() as f32;
-                let centroid = board_pts
-                    .iter()
-                    .fold(nalgebra::Vector2::zeros(), |acc, p| acc + p.coords)
-                    / n;
-                let pitch = est_pitch.unwrap_or(20.0);
-                for c in &cand.corners {
-                    let bp = c.target_position;
-                    let pred = h.apply(bp);
-                    if !pred.x.is_finite() || !pred.y.is_finite() {
-                        return false;
-                    }
-                    let dist_cells = (bp.coords - centroid).norm() / cell_step;
-                    let allow = (pos_tol * 2.0).max(0.25 * (dist_cells + 1.0) * pitch);
-                    if (pred - c.position).norm() > allow {
-                        return false;
-                    }
-                }
-            }
+    }
+    if !cell_step.is_finite() {
+        return false;
+    }
+    let Some(h) = estimate_homography_rect_to_img(&board_pts, &img_pts) else {
+        return false;
+    };
+    let n = board_pts.len() as f32;
+    let centroid = board_pts
+        .iter()
+        .fold(nalgebra::Vector2::zeros(), |acc, p| acc + p.coords)
+        / n;
+    for c in &cand.corners {
+        let bp = c.target_position;
+        let pred = h.apply(bp);
+        let Some(local_pitch) = local_image_pitch(&h, bp, cell_step) else {
+            return false;
+        };
+        let dist_cells = (bp.coords - centroid).norm() / cell_step;
+        let grow = (pos_tol * 2.0).max(0.25 * (dist_cells + 1.0) * local_pitch);
+        let allow = grow.min(0.5 * local_pitch);
+        if !pred.x.is_finite() || !pred.y.is_finite() || (pred - c.position).norm() > allow {
+            return false;
         }
     }
 
     true
+}
+
+/// Image-space length of one board cell at board point `bp`, measured through
+/// `h` along both board axes (the smaller of the two, so the bound stays
+/// conservative under foreshortening). `None` when the mapping is degenerate.
+fn local_image_pitch(
+    h: &calib_targets_core::Homography,
+    bp: Point2<f32>,
+    cell_step: f32,
+) -> Option<f32> {
+    let p = h.apply(bp);
+    let px = h.apply(Point2::new(bp.x + cell_step, bp.y));
+    let py = h.apply(Point2::new(bp.x, bp.y + cell_step));
+    let pitch = (px - p).norm().min((py - p).norm());
+    (pitch.is_finite() && pitch > 0.0).then_some(pitch)
 }
 
 #[cfg(test)]
@@ -305,33 +331,103 @@ mod tests {
     }
 
     #[test]
-    fn merge_non_overlapping() {
+    fn refuses_fragment_when_primary_cannot_pin_a_homography() {
+        // A one-corner primary cannot verify where a disjoint fragment belongs,
+        // so the fragment is refused instead of being merged unchecked.
         let r1 = result(vec![corner(0, 1.0, 1.0, 0.9)], vec![marker(10, 0.8)]);
         let r2 = result(vec![corner(5, 5.0, 5.0, 0.7)], vec![marker(20, 0.6)]);
         let (merged, raw) = merge_charuco_results(vec![r1, r2]);
-        assert_eq!(merged.corners.len(), 2);
-        assert_eq!(merged.markers.len(), 2);
-        assert_eq!(raw.raw_marker_count, 2);
+        assert_eq!(merged.corners.len(), 1);
+        assert_eq!(merged.markers.len(), 1);
+        assert_eq!(raw.raw_marker_count, 1);
+    }
+
+    /// 3×3 primary at 20 px pitch: corner id `bi + 100·bj` at board `(bi, bj)`.
+    fn primary_3x3() -> (CharucoDetection, RawMarkerCounts) {
+        let mut corners = Vec::new();
+        for bj in 0..3 {
+            for bi in 0..3 {
+                corners.push(CharucoCorner::new(
+                    Point2::new(20.0 * bi as f32, 20.0 * bj as f32),
+                    Coord::new(bi, bj),
+                    (bi + 100 * bj) as u32,
+                    Point2::new(bi as f32, bj as f32),
+                    0.9,
+                ));
+            }
+        }
+        result(corners, vec![marker(100, 0.9), marker(101, 0.9)])
+    }
+
+    /// Two-corner fragment whose *labels* say board `(bi, 0..=1)` while its
+    /// pixels sit at board column `bi + pixel_shift`.
+    fn fragment_at(bi: i32, pixel_shift: i32) -> (CharucoDetection, RawMarkerCounts) {
+        let x = 20.0 * (bi + pixel_shift) as f32;
+        let corners = (0..2)
+            .map(|bj| {
+                CharucoCorner::new(
+                    Point2::new(x, 20.0 * bj as f32),
+                    Coord::new(0, bj),
+                    (bi + 100 * bj) as u32,
+                    Point2::new(bi as f32, bj as f32),
+                    0.8,
+                )
+            })
+            .collect();
+        result(corners, vec![marker(200, 0.8)])
+    }
+
+    #[test]
+    fn distant_fragment_off_by_one_cell_is_refused() {
+        // Eight cells from the primary the old distance-grown tolerance
+        // (0.25·(d+1)·pitch ≈ 2 pitches) admitted a one-cell decode error.
+        let (merged, _) = merge_charuco_results(vec![primary_3x3(), fragment_at(10, 1)]);
+        assert_eq!(
+            merged.corners.len(),
+            9,
+            "a one-cell-shifted fragment must not merge"
+        );
+
+        let (merged, _) = merge_charuco_results(vec![primary_3x3(), fragment_at(10, 0)]);
+        assert_eq!(
+            merged.corners.len(),
+            11,
+            "a correctly placed fragment merges"
+        );
     }
 
     #[test]
     fn merge_overlapping_keeps_higher_score() {
-        let r1 = result(
-            vec![corner(0, 1.0, 1.0, 0.9), corner(1, 2.0, 2.0, 0.5)],
-            vec![marker(10, 0.8)],
+        // The 3×3 primary (two markers) overlaps a fragment that re-detects
+        // corner 0 at a lower score, adds corner 3 one cell to the right, and
+        // re-reads marker 100 at a higher score.
+        let fragment = result(
+            vec![
+                CharucoCorner::new(
+                    Point2::new(0.5, 0.5),
+                    Coord::new(0, 0),
+                    0,
+                    Point2::new(0.0, 0.0),
+                    0.3,
+                ),
+                CharucoCorner::new(
+                    Point2::new(60.0, 0.0),
+                    Coord::new(1, 0),
+                    3,
+                    Point2::new(3.0, 0.0),
+                    0.7,
+                ),
+            ],
+            vec![marker(100, 0.95)],
         );
-        let r2 = result(
-            vec![corner(0, 1.1, 1.1, 0.3), corner(2, 3.0, 3.0, 0.7)],
-            vec![marker(10, 0.9), marker(20, 0.6)],
-        );
-        let (merged, _raw) = merge_charuco_results(vec![r1, r2]);
-        assert_eq!(merged.corners.len(), 3);
-        // Corner 0 should have the higher score (0.9 from r1)
+        let (merged, _raw) = merge_charuco_results(vec![primary_3x3(), fragment]);
+        assert_eq!(merged.corners.len(), 10);
+        // Corner 0 keeps the higher score (0.9 from the primary).
         let c0 = merged.corners.iter().find(|c| c.id == 0).unwrap();
         assert_eq!(c0.score, 0.9);
-        // Marker 10 should have the higher score (0.9 from r2)
-        let m10 = merged.markers.iter().find(|m| m.id == 10).unwrap();
-        assert_eq!(m10.score, 0.9);
+        // Marker 100 keeps the higher score (0.95 from the fragment).
+        let m100 = merged.markers.iter().find(|m| m.id == 100).unwrap();
+        assert_eq!(m100.score, 0.95);
     }
 
     #[test]

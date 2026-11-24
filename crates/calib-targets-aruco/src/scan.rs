@@ -764,7 +764,12 @@ fn decode_samples(
 
     if multi_threshold {
         let candidates = compute_threshold_candidates(otsu, grid.samples, grid.cells, grid.border);
-        let mut best_matched: Option<(u8, MarkerObservation)> = None;
+        // Only *exact* dictionary hits are accepted across the candidate
+        // thresholds and polarities: each extra trial is another chance for a
+        // noisy code to land within `max_hamming` of a wrong marker, so an
+        // approximate match is only ever taken from the single Otsu
+        // observation below (matched by the caller within `max_hamming`).
+        let mut best_matched: Option<MarkerObservation> = None;
 
         'outer: for &thr in &candidates {
             for inverted in [false, true] {
@@ -779,14 +784,13 @@ fn decode_samples(
                 ) else {
                     continue;
                 };
-                if let Some(m) = matcher.match_code(obs.code) {
-                    let is_better = best_matched.as_ref().is_none_or(|(best_h, best_obs)| {
-                        m.hamming < *best_h
-                            || (m.hamming == *best_h && obs.border_score > best_obs.border_score)
-                    });
+                if matcher.match_code(obs.code).is_some_and(|m| m.hamming == 0) {
+                    let is_better = best_matched
+                        .as_ref()
+                        .is_none_or(|b| obs.border_score > b.border_score);
                     if is_better {
-                        best_matched = Some((m.hamming, obs));
-                        if m.hamming == 0 && obs.border_score >= 0.85 {
+                        best_matched = Some(obs);
+                        if obs.border_score >= 0.85 {
                             break 'outer;
                         }
                     }
@@ -794,7 +798,7 @@ fn decode_samples(
             }
         }
 
-        if let Some((_, obs)) = best_matched {
+        if let Some(obs) = best_matched {
             return Some(obs);
         }
     }

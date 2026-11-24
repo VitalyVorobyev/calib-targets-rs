@@ -433,6 +433,17 @@ where
                 let bad_angle = vec_angle_deg(e1, e2).is_none_or(|a| a > TOPO_GROSS_CONT_ANGLE_DEG);
                 if bad_ratio || bad_angle {
                     kinked = true;
+                    // The kink cannot say which end is false. An endpoint
+                    // with no further neighbour along this line has the
+                    // kinked edge as its only evidence on it (a frontier
+                    // leaf), so it goes too: otherwise a false leaf would
+                    // survive while its legitimate neighbour is dropped.
+                    if !labelled.contains_key(&(i - 2 * di, j - 2 * dj)) {
+                        drop.insert(prev_idx);
+                    }
+                    if !labelled.contains_key(&(i + 2 * di, j + 2 * dj)) {
+                        drop.insert(next_idx);
+                    }
                     break;
                 }
             }
@@ -1149,6 +1160,30 @@ mod tests {
         );
         assert!(drop.contains(&labelled[&(1, 0)]));
         assert!(drop.contains(&labelled[&(2, 0)]));
+    }
+
+    #[test]
+    fn gross_local_shape_drops_removes_false_frontier_leaf_of_a_kink() {
+        // Row (0..=3, 0) where (3, 0) is a false leaf attached at a sharp turn
+        // to a legitimate row; no quad closes at (3, 0), so only the
+        // continuation test sees it. The leaf must drop, not just its
+        // legitimate neighbour (2, 0).
+        let cells = [
+            (0, 0, 0.0, 0.0),
+            (1, 0, 10.0, 0.0),
+            (2, 0, 20.0, 0.0),
+            (3, 0, 22.0, 12.0),
+        ];
+        let (labelled, pos) = grid_from(&cells);
+        let drop = gross_local_shape_drops(&labelled, |idx| pos[idx]);
+        assert!(
+            drop.contains(&labelled[&(3, 0)]),
+            "false frontier leaf (3, 0) must drop: {drop:?}"
+        );
+        assert!(
+            !drop.contains(&labelled[&(1, 0)]),
+            "(1, 0) is backed by a further neighbour and must be spared: {drop:?}"
+        );
     }
 
     #[test]

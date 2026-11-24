@@ -126,9 +126,8 @@ mod tests {
 
     #[test]
     fn pick_local_h_base_rejects_three_collinear_points() {
-        // Neighbours at distance 1: (-1,0), (1,0), (0,1), (0,-1) -> wait, those
-        // don't have 3 collinear. Create a 1D row of 3 collinear neighbours
-        // (-1,0), (1,0), (2,0) plus two off-line neighbours (0,1) and (1,1).
+        // A row of 3 collinear neighbours (-1,0), (1,0), (2,0) plus two
+        // off-line neighbours (0,1) and (1,1).
         // Choosing the 3 collinear row points + (0,1) produces a degenerate
         // quad where 3 of 4 points are collinear.
         let by_grid = HashMap::from([
