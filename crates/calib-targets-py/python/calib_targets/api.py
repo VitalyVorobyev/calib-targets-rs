@@ -495,6 +495,51 @@ def detect_puzzlepole_with_corners(
     return None if raw is None else PuzzlePoleDetection.from_dict(raw)
 
 
+def diagnose_puzzlepole(
+    image: npt.NDArray[np.uint8],
+    *,
+    chess_cfg: ChessConfig | None = None,
+    params: PuzzlePoleParams,
+) -> dict[str, Any]:
+    """Detect a PuzzlePole and additionally return the diagnostics channel.
+
+    Returns a ``dict`` ``{"result": ..., "diagnostics": ...}``. ``result`` is
+    the ``PuzzlePoleDetection`` dict (or ``None`` when detection failed);
+    ``diagnostics`` is the raw ``PuzzleBoardDiagnostics`` payload (raw
+    pre-alignment per-edge bit observations and winner-vs-runner-up scoring
+    evidence), produced even on a failed decode.
+    """
+    if chess_cfg is not None:
+        _check_type("chess_cfg", chess_cfg, ChessConfig)
+    _check_type("params", params, PuzzlePoleParams)
+
+    return _core.diagnose_puzzlepole(
+        image,
+        chess_cfg=chess_config_to_payload(chess_cfg),
+        params=puzzlepole_params_to_payload(params),
+    )
+
+
+def diagnose_puzzlepole_with_corners(
+    image: npt.NDArray[np.uint8],
+    corners: list[dict[str, Any]],
+    *,
+    params: PuzzlePoleParams,
+) -> dict[str, Any]:
+    """``diagnose_puzzlepole`` from a pre-detected corner cloud.
+
+    ``corners`` is a list of ``ChessCorner``-shaped dicts — see
+    :func:`detect_puzzlepole_with_corners`. ``params.chess`` is not read.
+    """
+    _check_type("params", params, PuzzlePoleParams)
+
+    return _core.diagnose_puzzlepole_with_corners(
+        image,
+        corners,
+        params=puzzlepole_params_to_payload(params),
+    )
+
+
 def detect_puzzlepole_best(
     image: npt.NDArray[np.uint8],
     configs: list[PuzzlePoleParams],
@@ -550,6 +595,8 @@ __all__ = [
     "default_puzzleboard_params",
     "detect_puzzlepole",
     "detect_puzzlepole_with_corners",
+    "diagnose_puzzlepole",
+    "diagnose_puzzlepole_with_corners",
     "detect_puzzlepole_best",
     "default_puzzlepole_params",
 ]

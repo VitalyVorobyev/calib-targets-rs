@@ -17,7 +17,7 @@
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector, ChessboardParams};
 use serde::Deserialize;
 
@@ -66,7 +66,7 @@ fn run_detector(img_path: &Path) -> (Option<ChessboardDetection>, usize) {
         .unwrap_or_else(|e| panic!("decode {}: {e}", img_path.display()))
         .to_luma8();
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&img, &chess_cfg);
+    let corners = detect_corners(&gray_view(&img), &chess_cfg);
     let detector = ChessboardDetector::new(ratchet_params()).expect("valid detector params");
     let detection = detector.detect(&corners);
     let components = detector.detect_all(&corners).len();
@@ -326,7 +326,7 @@ fn small3_topological_default_suppresses_weak_frontier() {
         .unwrap_or_else(|e| panic!("decode small3.png: {e}"))
         .to_luma8();
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&img, &chess_cfg);
+    let corners = detect_corners(&gray_view(&img), &chess_cfg);
 
     // Defaults: topological builder + the min_corner_strength = 33 floor.
     let params = ChessboardParams::default();

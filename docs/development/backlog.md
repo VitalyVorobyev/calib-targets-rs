@@ -33,7 +33,6 @@ here.
 | [B-21](#b-21) | Two parallel recovery engines | P2 | L | internal-safe |
 | [B-22](#b-22) | Overlay renderer sprawl | P3 | M | none |
 | [B-23](#b-23) | Unreferenced scripts and tools | P3 | S | none |
-| [B-24](#b-24) | Source files over ~1000 lines | P3 | M | internal-safe |
 | [B-25](#b-25) | Vestigial algorithm slug in the bench | P3 | S | none |
 | [B-26](#b-26) | PuzzlePole lives in the PuzzleBoard crate | P3 | M | semver |
 
@@ -143,7 +142,7 @@ here.
 - Bounding-box loops ~8× (one in core, two in the chessboard rectifiers).
 - Step-vector statistics outside `shared/cell_size.rs`: the chessboard
   `estimate_grid_steps` and the booster's directional medians.
-- `orient.rs` re-implements the K = 2 cases of `cluster::circular`
+- `orient/mod.rs` re-implements the K = 2 cases of `cluster::circular`
   (`global_two_modes`, `refine_axes`, `smooth_circular`, `UndirectedMean`).
 - Hex vs square: component split, residual-drop fit (hex swallows errors with
   `.ok()`), solution assembly.
@@ -242,18 +241,6 @@ this item when they are resolved.
   `scripts/topological_report.py`, `tools/stereodata.py`, `tools/runxfeat.py`,
   `tools/render_opencv_charuco_labeled.py`.
 - **Fix.** Delete them or move them under `research/`.
-
-## <a id="b-24"></a>B-24 · Source files over ~1000 lines
-**Sev P3 · Effort M · API internal-safe**
-
-- **Problem.** Past the ~1000-line split rule: `calib-targets-wasm/src/lib.rs`,
-  `projective-grid/src/topological/square_detector.rs`,
-  `projective-grid/src/orient.rs`,
-  `calib-targets-puzzleboard/src/detector/pipeline.rs`,
-  `calib-targets-print/src/render.rs`, `calib-targets-py/src/lib.rs`,
-  `projective-grid/src/shared/validate/wrong_label_filters.rs`,
-  `calib-targets-print/src/render_dxf.rs`, `calib-targets-aruco/src/scan.rs`.
-- **Fix.** Split each along its natural seams.
 
 ## <a id="b-25"></a>B-25 · Vestigial algorithm slug in the bench
 **Sev P3 · Effort S · API none**

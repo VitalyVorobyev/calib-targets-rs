@@ -76,7 +76,7 @@ fn bench_all(c: &mut Criterion) {
         .iter()
         .filter_map(|(t, s, label)| {
             let snap = load_snap(*t, *s)?;
-            let corners = detect_corners(&snap, &cfg);
+            let corners = detect_corners(&gray_view(&snap), &cfg);
             Some(((*label).to_string(), snap, corners))
         })
         .collect();
@@ -92,8 +92,9 @@ fn bench_all(c: &mut Criterion) {
     let mut corners_group = c.benchmark_group("charuco/dataset/corners");
     for (label, snap, _) in &fixtures {
         corners_group.bench_with_input(BenchmarkId::from_parameter(label), snap, |b, snap| {
+            let view = gray_view(snap);
             b.iter(|| {
-                let out = detect_corners(snap, &cfg);
+                let out = detect_corners(&view, &cfg);
                 criterion::black_box(out)
             });
         });

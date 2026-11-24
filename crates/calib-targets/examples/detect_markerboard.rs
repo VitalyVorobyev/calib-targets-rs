@@ -27,7 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_cell_size(1.0);
 
     let params = MarkerBoardParams::for_board(board);
-    let result = detect::detect_marker_board(&img, &params);
+    let result = detect::detect_marker_board(&detect::gray_view(&img), &params);
     println!("detected: {}", result.is_ok());
 
     Ok(())

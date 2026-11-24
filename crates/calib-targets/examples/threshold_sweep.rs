@@ -10,7 +10,7 @@
 use std::path::Path;
 
 use calib_targets::chessboard::{ChessboardDetector, ChessboardParams};
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use image::imageops::FilterType;
 
 const IMAGES: &[&str] = &[
@@ -63,13 +63,14 @@ fn main() {
             img
         };
 
+        let view = gray_view(&img);
         let cfg0 = default_chess_config().with_threshold(0.0);
-        let raw_at_zero = detect_corners(&img, &cfg0).len();
+        let raw_at_zero = detect_corners(&view, &cfg0).len();
 
         print!("{:<58}", rel);
         for &t in THRESHOLDS {
             let cfg = default_chess_config().with_threshold(t);
-            let corners = detect_corners(&img, &cfg);
+            let corners = detect_corners(&view, &cfg);
             let params = ChessboardParams::default();
             let detector = ChessboardDetector::new(params).expect("valid detector params");
             let detection = detector.detect(&corners);

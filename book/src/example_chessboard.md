@@ -58,7 +58,7 @@ use image::ImageReader;
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 let chess_cfg = default_chess_config();
-let corners = detect_corners(&img, &chess_cfg);
+let corners = detect_corners(&calib_targets::detect::gray_view(&img), &chess_cfg);
 
 let params = ChessboardParams::default();
 // `new` validates the params, so it is fallible.

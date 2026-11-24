@@ -32,7 +32,7 @@ The chessboard detector's ChESS corner config is **not** carried inside
 `ChessboardParams` — it's a separate argument via
 `calib_targets::detect::default_chess_config()` (used automatically by
 the `detect_chessboard*` facade helpers). If you need to override it,
-call `calib_targets::detect::detect_corners(&img, &custom_chess_config)`
+call `calib_targets::detect::detect_corners(&gray_view(&img), &custom_chess_config)`
 directly and pass the resulting corner cloud into
 `calib_targets::chessboard::ChessboardDetector::new(params)?.detect(&corners)`.
 
@@ -52,17 +52,18 @@ multi-config sweep to try several parameter variants and keep the best
 result:
 
 ```rust,no_run
-use calib_targets::detect::{default_chess_config, detect_charuco_best, detect_chessboard_best};
+use calib_targets::detect::{default_chess_config, detect_charuco_best, detect_chessboard_best, gray_view};
 use calib_targets::chessboard::ChessboardParams;
 use calib_targets::charuco::CharucoParams;
 # let img: image::GrayImage = todo!();
 # let board = todo!();
 
+let view = gray_view(&img);
 let chess_configs = ChessboardParams::sweep_default();
-let chess_result = detect_chessboard_best(&img, &default_chess_config(), &chess_configs);
+let chess_result = detect_chessboard_best(&view, &default_chess_config(), &chess_configs);
 
 let charuco_configs = CharucoParams::sweep_for_board(&board);
-let charuco_result = detect_charuco_best(&img, &charuco_configs);
+let charuco_result = detect_charuco_best(&view, &charuco_configs);
 ```
 
 `ChessboardParams::sweep_default()` returns three configs: default +

@@ -172,6 +172,17 @@ impl MarkerBoardTargetSpec {
             inner_square_rel: None,
         })
     }
+
+    /// Convert to the detector [`MarkerBoardSpec`].
+    pub fn to_board_spec(&self) -> MarkerBoardSpec {
+        MarkerBoardSpec::new(
+            self.inner_rows,
+            self.inner_cols,
+            self.circles.map(MarkerCircleSpec::to_detector_spec),
+        )
+        .with_cell_size(self.square_size_mm as f32)
+        .with_circle_diameter_rel(self.circle_diameter_rel as f32)
+    }
 }
 
 pub(crate) fn validate_marker_board_spec(
@@ -276,5 +287,19 @@ mod tests {
             validate_marker_board_spec(&spec),
             Err(PrintableTargetError::InvisibleCircle { i: 2, j: 2 })
         ));
+    }
+
+    #[test]
+    fn layout_bridge_round_trips() {
+        let target =
+            MarkerBoardTargetSpec::new(6, 8, 15.0, MarkerBoardTargetSpec::default_circles(6, 8))
+                .with_circle_diameter_rel(0.45);
+        let board = target.to_board_spec();
+        let back = MarkerBoardTargetSpec::try_from_layout_mm(&board).expect("valid layout");
+        assert_eq!(back.inner_rows, target.inner_rows);
+        assert_eq!(back.inner_cols, target.inner_cols);
+        assert!((back.square_size_mm - target.square_size_mm).abs() < 1e-5);
+        assert!((back.circle_diameter_rel - target.circle_diameter_rel).abs() < 1e-6);
+        assert_eq!(back.circles, target.circles);
     }
 }

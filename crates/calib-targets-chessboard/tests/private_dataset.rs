@@ -18,7 +18,7 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::{ChessboardDetection, ChessboardDetector, ChessboardParams};
 use image::GenericImageView;
 
@@ -94,7 +94,7 @@ fn smoke_first_subframe_detects() {
     let snap = extract_snap(&img, 0);
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&snap, &chess_cfg);
+    let corners = detect_corners(&gray_view(&snap), &chess_cfg);
 
     let detector =
         ChessboardDetector::new(ChessboardParams::default()).expect("valid detector params");
@@ -141,7 +141,7 @@ fn full_dataset_precision_contract() {
             .to_luma8();
         for snap_idx in 0..SNAPS_PER_IMAGE {
             let snap = extract_snap(&img, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg);
+            let corners = detect_corners(&gray_view(&snap), &chess_cfg);
             n_frames += 1;
             let Some(detection) = detector.detect(&corners) else {
                 continue;

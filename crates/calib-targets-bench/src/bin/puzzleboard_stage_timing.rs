@@ -198,11 +198,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     let img = ImageReader::open(&args.image)?.decode()?.to_luma8();
     let (width, height) = (img.width(), img.height());
 
+    let view = gray_view(&img);
+
     // Corner detection is detector *input*: run it once, outside the timed
     // region, so the repeats measure only `detect`.
-    let corners = detect_corners(&img, &default_chess_config());
+    let corners = detect_corners(&view, &default_chess_config());
 
-    let view = gray_view(&img);
     let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
     let labelled_corners = match &result {
         Ok(res) => res.corners.len(),

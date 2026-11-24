@@ -5,7 +5,7 @@ pub(crate) mod decode;
 pub(crate) mod edge_sampling;
 mod error;
 pub(crate) mod params;
-mod pipeline;
+pub(crate) mod pipeline;
 mod result;
 
 pub use error::PuzzleBoardDetectError;

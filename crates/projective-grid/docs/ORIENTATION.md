@@ -20,7 +20,7 @@ is experimental (Gap 21 in
 ## Synthesize up front
 
 The facade (`detect.rs`) does not run the strategy without axes. It
-**synthesizes the missing axes from neighbour geometry** (`orient.rs`, public as
+**synthesizes the missing axes from neighbour geometry** (`orient/mod.rs`, public as
 `expert::orientation::synthesize_*`) and then runs the same topological
 strategy it runs on native axes:
 
@@ -93,7 +93,7 @@ Validate and the shared back-half are untouched.
 
 ## Topological — where axes are read
 
-Topological reads axes in three places (`topological/square_detector.rs`,
+Topological reads axes in three places (`topological/square_detector/solution.rs`,
 `topological/classify.rs`):
 
 1. **Pre-filter** (`build_usable_mask`) — drops corners whose **both** axes are

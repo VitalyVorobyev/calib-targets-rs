@@ -45,11 +45,17 @@ match arms in consumer code need wildcard patterns.
 ## Binding & CLI parity
 
 **Binding API parity:** when adding new public functions to the Rust facade
-(`crates/calib-targets/src/detect.rs`), also expose them in:
+(`crates/calib-targets/src/detect/` — single-pass helpers in `mod.rs`,
+`detect_*_best` sweeps in `sweep.rs`, `diagnose_*` in `diagnose.rs`), also
+expose them in:
 
-- Python bindings: `crates/calib-targets-py/src/lib.rs` + `api.py` + `__init__.py`
-- WASM bindings: `crates/calib-targets-wasm/src/lib.rs`
-- FFI bindings: `crates/calib-targets-ffi/src/lib.rs` + regenerated headers
+- Python bindings: the `#[pyfunction]` in `crates/calib-targets-py/src/`
+  (`detect.rs`, `diagnose.rs`, `pole.rs`, or `printable.rs`), registered in the
+  `#[pymodule]` in `lib.rs`, + `_core.pyi` + `api.py` + `__init__.py`
+- WASM bindings: the `#[wasm_bindgen]` export in `crates/calib-targets-wasm/src/`
+  (`detect.rs`, `diagnose.rs`, `params.rs`, or `print.rs`)
+- FFI bindings: `crates/calib-targets-ffi/src/detectors/` (`exports.rs` for the
+  C ABI symbols, `impls.rs` for their bodies) + regenerated headers
 
 **CLI parity:** the printable-target CLI has two mirrors — the Rust binary in
 `crates/calib-targets/src/cli/` (gated on the `cli` feature, default on) and the

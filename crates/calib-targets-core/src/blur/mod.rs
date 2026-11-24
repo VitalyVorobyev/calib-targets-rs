@@ -204,14 +204,7 @@ impl BlurKernel {
     /// along the major and minor axis (px) and the major axis's angle from
     /// the image `x` axis (radians, `y` down, in `(−π/2, π/2]`).
     pub fn axes(&self) -> (f32, f32, f32) {
-        let (a, b, c) = (f64::from(self.xx), f64::from(self.xy), f64::from(self.yy));
-        let (lo, hi) = model::eig2([a, b, c]);
-        let angle = 0.5 * (2.0 * b).atan2(a - c);
-        (
-            hi.max(0.0).sqrt() as f32,
-            lo.max(0.0).sqrt() as f32,
-            angle as f32,
-        )
+        crate::sym2::Sym2x2::from_f32(self.xx, self.xy, self.yy).principal_axes()
     }
 }
 

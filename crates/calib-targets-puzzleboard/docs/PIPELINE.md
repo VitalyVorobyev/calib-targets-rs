@@ -5,7 +5,7 @@ The PuzzleBoard is a self-identifying chessboard — every interior edge
 carries a midpoint dot, and the dot pattern identifies a fragment's
 position on a 501×501 master code (Stelldinger 2024,
 [arXiv:2409.20127](https://arxiv.org/abs/2409.20127)). Entry:
-`PuzzleBoardDetector::detect` (`detector/pipeline.rs`).
+`PuzzleBoardDetector::detect` (`detector/pipeline/mod.rs`).
 
 ## Stage table
 
@@ -61,8 +61,8 @@ grid path serialized stage-by-stage.
 | 0 | `calib_targets_chessboard::ChessboardDetector::detect_all` |
 | 1 | `detector/edge_sampling.rs::sample_all_edges` (period-3 consensus in `detector/consensus.rs`) |
 | 4a–4d | `detector/decode/hard.rs::decode`, `soft.rs::decode_soft`, `fixed.rs::decode_fixed_hard` / `decode_fixed_soft`; CRT origin recovery in `decode/mod.rs::crt_master_row` / `crt_master_col` |
-| 5 | `detector/pipeline.rs::is_better_component_decode` |
-| 6 | `detector/pipeline.rs::master_ij_to_id` / `wrap_master` |
+| 5 | `detector/pipeline/mod.rs::is_better_component_decode` |
+| 6 | `detector/pipeline/mod.rs::master_ij_to_id` / `wrap_master` |
 
 ## PuzzlePole
 

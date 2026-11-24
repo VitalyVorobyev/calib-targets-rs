@@ -11,7 +11,7 @@ use crate::coords::CellCoords;
 /// `#[non_exhaustive]` forces external matchers to use a `_` arm. When you
 /// add a variant you MUST also update every adapter site in lockstep
 /// (guarded by `circle_polarity_variant_guard` in this file's tests):
-/// - `crates/calib-targets-print/src/render.rs` (SVG/PNG renderer)
+/// - `crates/calib-targets-print/src/render/mod.rs` (SVG/PNG renderer)
 #[non_exhaustive]
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]

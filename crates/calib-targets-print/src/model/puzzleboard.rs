@@ -1,6 +1,6 @@
 //! Printable PuzzleBoard target specification.
 
-use calib_targets_puzzleboard::{MASTER_COLS, MASTER_ROWS};
+use calib_targets_puzzleboard::{PuzzleBoardSpec, MASTER_COLS, MASTER_ROWS};
 use serde::{Deserialize, Serialize};
 
 use super::chessboard::validate_square_size;
@@ -80,6 +80,24 @@ impl PuzzleBoardTargetSpec {
         self.dot_diameter_rel = dot_diameter_rel;
         self
     }
+
+    /// Build a printable PuzzleBoard target from a detector board spec whose
+    /// `cell_size` is already expressed in millimetres.
+    pub fn from_board_spec_mm(board: &PuzzleBoardSpec) -> Self {
+        Self::new(board.rows, board.cols, f64::from(board.cell_size))
+            .with_origin(board.origin_row, board.origin_col)
+    }
+
+    /// Convert to the detector [`PuzzleBoardSpec`].
+    pub fn to_board_spec(&self) -> Result<PuzzleBoardSpec, PrintableTargetError> {
+        Ok(PuzzleBoardSpec::with_origin(
+            self.rows,
+            self.cols,
+            self.square_size_mm as f32,
+            self.origin_row,
+            self.origin_col,
+        )?)
+    }
 }
 
 pub(crate) fn validate_puzzleboard_spec(
@@ -99,4 +117,33 @@ pub(crate) fn validate_puzzleboard_spec(
         return Err(PrintableTargetError::InvalidPuzzleBoardDotDiameter);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn board_spec_bridge_round_trips_and_rejects_invalid() {
+        let target = PuzzleBoardTargetSpec::new(12, 16, 10.5).with_origin(20, 30);
+        let board = target.to_board_spec().expect("valid board spec");
+        assert_eq!(board.rows, 12);
+        assert_eq!(board.cols, 16);
+        assert!((board.cell_size - 10.5).abs() < 1e-5);
+        assert_eq!(board.origin_row, 20);
+        assert_eq!(board.origin_col, 30);
+
+        let back = PuzzleBoardTargetSpec::from_board_spec_mm(&board);
+        assert_eq!(back.rows, target.rows);
+        assert_eq!(back.cols, target.cols);
+        assert_eq!(back.origin_row, target.origin_row);
+        assert_eq!(back.origin_col, target.origin_col);
+        assert!((back.square_size_mm - target.square_size_mm).abs() < 1e-5);
+
+        let invalid = PuzzleBoardTargetSpec::new(3, 10, 10.0);
+        assert!(matches!(
+            invalid.to_board_spec(),
+            Err(PrintableTargetError::PuzzleBoardSpec(_))
+        ));
+    }
 }

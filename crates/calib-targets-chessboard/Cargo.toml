@@ -37,7 +37,7 @@ tracing = { workspace = true, optional = true }
 
 [dev-dependencies]
 approx.workspace = true
-calib-targets = { path = "../calib-targets" }
+calib-targets = { path = "../calib-targets", default-features = false, features = ["image"] }
 criterion.workspace = true
 env_logger.workspace = true
 image.workspace = true

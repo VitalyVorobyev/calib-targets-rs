@@ -2,7 +2,7 @@
 
 > Code: `calib-targets-puzzleboard/src/code_maps.rs` (the maps),
 > `tools/import_author_maps.rs` and `tools/generate_code_maps.rs` (where they
-> come from), `detector/pipeline.rs` (registration).
+> come from), `detector/pipeline/mod.rs` (registration).
 
 The [decode chapter](algo_puzzleboard_decode.md) takes the master pattern as
 given. This chapter answers the two questions underneath it: **how is a pattern

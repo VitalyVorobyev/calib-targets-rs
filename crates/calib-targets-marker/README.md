@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .with_cell_size(1.0);
     let params = MarkerBoardParams::for_board(spec);
 
-    if let Ok(result) = detect::detect_marker_board(&img, &params) {
+    if let Ok(result) = detect::detect_marker_board(&detect::gray_view(&img), &params) {
         println!("detected {} corners", result.corners.len());
     }
     Ok(())

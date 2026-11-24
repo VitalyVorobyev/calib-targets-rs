@@ -75,5 +75,6 @@ pub use crate::error::{EvidenceKind, GridError, GridTask};
 pub use crate::feature::{CoordinateHypothesis, LocalAxis, OrientedFeature, PointFeature};
 pub use crate::lattice::{Coord, GridDimensions, LatticeKind};
 pub use crate::result::{
-    ConsistencyReport, GridDetection, GridEntry, LabelledGrid, LatticeFit, ResidualSummary,
+    ConsistencyReport, GridDetection, GridEntry, LabelledGrid, LatticeFit, RejectedFeature,
+    RejectionReason, ResidualSummary,
 };

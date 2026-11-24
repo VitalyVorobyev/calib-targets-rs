@@ -326,7 +326,7 @@ const GRID_CORNER_OFFSETS: [(i32, i32); 4] = [(0, 0), (1, 0), (1, 1), (0, 1)];
 /// Recover the grid-frame cell TL coordinate (`gc0`) from `marker.gc` and
 /// `marker.rotation`.
 ///
-/// In `build_detection` (scan.rs) the marker's `gc` is offset from the cell TL
+/// In `build_detection` (`calib-targets-aruco` `scan/mod.rs`) the marker's `gc` is offset from the cell TL
 /// by the marker's rotation within the cell:
 ///
 /// ```text

@@ -11,6 +11,7 @@ mod gen;
 mod gen_screen;
 mod generate;
 mod init;
+mod target_args;
 mod validate;
 
 use clap::{Parser, Subcommand};

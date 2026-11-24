@@ -7,6 +7,24 @@ and versions follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+Breaking: needs a minor release (0.15.0).
+
+### Breaking
+
+- `expert::lattice::D4_TRANSFORMS` is the single D4 table and now has the
+  alignment-search order (identity, rotations as powers of
+  `(u, v) -> (v, -u)`, then the reflections); entries 1 and 3 swapped places,
+  and `LatticeKind::Square.symmetry_transforms()` follows. Code that indexes
+  the table or stores a transform index must re-check it.
+- `expert::lattice::GRID_TRANSFORMS_D4` is removed; use `D4_TRANSFORMS`
+  (same values, same order).
+
+### Added
+
+- `RejectedFeature`, `RejectionReason`, `CellTopology`, `ComponentMergeResult`,
+  `ComponentMergeStats`, `EdgeShapeParams`, `EdgeShapeDiagnostic` and the
+  sealed `Float` trait are nameable from the public API.
+
 ### Fixed
 
 - `LabelledGrid::normalize` always yields a right-handed frame: among the four

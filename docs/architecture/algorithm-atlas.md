@@ -80,8 +80,8 @@ and [`chessboard/docs/PIPELINE.md`](../../crates/calib-targets-chessboard/docs/P
 | Triangle-pair → quad | `pg topological/quads.rs` | triangles + classified edges → quads | Merge diagonal-sharing pairs into grid cells. | ✅ |
 | Quad filter | `pg topological/filter.rs::apply_topological_quad_filter` | quads + degrees → filtered quads | Reject degree>4, extreme parallelograms, out-of-band cell sizes. | ✅ |
 | Integer component labelling (walk) | `pg topological/walk.rs::label_components` | quads + positions → `(i,j)→index` per component | Flood-fill integer labels across edges whose far corners continue the lattice within half a cell; components a larger one refuses across an edge are dropped; rebase min→(0,0). | ✅ |
-| Square assembly | `pg topological/square_detector.rs::assemble_square_oriented2_components` | oriented features + params → merged labelled components | Drives delaunay→classify→quads→filter→walk→local merge; the chessboard seam (`expert::square::assemble_oriented2_components`). | ✅ |
-| Square facade orchestrator | `pg topological/square_detector.rs::detect_square_oriented2_all` | oriented features + params → `GridSolution`s | Square assembly + recovery schedule (synthesized axes) + validate → normalize → fit. | 📚 |
+| Square assembly | `pg topological/square_detector/mod.rs::assemble_square_oriented2_components` | oriented features + params → merged labelled components | Drives delaunay→classify→quads→filter→walk→local merge; the chessboard seam (`expert::square::assemble_oriented2_components`). | ✅ |
+| Square facade orchestrator | `pg topological/square_detector/mod.rs::detect_square_oriented2_all` | oriented features + params → `GridSolution`s | Square assembly + recovery schedule (synthesized axes) + validate → normalize → fit. | 📚 |
 | Hex cell classification | `pg topological/hex.rs::classify_hex_cells` | mesh + hex axis caches → valid cells | Three-direction alignment + equilateral test. | 📚 |
 | Hex axial labelling | `pg topological/hex.rs::label_components` | hex cells + positions → axial labels | Axial flood-fill with parallelogram completion, gated on the image completion within half a step; components a larger one refuses across an edge are dropped (no quad merge). | 📚 |
 | Hex orchestrator | `pg topological/hex_detect.rs::detect_hex_oriented3_topological_all` | features → labelled hex components | Hex analogue of the square orchestrator + D6 merge. | 📚 |
@@ -96,9 +96,9 @@ detector feeds native ChESS dual axes (`Oriented2`). Deep dive:
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
-| Synthesize dual axes (from positions) | `pg orient.rs::synthesize_oriented2` | `&[PointFeature]` → `OrientedFeature<2>` | Per-corner mod-π 2-means over nearest-neighbour chords, seeded from the global modes; no inter-axis-angle constraint. | 📚 |
-| Synthesize 2nd axis (from 1) | `pg orient.rs::synthesize_oriented2_from_oriented1` | `OrientedFeature<1>` → `<2>` | Keep the trusted axis, recover the second (not assumed orthogonal). | 📚 |
-| Synthesize triple axes (hex) | `pg orient.rs::synthesize_oriented3` | `&[PointFeature]` → `OrientedFeature<3>` | Three-family generalisation for hex. | 📚 |
+| Synthesize dual axes (from positions) | `pg orient/mod.rs::synthesize_oriented2` | `&[PointFeature]` → `OrientedFeature<2>` | Per-corner mod-π 2-means over nearest-neighbour chords, seeded from the global modes; no inter-axis-angle constraint. | 📚 |
+| Synthesize 2nd axis (from 1) | `pg orient/mod.rs::synthesize_oriented2_from_oriented1` | `OrientedFeature<1>` → `<2>` | Keep the trusted axis, recover the second (not assumed orthogonal). | 📚 |
+| Synthesize triple axes (hex) | `pg orient/mod.rs::synthesize_oriented3` | `&[PointFeature]` → `OrientedFeature<3>` | Three-family generalisation for hex. | 📚 |
 
 ## 6. Component merge
 
@@ -135,10 +135,10 @@ relabelled), upholding the "no false positives" contract.
 | Validation pipeline | `pg shared/validate/mod.rs::validate` | labelled + params → rejections | Compose the checks below into one pass. | ✅ |
 | Line collinearity | `pg shared/validate/lines.rs::line_collinearity_flags` | labelled → rejected idx | Flag 3-point grid-line sets failing collinearity. | ✅ |
 | Per-corner local-H residual | `pg shared/validate/local_h.rs::local_h_residual` | labelled → rejected idx | Fit local H from K nearest, reject high relative residual. | ✅ |
-| Wrong-label edge drops | `pg shared/validate/wrong_label_filters.rs::topological_wrong_label_drops` | labelled + params → dropped | Drop overlong / off-axis / duplicate-pixel edges. | ✅ |
-| Lattice-orientation parity | `pg shared/validate/wrong_label_filters.rs::lattice_orientation_drops` | labelled → dropped | `sign(e_u × e_v)` is constant under a homography; drop minority-sign labels. Invariant, no tolerance. | ✅ |
-| Frontier-kink smoothness | `pg shared/validate/wrong_label_filters.rs::frontier_curvature_drops` | labelled + lines → dropped | Second-order line-spacing kink past the true boundary. | ✅ |
-| Largest-component filter | `pg shared/validate/wrong_label_filters.rs::largest_component_filter` | labelled → subset | Keep only the largest cardinally-connected component. | ✅ |
+| Wrong-label edge drops | `pg shared/validate/wrong_label_filters/mod.rs::topological_wrong_label_drops` | labelled + params → dropped | Drop overlong / off-axis / duplicate-pixel edges. | ✅ |
+| Lattice-orientation parity | `pg shared/validate/wrong_label_filters/mod.rs::lattice_orientation_drops` | labelled → dropped | `sign(e_u × e_v)` is constant under a homography; drop minority-sign labels. Invariant, no tolerance. | ✅ |
+| Frontier-kink smoothness | `pg shared/validate/wrong_label_filters/mod.rs::frontier_curvature_drops` | labelled + lines → dropped | Second-order line-spacing kink past the true boundary. | ✅ |
+| Largest-component filter | `pg shared/validate/wrong_label_filters/mod.rs::largest_component_filter` | labelled → subset | Keep only the largest cardinally-connected component. | ✅ |
 | Chessboard geometry check | `chess pipeline/geometry_check.rs::run_geometry_check` | labelled → validated | Sequence the pg validators on the chess output. | ✅ |
 | Output normalize / rebase | `chess pipeline/output.rs::build_detection` + `pg expert.rs::lattice::normalize_square_entries` | labelled → `ChessboardDetection` | Rebase to non-negative, canonicalise image-axis orientation. | ✅ |
 | Post-build consistency check | `pg check/mod.rs::check_consistency` | solution → report | Standalone post-detection validation (public task). | 📚 |
@@ -146,15 +146,15 @@ relabelled), upholding the "no false positives" contract.
 ## 9. Marker decode (ArUco)
 
 The codec layer: no quad/grid detection of its own — it decodes within a grid it is
-handed. `aruco/src/scan.rs` is one cohesive scanner.
+handed. `aruco/src/scan/` is one cohesive scanner (`mod.rs` decodes, `sample.rs` samples cells).
 
 | Algorithm | Home | In → Out | Computes | Status |
 |---|---|---|---|---|
 | Dictionary lookup | `aruco dictionary.rs` | dict id → code + metadata | Embedded ArUco/AprilTag code tables. | ✅ |
-| Cell warp + bit sample | `aruco scan.rs::sample_cell` | cell quad + image → grid samples | Homography-warp the cell, sample a mean grid. | ✅ |
+| Cell warp + bit sample | `aruco scan/sample.rs::sample_cell` | cell quad + image → grid samples | Homography-warp the cell, sample a mean grid. | ✅ |
 | Otsu threshold (+ multi-threshold) | `aruco threshold.rs` | samples → binary bits | Otsu binarisation with multi-threshold fallback. | ✅ |
 | Hamming match | `aruco matcher.rs::match_code` | observed code → (id, rotation, hamming) | Brute-force XOR+popcount over all 4 rotations of all codes. | ✅ |
-| Border score + detection build | `aruco scan.rs::build_detection` | samples + match → `MarkerDetection` | Border-ring confidence + assemble typed detection. | ✅ |
+| Border score + detection build | `aruco scan/mod.rs::build_detection` | samples + match → `MarkerDetection` | Border-ring confidence + assemble typed detection. | ✅ |
 
 ## 10. ChArUco matching & corner ID
 
@@ -188,8 +188,8 @@ Grid delegated to `chess`; everything below is local. Master pattern is 501×501
 | Hard-weighted decode | `puzzle detector/decode/hard.rs::decode` | observed edges + max-BER → outcome | Precompute H/V contribution tables, scan master origins, rank by (matched, weighted score). | ✅ |
 | Soft-LL decode | `puzzle detector/decode/soft.rs::decode_soft` | edges + soft config → outcome | Per-bit log-likelihood scan with best-vs-runner-up margin gate. | ✅ |
 | Master-origin scan (CRT collapse) | `puzzle detector/decode/hard.rs` | contribution tables → best origin | O(8·501) origin walk via CRT collapse. | ✅ |
-| Master-ID encode + wrap | `puzzle detector/pipeline.rs::master_ij_to_id` / `wrap_master` | (i,j)+transform+origin → flat id | Flat id = `j·501+i`; preserves `target_position` invariant. | ✅ |
-| Component decode ranking | `puzzle detector/pipeline.rs::is_better_component_decode` | two decodes → better | Lexicographic: edges matched, BER, then margin/confidence. | ✅ |
+| Master-ID encode + wrap | `puzzle detector/pipeline/mod.rs::master_ij_to_id` / `wrap_master` | (i,j)+transform+origin → flat id | Flat id = `j·501+i`; preserves `target_position` invariant. | ✅ |
+| Component decode ranking | `puzzle detector/pipeline/mod.rs::is_better_component_decode` | two decodes → better | Lexicographic: edges matched, BER, then margin/confidence. | ✅ |
 
 ## 12. PuzzlePole cyclic decode
 

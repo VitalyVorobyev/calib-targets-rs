@@ -46,11 +46,11 @@ actually does) and reports per-corner usability plus the labelled
 components:
 
 ```rust,no_run
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_chessboard::{trace_topological, ChessboardParams};
 # let img: image::GrayImage = todo!();
 
-let corners = detect_corners(&img, &default_chess_config());
+let corners = detect_corners(&gray_view(&img), &default_chess_config());
 match trace_topological(&corners, &ChessboardParams::default()) {
     Ok(trace) => {
         let usable = trace.corners.iter().filter(|c| c.usable).count();

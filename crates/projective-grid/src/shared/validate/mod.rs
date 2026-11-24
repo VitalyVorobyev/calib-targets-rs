@@ -214,6 +214,7 @@ impl Default for EdgeShapeParams {
 
 /// Per-label diagnostics from local edge-shape validation.
 #[derive(Clone, Copy, Debug, Default)]
+#[non_exhaustive]
 pub struct EdgeShapeDiagnostic {
     /// Number of cardinally adjacent labelled neighbours.
     pub cardinal_degree: u8,

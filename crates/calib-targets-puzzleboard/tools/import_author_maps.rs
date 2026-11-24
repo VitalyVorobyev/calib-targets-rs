@@ -21,7 +21,7 @@
 //! # Usage
 //!
 //! ```text
-//! cargo run -p calib-targets-puzzleboard --bin import-author-puzzleboard-maps \
+//! cargo run -p calib-targets-puzzleboard --features tools --bin import-author-puzzleboard-maps \
 //!     -- /path/to/PStelldinger/PuzzleBoard/puzzle_board/puzzle_board_decoder.py
 //! ```
 //!

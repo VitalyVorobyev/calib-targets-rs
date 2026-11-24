@@ -1,7 +1,7 @@
 //! Error type for printable target generation.
 
 use calib_targets_charuco::CharucoBoardError;
-use calib_targets_puzzleboard::{PuzzleBoardSpecError, MASTER_ROWS};
+use calib_targets_puzzleboard::{PuzzleBoardSpecError, PuzzlePoleSpecError, MASTER_ROWS};
 
 pub const SCHEMA_VERSION_V1: u32 = 1;
 
@@ -159,4 +159,7 @@ pub enum PrintableTargetError {
     /// Validation of the underlying PuzzleBoard specification failed.
     #[error(transparent)]
     PuzzleBoardSpec(#[from] PuzzleBoardSpecError),
+    /// Validation of the underlying PuzzlePole specification failed.
+    #[error(transparent)]
+    PuzzlePoleSpec(#[from] PuzzlePoleSpecError),
 }

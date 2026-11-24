@@ -60,22 +60,36 @@ name = "generate-ffi-header"
 path = "src/bin/generate-ffi-header.rs"
 required-features = ["generate-header"]
 
+[[bin]]
+name = "stage-cmake-package"
+path = "src/bin/stage-cmake-package.rs"
+
+[[bin]]
+name = "package-release-archive"
+path = "src/bin/package-release-archive.rs"
+required-features = ["package-archive"]
+
+[[test]]
+name = "release_archive_smoke"
+required-features = ["package-archive"]
+
 [features]
 generate-header = ["dep:cbindgen"]
+package-archive = ["dep:flate2", "dep:tar", "dep:zip"]
 
 [dependencies]
 # The C ABI cannot express Cargo features, so the FFI crate enables
 # `diagnostics` unconditionally: the diagnostic JSON entry points
 # (`ct_*_detector_diagnose_json`) are always present and the
 # generated header is stable across build configurations.
-calib-targets = { workspace = true, features = ["image", "diagnostics"] }
+calib-targets = { workspace = true, features = ["diagnostics"] }
 cbindgen = { workspace = true, optional = true }
 chess-corners.workspace = true
-flate2.workspace = true
+flate2 = { workspace = true, optional = true }
 serde.workspace = true
 serde_json.workspace = true
-tar.workspace = true
-zip.workspace = true
+tar = { workspace = true, optional = true }
+zip = { workspace = true, optional = true }
 
 [dev-dependencies]
 image.workspace = true

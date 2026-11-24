@@ -18,7 +18,7 @@
 
 use calib_targets::aruco::builtins;
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams, MarkerLayout};
-use calib_targets::detect::{self, default_chess_config, DetectorConfig};
+use calib_targets::detect::{self, default_chess_config, gray_view, DetectorConfig};
 use calib_targets::marker::{
     CellCoords, CirclePolarity, MarkerBoardParams, MarkerBoardSpec, MarkerCircleSpec,
 };
@@ -60,9 +60,10 @@ fn charuco_best_mixed_chess_configs_do_not_short_circuit() {
     cfg_b.chess = chess_b;
 
     // Each config's single-config outcome; the sweep must reproduce their OR.
-    let single_a = detect::detect_charuco(&img, &cfg_a).is_ok();
-    let single_b = detect::detect_charuco(&img, &cfg_b).is_ok();
-    let sweep_ok = detect::detect_charuco_best(&img, &[cfg_a, cfg_b]).is_ok();
+    let view = gray_view(&img);
+    let single_a = detect::detect_charuco(&view, &cfg_a).is_ok();
+    let single_b = detect::detect_charuco(&view, &cfg_b).is_ok();
+    let sweep_ok = detect::detect_charuco_best(&view, &[cfg_a, cfg_b]).is_ok();
 
     // The differing `chess` no longer poisons the whole sweep: `Ok` iff some
     // config produced `Ok` (the old `InconsistentChessConfig` path is gone).
@@ -92,9 +93,10 @@ fn marker_best_mixed_chess_configs_do_not_short_circuit() {
     let mut cfg_b = MarkerBoardParams::for_board(board);
     cfg_b.chess = chess_b;
 
-    let single_a = detect::detect_marker_board(&img, &cfg_a).is_ok();
-    let single_b = detect::detect_marker_board(&img, &cfg_b).is_ok();
-    let sweep_ok = detect::detect_marker_board_best(&img, &[cfg_a, cfg_b]).is_ok();
+    let view = gray_view(&img);
+    let single_a = detect::detect_marker_board(&view, &cfg_a).is_ok();
+    let single_b = detect::detect_marker_board(&view, &cfg_b).is_ok();
+    let sweep_ok = detect::detect_marker_board_best(&view, &[cfg_a, cfg_b]).is_ok();
 
     // No short-circuit to `Err` on `chess` disagreement: `Ok` iff some
     // config found a board.
@@ -113,10 +115,11 @@ fn puzzleboard_best_identical_configs_equal_single_config() {
     let board = PuzzleBoardSpec::with_origin(10, 10, 12.0, 0, 0).expect("board spec");
     let params = PuzzleBoardParams::for_board(board);
 
-    let single = detect::detect_puzzleboard(&img, &params);
+    let view = gray_view(&img);
+    let single = detect::detect_puzzleboard(&view, &params);
     // Two identical configs => one corner pass in the cache; the second config
     // is never strictly better, so the first (== single-config) result wins.
-    let sweep = detect::detect_puzzleboard_best(&img, &[params.clone(), params.clone()]);
+    let sweep = detect::detect_puzzleboard_best(&view, &[params.clone(), params.clone()]);
 
     match (single, sweep) {
         (Ok(single), Ok(sweep)) => {

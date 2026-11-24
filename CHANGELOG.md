@@ -9,8 +9,36 @@ see [Older releases](#older-releases) at the bottom for the index.
 
 ## Unreleased
 
+See the [0.18.0 migration guide](docs/migrations/0.18.0.md).
+
 ### Breaking
 
+- **The facade borrows images.** Every `calib_targets::detect::*` and
+  `calib_targets::blur::*` function that took `&image::GrayImage` now takes
+  `&GrayImageView<'_>`; wrap an `image::GrayImage` with
+  `detect::gray_view(&img)` (zero-copy). `detect::gray_image_from_slice` is
+  replaced by `detect::gray_view_from_slice` (zero-copy), which also rejects a
+  zero width or height as `InvalidGrayDimensions`. `detect` and `blur` no
+  longer need the `image` feature, and that feature no longer pulls in
+  `chess-corners`.
+- **One rule for every `detect_*_best` sweep.** An empty config list returns
+  the new `DetectError::EmptySweep`; an invalid config (or any other misuse
+  error) stops the sweep and is returned instead of being skipped; on a tie
+  the first config's result wins (chessboard and marker-board sweeps used to
+  keep the last). In Python and WASM, `detect_*_best` with an empty or invalid
+  config list now raises / throws instead of returning `None` / `null`.
+- `calib_targets_core::axis_estimate_to_next` is removed; use
+  `LocalAxis::from(axis)`.
+- `calib-targets` drops its optional `tracing-log` / `tracing-subscriber`
+  dependencies (the `tracing` feature behaves the same). The PuzzleBoard
+  code-map tools need `--features tools`, and the FFI
+  `package-release-archive` binary needs `--features package-archive`.
+- `PuzzlePoleDetector::new` refuses a decode window below the measured
+  uniqueness floor (5 × 8 corners) with the new
+  `PuzzlePoleDetectError::WindowBelowFloor`; the PuzzlePole parameter schema
+  minima match.
+- Requires `projective-grid` 0.15 (its `D4_TRANSFORMS` table is reordered and
+  `GRID_TRANSFORMS_D4` removed; see its changelog).
 - `MarkerBoardDetector::new` returns `MarkerBoardParamsError` (was
   `ChessboardParamsError`) and validates the board layout and circle
   parameters; the facade reports these as the new
@@ -19,8 +47,29 @@ see [Older releases](#older-releases) at the bottom for the index.
   `exp(mean log-likelihood)` in `(0, 1]`; it was `sigmoid(mean log-likelihood)`,
   which never exceeded 0.5.
 
+### Added
+
+- **PuzzlePole parity:** `diagnose_puzzlepole{,_with_corners}` in Rust,
+  Python and WASM, the WASM PuzzlePole detect / params functions,
+  `schemas/puzzlepole_params.json`, and the TypeScript declarations.
+- Conversions between printable target specs and detector board specs
+  (`PuzzleBoardTargetSpec::{from_board_spec_mm, to_board_spec}`,
+  `PuzzlePoleTargetSpec::{from_pole_spec_mm, to_pole_spec}`,
+  `MarkerBoardTargetSpec::to_board_spec`), `CellCoords::new`,
+  `CellOffset::new`, and `CellCoords` ↔ `Coord` conversions.
+
+### Changed
+
+- Detector crates no longer build diagnostics they do not return when the
+  `diagnostics` feature is off; every production source file is under 1,000
+  lines (large modules split, no behaviour change); the CLI's target-geometry
+  flags are shared between `init`, `gen` and `gen-screen` (names and defaults
+  unchanged).
+
 ### Fixed
 
+- Python `gray_image_from_py` reads non-C-contiguous (e.g. Fortran-order)
+  arrays in logical order; they could come out scrambled before.
 - **Grid orientation is always right-handed.** Canonicalizing a labelled grid
   to image axes picked the transpose from a single coordinate comparison, so a
   strongly sheared view could come out mirrored (a reflection that

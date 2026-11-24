@@ -2,8 +2,8 @@
 //!
 //! This crate provides:
 //! - stable, convenient re-exports of the underlying detector crates
-//! - (feature-gated) end-to-end helpers that run a ChESS corner detector
-//!   (`chess-corners`) and then run a target detector on an image or raw buffer.
+//! - end-to-end helpers in [`detect`] that accept [`core::GrayImageView`]
+//!   (and optional `image` helpers via the `image` feature).
 //!
 //! ## Quickstart
 //!
@@ -16,7 +16,7 @@
 //! let img = ImageReader::open("board.png")?.decode()?.to_luma8();
 //! let params = ChessboardParams::default();
 //!
-//! match detect::detect_chessboard(&img, &detect::default_chess_config(), &params) {
+//! match detect::detect_chessboard(&detect::gray_view(&img), &detect::default_chess_config(), &params) {
 //!     Ok(detection) => println!("detected {} corners", detection.corners.len()),
 //!     Err(err) => println!("no board: {err}"),
 //! }
@@ -43,7 +43,9 @@
 //!   and PuzzlePole, the same pattern wrapped round a cylinder.
 //! - `calib_targets::marker`: checkerboard + circle marker boards.
 //! - `calib_targets::printable`: printable target generation and JSON/SVG/PNG output.
-//! - `calib_targets::detect` (feature `image`): end-to-end helpers from `image::GrayImage`.
+//! - `calib_targets::detect`: end-to-end helpers taking `&GrayImageView` (plus
+//!   `image::GrayImage` adapters `gray_view` / `preprocess` behind feature `image`).
+//! - `calib_targets::blur`: per-corner blur estimation taking `&GrayImageView`.
 //!
 //! ## Performance
 //!
@@ -88,10 +90,8 @@ pub use calib_targets_chessboard::{trace_topological, trace_topological_detectio
 #[cfg(feature = "image")]
 pub use ::image;
 
-#[cfg(feature = "image")]
 pub mod blur;
 
-#[cfg(feature = "image")]
 pub mod detect;
 
 pub mod generate;

@@ -99,15 +99,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         img.height(),
     );
 
+    let view = detect::gray_view(&img);
     for _ in 0..args.warmup {
-        let _ = detect::detect_chessboard(&img, &chess_cfg, &params);
+        let _ = detect::detect_chessboard(&view, &chess_cfg, &params);
     }
 
     let mut elapsed_ms: Vec<f64> = Vec::with_capacity(args.iterations);
     let mut last_corner_count: usize = 0;
     for i in 0..args.iterations {
         let t0 = Instant::now();
-        let result = detect::detect_chessboard(&img, &chess_cfg, &params);
+        let result = detect::detect_chessboard(&view, &chess_cfg, &params);
         let dt = t0.elapsed().as_secs_f64() * 1e3;
         elapsed_ms.push(dt);
         let count = result.as_ref().ok().map(|d| d.corners.len()).unwrap_or(0);

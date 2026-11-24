@@ -60,24 +60,14 @@ pub const SQUARE_CARDINAL_OFFSETS: [Coord; 4] = [
     Coord::new(0, -1),
 ];
 
-/// D4 in alignment-search order; documented on `lattice::GRID_TRANSFORMS_D4`.
-pub const GRID_TRANSFORMS_D4: [GridTransform; 8] = [
-    D4_TRANSFORMS[0],
-    D4_TRANSFORMS[3],
-    D4_TRANSFORMS[2],
-    D4_TRANSFORMS[1],
-    D4_TRANSFORMS[4],
-    D4_TRANSFORMS[5],
-    D4_TRANSFORMS[6],
-    D4_TRANSFORMS[7],
-];
-
-/// Dihedral group D4 acting on square lattice coordinates.
+/// Dihedral group D4 acting on square lattice coordinates, in canonical
+/// alignment-search order: identity, successive powers of `(u, v) -> (v, -u)`
+/// (`C4`), then the four reflections.
 pub const D4_TRANSFORMS: [GridTransform; 8] = [
     GridTransform::new(LatticeKind::Square, [[1, 0], [0, 1]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[0, -1], [1, 0]], [0, 0]),
-    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, -1]], [0, 0]),
     GridTransform::new(LatticeKind::Square, [[0, 1], [-1, 0]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[-1, 0], [0, -1]], [0, 0]),
+    GridTransform::new(LatticeKind::Square, [[0, -1], [1, 0]], [0, 0]),
     GridTransform::new(LatticeKind::Square, [[-1, 0], [0, 1]], [0, 0]),
     GridTransform::new(LatticeKind::Square, [[1, 0], [0, -1]], [0, 0]),
     GridTransform::new(LatticeKind::Square, [[0, 1], [1, 0]], [0, 0]),

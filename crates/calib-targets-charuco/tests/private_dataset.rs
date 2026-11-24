@@ -20,9 +20,8 @@
 
 use std::path::PathBuf;
 
-use calib_targets::detect::{default_chess_config, detect_corners};
+use calib_targets::detect::{default_chess_config, detect_corners, gray_view};
 use calib_targets_charuco::{load_board_spec_any, CharucoDetector, CharucoParams};
-use calib_targets_core::GrayImageView;
 use image::GenericImageView;
 
 const SNAP_WIDTH: u32 = 720;
@@ -83,15 +82,11 @@ fn smoke_flagship_snap_0_detects() {
     let snap = extract_snap(&img, 0);
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&snap, &chess_cfg);
+    let view = gray_view(&snap);
+    let corners = detect_corners(&view, &chess_cfg);
 
     let params = CharucoParams::for_board(spec);
     let detector = CharucoDetector::new(params).expect("detector");
-    let view = GrayImageView {
-        width: snap.width() as usize,
-        height: snap.height() as usize,
-        data: snap.as_raw(),
-    };
     let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
     let result = result.expect("snap 0 of target 0 must detect");
 
@@ -143,12 +138,8 @@ fn run_flagship_sweep() -> Option<(usize, usize, usize)> {
         for snap_idx in 0..SNAPS_PER_IMAGE {
             frames += 1;
             let snap = extract_snap(&img, snap_idx);
-            let corners = detect_corners(&snap, &chess_cfg);
-            let view = GrayImageView {
-                width: snap.width() as usize,
-                height: snap.height() as usize,
-                data: snap.as_raw(),
-            };
+            let view = gray_view(&snap);
+            let corners = detect_corners(&view, &chess_cfg);
             let (result, diagnostics) = detector.diagnose_with_corners(&view, &corners);
             if result.is_ok() {
                 detected += 1;
@@ -206,13 +197,8 @@ fn smoke_apriltag_image_does_not_panic() {
     let snap = upscale(&snap, 3);
 
     let chess_cfg = default_chess_config();
-    let corners = detect_corners(&snap, &chess_cfg);
-
-    let view = GrayImageView {
-        width: snap.width() as usize,
-        height: snap.height() as usize,
-        data: snap.as_raw(),
-    };
+    let view = gray_view(&snap);
+    let corners = detect_corners(&view, &chess_cfg);
 
     // Board-level matcher path (the sole matcher): soft-bit log-likelihood
     // with the default κ=36 slope recovers an alignment even when a hard
@@ -297,12 +283,8 @@ fn assert_reviewed_false_corners_rejected() {
             .expect("decode")
             .to_luma8();
         let snap = extract_snap(&img, snap_idx);
-        let corners = detect_corners(&snap, &chess_cfg);
-        let view = GrayImageView {
-            width: snap.width() as usize,
-            height: snap.height() as usize,
-            data: snap.as_raw(),
-        };
+        let view = gray_view(&snap);
+        let corners = detect_corners(&view, &chess_cfg);
         let Ok(result) = detector.detect_with_corners(&view, &corners) else {
             // A missing detection trivially carries no false corner.
             continue;

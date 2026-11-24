@@ -1,13 +1,18 @@
 use std::collections::HashMap;
 
 use nalgebra::{Matrix3, Point2};
+use projective_grid::expert::component::{
+    merge_components_local, ComponentMergeResult, ComponentMergeStats, LocalMergeParams,
+};
 use projective_grid::expert::geometry::estimate_homography;
 use projective_grid::expert::lattice::{
-    predict_grid_position, GridTransform, D4_TRANSFORMS, D6_TRANSFORMS,
+    predict_grid_position, CellTopology, GridTransform, D4_TRANSFORMS, D6_TRANSFORMS,
 };
+use projective_grid::expert::validation::{EdgeShapeDiagnostic, EdgeShapeParams};
+use projective_grid::expert::Float;
 use projective_grid::{
     Coord, CoordinateHypothesis, GridDimensions, LatticeKind, LocalAxis, OrientedFeature,
-    PointFeature,
+    PointFeature, RejectedFeature, RejectionReason,
 };
 
 #[test]
@@ -50,9 +55,34 @@ fn symmetry_tables_stay_lattice_tagged() {
     assert!(D4_TRANSFORMS
         .iter()
         .all(|t| t.lattice() == LatticeKind::Square));
+    assert_eq!(D4_TRANSFORMS[1].apply(Coord::new(1, 0)), Coord::new(0, -1));
     assert!(D6_TRANSFORMS
         .iter()
         .all(|t| t.lattice() == LatticeKind::Hex));
+}
+
+#[test]
+fn expert_and_diagnostic_types_are_nameable() {
+    fn assert_float<F: Float>(x: F) -> F {
+        x
+    }
+    assert!((assert_float(1.5_f32) - 1.5).abs() < 1e-6);
+
+    let topo: CellTopology = LatticeKind::Square.cell_topology();
+    assert_eq!(topo, CellTopology::TrianglePairToQuad);
+
+    let merged: ComponentMergeResult =
+        merge_components_local(&[], &[], &LocalMergeParams::default());
+    let stats: ComponentMergeStats = merged.diagnostics;
+    assert_eq!(stats.components_in, 0);
+
+    let edge_params = EdgeShapeParams::default();
+    let edge_diag = EdgeShapeDiagnostic::default();
+    let _ = (edge_params, edge_diag);
+
+    let reason = RejectionReason::ResidualTooHigh;
+    let _: Option<RejectedFeature> = None;
+    let _ = reason;
 }
 
 #[test]

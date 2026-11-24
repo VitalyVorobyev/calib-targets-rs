@@ -37,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let chess_cfg = detect::default_chess_config();
     let params = ChessboardParams::default();
 
-    match detect::detect_chessboard(&img, &chess_cfg, &params) {
+    match detect::detect_chessboard(&detect::gray_view(&img), &chess_cfg, &params) {
         Ok(det) => println!("labelled {} corners", det.corners.len()),
         Err(err) => println!("no board: {err}"),
     }
@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Inputs (every helper)
 
-- `image::GrayImage` (or a `GrayImageView` on the detector traits).
+- `&GrayImageView` (convert an `image::GrayImage` with `detect::gray_view(&img)` when feature `image` is enabled).
 - A `*Params` config struct (`ChessboardParams`, `CharucoParams`,
   `PuzzleBoardParams`, `MarkerBoardParams`). Use `::default()` for
   chessboard, `::for_board(spec)` when a layout is required (constructors
@@ -187,13 +187,16 @@ Canonical guide: [printable-target book chapter][printable-book].
 
 ## Features
 
-- `image` (default) — enables the `calib_targets::detect` helpers that
-  take `image::GrayImage` inputs and run `chess-corners` internally.
+- `image` (default) — re-exports the `image` crate and enables
+  `detect::gray_view` (borrow an `image::GrayImage` as a `GrayImageView`) and
+  `detect::preprocess` (optional Gaussian pre-blur). The `detect` and `blur` modules take
+  `&GrayImageView` and work without it.
 - `tracing` — gates tracing spans across the workspace crates.
 - `diagnostics` (off) — forwards to the per-crate `diagnostics` features and
-  gates the `diagnose_charuco`, `diagnose_puzzleboard`, and
-  `diagnose_marker_board` free functions (and their `_with_corners`
-  counterparts) plus the chessboard `trace_topological*` re-exports. The hot
+  gates the `diagnose_charuco`, `diagnose_puzzleboard`,
+  `diagnose_puzzlepole`, and `diagnose_marker_board` free functions (and
+  their `_with_corners` counterparts) plus the chessboard
+  `trace_topological*` re-exports. The hot
   `detect_*` paths build no trace when this is off.
 
 ## Migrating to the current release

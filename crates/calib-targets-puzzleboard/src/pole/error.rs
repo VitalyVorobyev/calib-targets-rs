@@ -6,7 +6,8 @@ use calib_targets_chessboard::ChessboardParamsError;
 /// Why a PuzzlePole detection did not produce a result.
 ///
 /// Most variants represent a **miss** (no decodable fragment in the image),
-/// while configuration errors ([`Self::Spec`], [`Self::Chessboard`]) report
+/// while configuration errors ([`Self::Spec`], [`Self::Chessboard`],
+/// [`Self::WindowBelowFloor`]) report
 /// invalid caller parameters (`is_not_found() == false`).
 #[non_exhaustive]
 #[derive(thiserror::Error, Debug)]
@@ -17,6 +18,23 @@ pub enum PuzzlePoleDetectError {
     /// The chessboard detector parameters were invalid.
     #[error(transparent)]
     Chessboard(#[from] ChessboardParamsError),
+    /// The decode window is smaller than the measured uniqueness floor
+    /// ([`crate::MIN_CIRCUMFERENCE_SPAN`] × [`crate::MIN_AXIAL_SPAN`]); a
+    /// smaller window admits placements that provably alias.
+    #[error(
+        "decode window {circumference} × {axial} is below the uniqueness floor \
+         {min_circumference} × {min_axial}"
+    )]
+    WindowBelowFloor {
+        /// Configured `min_circumference_span`.
+        circumference: u32,
+        /// Configured `min_axial_span`.
+        axial: u32,
+        /// The floor for `min_circumference_span`.
+        min_circumference: u32,
+        /// The floor for `min_axial_span`.
+        min_axial: u32,
+    },
     /// No chessboard grid was assembled from the corner cloud.
     #[error("no chessboard grid was found")]
     ChessboardNotDetected,
@@ -87,7 +105,7 @@ impl PuzzlePoleDetectError {
     /// unique position — rather than a misuse (an invalid pole spec or params).
     pub fn is_not_found(&self) -> bool {
         match self {
-            Self::Spec(_) | Self::Chessboard(_) => false,
+            Self::Spec(_) | Self::Chessboard(_) | Self::WindowBelowFloor { .. } => false,
             Self::ChessboardNotDetected
             | Self::NotEnoughEdges { .. }
             | Self::FragmentTooSmall { .. }

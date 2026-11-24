@@ -1,16 +1,20 @@
-#[cfg(not(target_os = "windows"))]
+#[cfg(feature = "package-archive")]
 use flate2::{Compression, GzBuilder};
 use std::env;
 use std::ffi::OsString;
-use std::fs::{self, File};
+use std::fs;
+#[cfg(feature = "package-archive")]
+use std::fs::File;
+#[cfg(feature = "package-archive")]
 use std::io;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "package-archive")]
 use std::time::{SystemTime, UNIX_EPOCH};
-#[cfg(not(target_os = "windows"))]
+#[cfg(feature = "package-archive")]
 use tar::{Builder as TarBuilder, EntryType, Header as TarHeader};
-#[cfg(target_os = "windows")]
+#[cfg(feature = "package-archive")]
 use zip::write::SimpleFileOptions;
-#[cfg(target_os = "windows")]
+#[cfg(feature = "package-archive")]
 use zip::{CompressionMethod, DateTime, ZipWriter};
 
 const CONFIG_TEMPLATE: &str = include_str!(concat!(
@@ -27,6 +31,7 @@ pub struct StageArgs {
     pub prefix: PathBuf,
 }
 
+#[cfg(feature = "package-archive")]
 pub struct ReleaseArchiveArgs {
     pub lib_dir: PathBuf,
     pub output_dir: PathBuf,
@@ -112,6 +117,7 @@ pub fn stage_package(args: &StageArgs) -> Result<(), String> {
     Ok(())
 }
 
+#[cfg(feature = "package-archive")]
 pub fn build_release_archive(args: &ReleaseArchiveArgs) -> Result<PathBuf, String> {
     let platform_id = args.platform_id.clone().unwrap_or_else(default_platform_id);
     let package_dir_name = default_package_dir_name(&platform_id);
@@ -147,6 +153,7 @@ where
         .ok_or_else(|| format!("missing value for {flag}\n\n{}", usage_for(flag)))
 }
 
+#[cfg(feature = "package-archive")]
 pub fn next_string_arg<I>(iter: &mut I, flag: &str) -> Result<String, String>
 where
     I: Iterator<Item = OsString>,
@@ -162,6 +169,7 @@ pub fn crate_root() -> Result<PathBuf, String> {
         .map_err(|err| format!("resolve crate root: {err}"))
 }
 
+#[cfg(feature = "package-archive")]
 pub fn default_package_dir_name(platform_id: &str) -> String {
     format!(
         "calib-targets-ffi-{}-{platform_id}",
@@ -169,6 +177,7 @@ pub fn default_package_dir_name(platform_id: &str) -> String {
     )
 }
 
+#[cfg(feature = "package-archive")]
 pub fn default_platform_id() -> String {
     match (env::consts::OS, env::consts::ARCH) {
         ("linux", "x86_64") => "x86_64-unknown-linux-gnu".to_string(),
@@ -183,6 +192,7 @@ pub fn default_platform_id() -> String {
     }
 }
 
+#[cfg(feature = "package-archive")]
 pub fn archive_extension_for_current_platform() -> &'static str {
     #[cfg(target_os = "windows")]
     {
@@ -200,7 +210,7 @@ pub fn usage_for(command: &str) -> &'static str {
             "usage: cargo run -p calib-targets-ffi --bin stage-cmake-package -- --lib-dir <cargo-lib-dir> --prefix <package-prefix>"
         }
         "package-release-archive" => {
-            "usage: cargo run -p calib-targets-ffi --bin package-release-archive -- --lib-dir <cargo-lib-dir> --output-dir <archive-dir> [--platform-id <platform-id>]"
+            "usage: cargo run -p calib-targets-ffi --features package-archive --bin package-release-archive -- --lib-dir <cargo-lib-dir> --output-dir <archive-dir> [--platform-id <platform-id>]"
         }
         _ => "usage unavailable",
     }
@@ -262,18 +272,16 @@ fn render_config_template(
         )
 }
 
+#[cfg(feature = "package-archive")]
 fn create_archive(source_dir: &Path, archive_path: &Path, root_name: &str) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
+    if cfg!(target_os = "windows") {
         create_zip_archive(source_dir, archive_path, root_name)
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
+    } else {
         create_tar_gz_archive(source_dir, archive_path, root_name)
     }
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(feature = "package-archive")]
 fn create_tar_gz_archive(
     source_dir: &Path,
     archive_path: &Path,
@@ -309,7 +317,7 @@ fn create_tar_gz_archive(
     Ok(())
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(feature = "package-archive")]
 fn append_tar_directory(
     builder: &mut TarBuilder<impl io::Write>,
     path: &Path,
@@ -327,7 +335,7 @@ fn append_tar_directory(
         .map_err(|err| format!("append directory {}: {err}", path.display()))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(feature = "package-archive")]
 fn append_tar_file(
     builder: &mut TarBuilder<impl io::Write>,
     src_path: &Path,
@@ -351,7 +359,7 @@ fn append_tar_file(
         .map_err(|err| format!("append file {}: {err}", archive_path.display()))
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(feature = "package-archive")]
 fn create_zip_archive(
     source_dir: &Path,
     archive_path: &Path,
@@ -395,7 +403,7 @@ fn create_zip_archive(
     Ok(())
 }
 
-#[cfg(target_os = "windows")]
+#[cfg(feature = "package-archive")]
 fn archive_path_string(path: &Path) -> String {
     path.components()
         .map(|component| component.as_os_str().to_string_lossy())
@@ -403,12 +411,14 @@ fn archive_path_string(path: &Path) -> String {
         .join("/")
 }
 
+#[cfg(feature = "package-archive")]
 fn collect_entries(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut entries = Vec::new();
     collect_entries_inner(root, &mut entries)?;
     Ok(entries)
 }
 
+#[cfg(feature = "package-archive")]
 fn collect_entries_inner(dir: &Path, entries: &mut Vec<PathBuf>) -> Result<(), String> {
     let mut children = fs::read_dir(dir)
         .map_err(|err| format!("read directory {}: {err}", dir.display()))?
@@ -438,10 +448,12 @@ fn collect_entries_inner(dir: &Path, entries: &mut Vec<PathBuf>) -> Result<(), S
     Ok(())
 }
 
+#[cfg(feature = "package-archive")]
 struct TempDir {
     path: PathBuf,
 }
 
+#[cfg(feature = "package-archive")]
 impl TempDir {
     fn new(prefix: &str) -> Result<Self, String> {
         let nanos = SystemTime::now()
@@ -459,6 +471,7 @@ impl TempDir {
     }
 }
 
+#[cfg(feature = "package-archive")]
 impl Drop for TempDir {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.path);

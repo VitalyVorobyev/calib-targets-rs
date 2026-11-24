@@ -24,6 +24,15 @@ import type {
   MarkerBoardCorner,
   PositionCovariance,
   PuzzleBoardCorner,
+  PuzzleBoardDecodeInfo,
+  PuzzleBoardDiagnostics,
+  PuzzlePoleCorner,
+  PuzzlePoleDecodeConfig,
+  PuzzlePoleDetection,
+  PuzzlePoleParams,
+  PuzzlePoleSpec,
+  DetectionWithDiagnostics,
+  Point3,
   DetectionStrategy,
   ImageRefiner,
   MarkerBoardSpec,
@@ -329,4 +338,80 @@ export const screenTargetMetadata: ScreenTargetMetadata = {
 export const screenTargetBundle: ScreenTargetBundle = {
   png_bytes: new Uint8Array(),
   json_text: JSON.stringify(screenTargetMetadata),
+};
+
+export const point3Sample: Point3 = [1.0, 2.0, 3.0];
+
+export const puzzlePoleSpec: PuzzlePoleSpec = {
+  circumference_squares: 24,
+  start_row: 0,
+  axial_start_col: 0,
+  axial_squares: 12,
+  cell_size_mm: 20.0,
+};
+
+export const puzzlePoleDecode: PuzzlePoleDecodeConfig = {
+  min_circumference_span: 5,
+  min_axial_span: 8,
+  min_bit_confidence: 0.1,
+  max_bit_error_rate: 0.15,
+  search_all_components: true,
+  sample_radius_rel: 0.25,
+  scoring_mode: { kind: "soft_log_likelihood" },
+  symmetry_mode: { kind: "rotations" },
+};
+
+export const puzzlePoleParams: PuzzlePoleParams = {
+  pole: puzzlePoleSpec,
+  decode: puzzlePoleDecode,
+};
+
+export const puzzlePoleCorner: PuzzlePoleCorner = {
+  position: [10.5, 20.25],
+  position_covariance: cov,
+  grid: { u: 3, v: 4 },
+  id: 42,
+  surface_position: [60.0, 80.0],
+  object_position: point3Sample,
+  score: 12.5,
+};
+
+const puzzlePoleDecodeInfo: PuzzleBoardDecodeInfo = {
+  edges_observed: 40,
+  edges_matched: 39,
+  mean_confidence: 0.9,
+  bit_error_rate: 0.025,
+  logical_bits: 16,
+  logical_bit_error_rate: 0.0,
+  dot_dissent_rate: 0.0,
+  master_origin_row: 0,
+  master_origin_col: 0,
+};
+
+export const puzzlePoleDetection: PuzzlePoleDetection = {
+  corners: [puzzlePoleCorner],
+  alignment: {
+    lattice: "square",
+    matrix: [
+      [1, 0],
+      [0, 1],
+    ],
+    translation: [0, 0],
+  },
+  decode: puzzlePoleDecodeInfo,
+  spec: puzzlePoleSpec,
+  quality,
+};
+
+export const puzzlePoleDiagnoseResult: DetectionWithDiagnostics<
+  PuzzlePoleDetection,
+  PuzzleBoardDiagnostics
+> = {
+  result: puzzlePoleDetection,
+  diagnostics: {
+    observed_edges: [],
+    decode: {
+      score_margin: 12.0,
+    },
+  },
 };

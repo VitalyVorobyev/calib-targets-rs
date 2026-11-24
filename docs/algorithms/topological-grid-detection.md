@@ -112,7 +112,7 @@ pair is reused later for booster recovery so clustering is not repeated.
 
 `projective-grid/src/topological/axis.rs::build_axis_caches`, then
 `build_usable_mask` and `axes_pass_cluster_gate` in
-`topological/square_detector.rs`
+`topological/square_detector/solution.rs`
 
 Each feature's two axis angles and a per-slot **informative** flag are
 precomputed once. An axis is informative when its `sigma` is `None`
@@ -131,7 +131,7 @@ direction before they ever reach the triangulation.
 ### Step 1 — Delaunay triangulation (generic)
 
 `projective-grid/src/topological/delaunay.rs::triangulate`, driven by
-`triangulate_usable` in `topological/square_detector.rs`
+`triangulate_usable` in `topological/square_detector/solution.rs`
 
 Only the usable features are triangulated; the resulting triangle vertex
 indices are remapped back into the global feature index space so every
@@ -250,7 +250,7 @@ invariant.
 
 ### Step 6 — Generic component merge
 
-`merge_walk_components` in `topological/square_detector.rs`, calling the
+`merge_walk_components` in `topological/square_detector/mod.rs`, calling the
 shared `merge_components_local` implementation
 
 Disconnected quad-walk patches are aligned and merged using local position and
@@ -268,7 +268,7 @@ recall, a duplicate is a wrong label no consumer can recover from.
 ### Step 7a — Public validation + projective fit
 
 `build_component_solution` and `run_fit_with_residual_drop` in
-`topological/square_detector.rs`, calling the shared validation and fit kernels
+`topological/square_detector/solution.rs`, calling the shared validation and fit kernels
 
 For each component the shared post-grow validation runs row/column line
 collinearity and per-corner local-homography checks; its optional edge-shape
@@ -320,7 +320,7 @@ axis slots before applying their own final geometry gate.
 
 ### Step 8 — Orchestration (generic)
 
-`detect_square_oriented2_all` in `topological/square_detector.rs`, reached
+`detect_square_oriented2_all` in `topological/square_detector/mod.rs`, reached
 through `projective_grid::detect_grid_all` on the ordinary facade branch
 
 Component solutions are sorted by labelled-corner count descending (ties

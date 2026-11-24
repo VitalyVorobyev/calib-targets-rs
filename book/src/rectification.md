@@ -24,8 +24,8 @@ use calib_targets::LabeledCorner;
 
 # fn main() -> Result<(), Box<dyn std::error::Error>> {
 let img = image::open("testdata/mid.png")?.to_luma8();
-let det = detect_chessboard(&img, &default_chess_config(), &ChessboardParams::default())?;
 let src = gray_view(&img);
+let det = detect_chessboard(&src, &default_chess_config(), &ChessboardParams::default())?;
 
 // Global: 60 px per square, half a square of margin around the corner grid.
 let global = rectify_from_chessboard_result(&src, &det, 60.0, 0.5)?;

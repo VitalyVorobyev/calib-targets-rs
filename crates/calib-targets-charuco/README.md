@@ -50,7 +50,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with_marker_layout(MarkerLayout::OpenCvCharuco);
     let params = CharucoParams::for_board(board);
 
-    let result = detect::detect_charuco(&img, &params)?;
+    let result = detect::detect_charuco(&detect::gray_view(&img), &params)?;
     println!("detected {} corners", result.corners.len());
     Ok(())
 }

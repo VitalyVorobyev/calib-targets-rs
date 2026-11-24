@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = image::open("puzzleboard.png")?.to_luma8();
     let spec = PuzzleBoardSpec::new(12, 12, 1.0)?;
     let params = PuzzleBoardParams::for_board(spec);
-    let result = detect::detect_puzzleboard(&img, &params)?;
+    let result = detect::detect_puzzleboard(&detect::gray_view(&img), &params)?;
     println!("{} corners with absolute IDs", result.corners.len());
     Ok(())
 }
@@ -52,8 +52,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Inputs
 
-- **Image** — grayscale `&GrayImageView` (or `image::GrayImage` via the
-  facade).
+- **Image** — grayscale `&GrayImageView` (or convert an `image::GrayImage` via
+  `detect::gray_view(&img)` with feature `image`).
 - **Corners** — ChESS X-junction corners (the facade runs these for you).
 - [`PuzzleBoardSpec`] — board definition: `rows` × `cols` of squares,
   physical `cell_size`, and the top-left origin inside the master pattern.

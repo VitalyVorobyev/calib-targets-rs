@@ -16,7 +16,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Use the built-in three-config sweep: default, tighter, looser.
     let configs = ChessboardParams::sweep_default();
 
-    let result = detect::detect_chessboard_best(&img, &detect::default_chess_config(), &configs);
+    let result = detect::detect_chessboard_best(
+        &detect::gray_view(&img),
+        &detect::default_chess_config(),
+        &configs,
+    );
     match result {
         Ok(found) => println!("detected {} corners", found.corners.len()),
         Err(err) => println!("no board detected with any config: {err}"),

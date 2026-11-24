@@ -632,6 +632,73 @@ fn puzzleboard_schema_rejects_invalid_documents() {
     assert!(PuzzleBoardSpec::new(10, 10, 0.0).is_err());
 }
 
+#[test]
+fn puzzlepole_params_schema_accepts_defaults_and_rejects_invalid() {
+    use calib_targets_puzzleboard::{PuzzleBoardAdvancedTuning, PuzzlePoleParams, PuzzlePoleSpec};
+
+    let base_params = PuzzlePoleParams::for_pole(PuzzlePoleSpec::new(24, 12, 20.0).unwrap());
+    let base = serde_json::to_value(&base_params).unwrap();
+    assert!(validator("puzzlepole_params.json").is_valid(&base));
+
+    let mut with_adv_params = base_params;
+    with_adv_params.decode = with_adv_params
+        .decode
+        .with_advanced(PuzzleBoardAdvancedTuning::default());
+    let with_adv = serde_json::to_value(&with_adv_params).unwrap();
+    assert!(validator("puzzlepole_params.json").is_valid(&with_adv));
+
+    let with = |f: &dyn Fn(&mut Value)| {
+        let mut doc = base.clone();
+        f(&mut doc);
+        doc
+    };
+    for (what, doc) in [
+        (
+            "circumference below 4",
+            with(&|d| d["pole"]["circumference_squares"] = json!(3)),
+        ),
+        (
+            "circumference above 501",
+            with(&|d| d["pole"]["circumference_squares"] = json!(502)),
+        ),
+        (
+            "axial_squares below 4",
+            with(&|d| d["pole"]["axial_squares"] = json!(3)),
+        ),
+        (
+            "axial_squares above 500",
+            with(&|d| d["pole"]["axial_squares"] = json!(501)),
+        ),
+        (
+            "zero cell_size_mm",
+            with(&|d| d["pole"]["cell_size_mm"] = json!(0.0)),
+        ),
+        (
+            "min_circumference_span below 4",
+            with(&|d| d["decode"]["min_circumference_span"] = json!(3)),
+        ),
+        (
+            "min_axial_span below 5",
+            with(&|d| d["decode"]["min_axial_span"] = json!(4)),
+        ),
+        (
+            "BER above 1",
+            with(&|d| d["decode"]["max_bit_error_rate"] = json!(1.5)),
+        ),
+        (
+            "zero sample_radius_rel",
+            with(&|d| d["decode"]["sample_radius_rel"] = json!(0.0)),
+        ),
+        (
+            "unknown decode key",
+            with(&|d| d["decode"]["bogus"] = json!(1)),
+        ),
+        ("unknown key", with(&|d| d["bogus"] = json!(1))),
+    ] {
+        assert_rejected("puzzlepole_params.json", what, &doc);
+    }
+}
+
 // ── PrintableTargetDocument ──────────────────────────────────────────────────
 
 fn printable_examples() -> Vec<(&'static str, PrintableTargetDocument)> {

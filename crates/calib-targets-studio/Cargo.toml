@@ -9,7 +9,7 @@ description = "Local web GUI for exploring calibration datasets and detector con
 
 [dependencies]
 axum = { workspace = true }
-calib-targets = { workspace = true, features = ["tracing", "diagnostics"] }
+calib-targets = { workspace = true, features = ["image", "tracing", "diagnostics"] }
 calib-targets-bench = { path = "../calib-targets-bench" }
 calib-targets-chessboard = { workspace = true, features = ["tracing", "diagnostics"] }
 clap = { workspace = true, features = ["derive"] }
@@ -20,7 +20,7 @@ serde_json = { workspace = true }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "signal", "net"] }
 tower-http = { workspace = true, features = ["fs", "cors"] }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["fmt", "env-filter"] }
 
 [lints]
 workspace = true

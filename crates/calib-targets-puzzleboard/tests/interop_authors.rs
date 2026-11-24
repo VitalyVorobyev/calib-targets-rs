@@ -162,7 +162,7 @@ fn run_one_image(index: usize, dir: &Path) -> bool {
     let board = PuzzleBoardSpec::new(20, 20, 5.0).expect("board spec");
     let sweep = PuzzleBoardParams::sweep_for_board(&board);
 
-    let result = match detect::detect_puzzleboard_best(&img, &sweep) {
+    let result = match detect::detect_puzzleboard_best(&detect::gray_view(&img), &sweep) {
         Ok(r) => r,
         Err(e) => {
             println!(
@@ -321,7 +321,7 @@ fn author_examples_1_2_3_are_declined_as_non_unique() {
             .decode()
             .expect("decode")
             .to_luma8();
-        let result = detect::detect_puzzleboard_best(&img, &sweep);
+        let result = detect::detect_puzzleboard_best(&detect::gray_view(&img), &sweep);
         assert!(
             result.is_err(),
             "example{index}: a non-unique distorted frame must be DECLINED by the \
@@ -388,8 +388,8 @@ fn diag_example0_edge_bits() {
     // detector's opt-in diagnostics channel, not the result struct — so
     // run the detector directly rather than through `detect_puzzleboard_best`.
     // Take the first sweep config that decodes.
-    let corners = detect_corners(&img, &default_chess_config());
     let view = gray_view(&img);
+    let corners = detect_corners(&view, &default_chess_config());
     let decoded = sweep.into_iter().find_map(|params| {
         let detector = PuzzleBoardDetector::new(params).ok()?;
         let (result, diag) = detector.diagnose_with_corners(&view, &corners);

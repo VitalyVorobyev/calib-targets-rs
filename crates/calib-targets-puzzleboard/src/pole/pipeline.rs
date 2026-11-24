@@ -20,7 +20,9 @@
 
 use super::code::PoleCode;
 use super::error::PuzzlePoleDetectError;
-use super::params::{required_edges_rect, required_logical_bits_rect};
+use super::params::{
+    required_edges_rect, required_logical_bits_rect, MIN_AXIAL_SPAN, MIN_CIRCUMFERENCE_SPAN,
+};
 use super::{PuzzlePoleCorner, PuzzlePoleDetection, PuzzlePoleParams, PuzzlePoleSpec};
 use crate::code_maps::{EdgeOrientation, PuzzleBoardObservedEdge};
 use crate::detector::consensus::EdgeConsensus;
@@ -28,7 +30,12 @@ use crate::detector::decode::{
     decode_fixed_hard, decode_fixed_soft, match_stats_with_geometry, BoardRect, CodeGeometry,
 };
 use crate::detector::edge_sampling::sample_all_edges;
+#[cfg(feature = "diagnostics")]
+use crate::detector::pipeline::PuzzleDiagCollector;
+use crate::detector::pipeline::{DecodeDiagSummary, NoPuzzleDiag, PuzzleDiagSink};
 use crate::detector::{PuzzleBoardDecodeInfo, PuzzleBoardScoringMode};
+#[cfg(feature = "diagnostics")]
+use crate::diagnostics::PuzzleBoardDiagnostics;
 use calib_targets_chessboard::{
     detect_corner_frame, ChessCorner, ChessboardCorner, ChessboardDetector,
 };
@@ -52,6 +59,17 @@ impl PuzzlePoleDetector {
             params.pole.cell_size_mm,
         )?;
         let chessboard = ChessboardDetector::new(params.chessboard.clone())?;
+        let window = &params.decode;
+        if window.min_circumference_span < MIN_CIRCUMFERENCE_SPAN
+            || window.min_axial_span < MIN_AXIAL_SPAN
+        {
+            return Err(PuzzlePoleDetectError::WindowBelowFloor {
+                circumference: window.min_circumference_span,
+                axial: window.min_axial_span,
+                min_circumference: MIN_CIRCUMFERENCE_SPAN,
+                min_axial: MIN_AXIAL_SPAN,
+            });
+        }
         let code = PoleCode::new(spec.period());
         Ok(Self {
             params,
@@ -97,6 +115,52 @@ impl PuzzlePoleDetector {
         image: &GrayImageView<'_>,
         corners: &[ChessCorner],
     ) -> Result<PuzzlePoleDetection, PuzzlePoleDetectError> {
+        self.detect_inner(image, corners, &mut NoPuzzleDiag)
+    }
+
+    /// [`Self::detect`] + per-call decode diagnostics.
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnose(
+        &self,
+        image: &GrayImageView<'_>,
+    ) -> (
+        Result<PuzzlePoleDetection, PuzzlePoleDetectError>,
+        PuzzleBoardDiagnostics,
+    ) {
+        let frame = detect_corner_frame(image, &self.params.chess);
+        let (mut result, diagnostics) = self.diagnose_with_corners(image, &frame.corners);
+        if let Ok(result) = &mut result {
+            result.quality = result.quality.with_noise_sigma(frame.noise_sigma);
+        }
+        (result, diagnostics)
+    }
+
+    /// Detect a pole from a pre-detected corner cloud and return per-call
+    /// decode diagnostics (sampled edge bits and winner-vs-runner-up evidence).
+    ///
+    /// Available only with the `diagnostics` feature enabled.
+    #[cfg(feature = "diagnostics")]
+    pub fn diagnose_with_corners(
+        &self,
+        image: &GrayImageView<'_>,
+        corners: &[ChessCorner],
+    ) -> (
+        Result<PuzzlePoleDetection, PuzzlePoleDetectError>,
+        PuzzleBoardDiagnostics,
+    ) {
+        let mut collector = PuzzleDiagCollector::default();
+        let result = self.detect_inner(image, corners, &mut collector);
+        (result, collector.into_diagnostics())
+    }
+
+    fn detect_inner<S: PuzzleDiagSink>(
+        &self,
+        image: &GrayImageView<'_>,
+        corners: &[ChessCorner],
+        sink: &mut S,
+    ) -> Result<PuzzlePoleDetection, PuzzlePoleDetectError> {
         let components = self.chessboard.detect_all(corners);
         if components.is_empty() {
             return Err(PuzzlePoleDetectError::ChessboardNotDetected);
@@ -110,11 +174,12 @@ impl PuzzlePoleDetector {
                 .iter()
                 .map(ChessboardCorner::to_labeled)
                 .collect();
-            match self.decode_component(image, &labelled) {
-                Ok(found) => {
+            match self.decode_component(image, &labelled, sink) {
+                Ok((found, observed, diag_summary)) => {
                     let better = best
                         .as_ref()
                         .is_none_or(|b| found.corners.len() > b.corners.len());
+                    sink.record_decoded_component(better, &observed, diag_summary);
                     if better {
                         best = Some(found);
                     }
@@ -129,11 +194,19 @@ impl PuzzlePoleDetector {
     }
 
     /// Decode one grid component.
-    fn decode_component(
+    fn decode_component<S: PuzzleDiagSink>(
         &self,
         image: &GrayImageView<'_>,
         labelled: &[LabeledCorner],
-    ) -> Result<PuzzlePoleDetection, PuzzlePoleDetectError> {
+        sink: &mut S,
+    ) -> Result<
+        (
+            PuzzlePoleDetection,
+            Vec<PuzzleBoardObservedEdge>,
+            DecodeDiagSummary,
+        ),
+        PuzzlePoleDetectError,
+    > {
         let cfg = &self.params.decode;
         let spec = &self.params.pole;
         let inliers: Vec<usize> = (0..labelled.len()).collect();
@@ -143,6 +216,7 @@ impl PuzzlePoleDetector {
         // cheap rejection; the real check is the per-axis one after the decode.
         let min_edges = required_edges_rect(cfg.min_circumference_span, cfg.min_axial_span);
         if observed.len() < min_edges {
+            sink.record_failed_edges(&observed);
             return Err(PuzzlePoleDetectError::NotEnoughEdges {
                 observed: observed.len(),
                 needed: min_edges,
@@ -154,6 +228,7 @@ impl PuzzlePoleDetector {
             .filter(|e| e.confidence >= cfg.min_bit_confidence)
             .collect();
         if filtered.len() < min_edges {
+            sink.record_failed_edges(&observed);
             return Err(PuzzlePoleDetectError::NotEnoughEdges {
                 observed: filtered.len(),
                 needed: min_edges,
@@ -169,6 +244,7 @@ impl PuzzlePoleDetector {
         let needed_bits =
             required_logical_bits_rect(cfg.min_circumference_span, cfg.min_axial_span);
         if logical.len() < needed_bits {
+            sink.record_failed_edges(&observed);
             return Err(PuzzlePoleDetectError::NotEnoughLogicalBits {
                 determined: logical.len(),
                 needed: needed_bits,
@@ -202,7 +278,10 @@ impl PuzzlePoleDetector {
                 cfg.max_bit_error_rate,
             ),
         };
-        let decoded = decoded.ok_or(PuzzlePoleDetectError::DecodeFailed)?;
+        let Some(decoded) = decoded else {
+            sink.record_failed_edges(&observed);
+            return Err(PuzzlePoleDetectError::DecodeFailed);
+        };
 
         // Map each labelled corner onto the pole. The decode has fixed which
         // local axis is which, so from here the indices are unambiguous.
@@ -236,6 +315,7 @@ impl PuzzlePoleDetector {
         let mut seen: Vec<(i32, i32)> = out.iter().map(|c| (c.grid.u, c.grid.v)).collect();
         seen.sort_unstable();
         if let Some(pair) = seen.windows(2).find(|w| w[0] == w[1]) {
+            sink.record_failed_edges(&observed);
             return Err(PuzzlePoleDetectError::InconsistentPosition {
                 axial: pair[0].0 as u32,
                 cyclic: pair[0].1 as u32,
@@ -248,6 +328,7 @@ impl PuzzlePoleDetector {
         let filtered_coords = filtered_pole_coords(&filtered, &decoded.alignment, spec, period);
         let (circumference, axial) = pole_span_coords(&filtered_coords, period);
         if circumference < cfg.min_circumference_span || axial < cfg.min_axial_span {
+            sink.record_failed_edges(&observed);
             return Err(PuzzlePoleDetectError::FragmentTooSmall {
                 circumference,
                 axial,
@@ -258,22 +339,31 @@ impl PuzzlePoleDetector {
 
         let physical_stats = match_stats_with_geometry(&filtered, &decoded.alignment, &geometry);
         let logical_stats = match_stats_with_geometry(&logical, &decoded.alignment, &geometry);
-        let info = PuzzleBoardDecodeInfo {
-            edges_observed: physical_stats.observed,
-            edges_matched: physical_stats.matched,
-            mean_confidence: physical_stats.mean_confidence,
-            bit_error_rate: physical_stats.bit_error_rate,
-            logical_bits: logical_stats.observed,
-            logical_bit_error_rate: logical_stats.bit_error_rate,
-            dot_dissent_rate: consensus.dissent_rate(),
-            master_origin_row: decoded.master_origin_row,
-            master_origin_col: decoded.master_origin_col,
+        let info = PuzzleBoardDecodeInfo::new(
+            physical_stats.observed,
+            physical_stats.matched,
+            physical_stats.mean_confidence,
+            physical_stats.bit_error_rate,
+            decoded.master_origin_row,
+            decoded.master_origin_col,
+        )
+        .with_consensus(
+            logical_stats.observed,
+            logical_stats.bit_error_rate,
+            consensus.dissent_rate(),
+        );
+        let (score_best, score_margin) = match cfg.scoring_mode {
+            PuzzleBoardScoringMode::SoftLogLikelihood => {
+                (Some(decoded.score_best), Some(decoded.score_margin))
+            }
+            PuzzleBoardScoringMode::HardWeighted => (None, None),
         };
-        Ok(PuzzlePoleDetection::new(
-            out,
-            decoded.alignment,
-            info,
-            *spec,
+        let summary =
+            DecodeDiagSummary::from_decode(score_best, score_margin, &decoded, cfg.scoring_mode);
+        Ok((
+            PuzzlePoleDetection::new(out, decoded.alignment, info, *spec),
+            observed,
+            summary,
         ))
     }
 }
@@ -359,6 +449,27 @@ mod tests {
 
     fn corner_at(spec: &PuzzlePoleSpec, axial: u32, cyclic: u32) -> PuzzlePoleCorner {
         PuzzlePoleCorner::new(spec, Point2::new(0.0, 0.0), axial, cyclic, 1.0)
+    }
+
+    #[test]
+    fn a_decode_window_below_the_uniqueness_floor_is_refused() {
+        let mut params = PuzzlePoleParams::for_pole(spec());
+        assert!(PuzzlePoleDetector::new(params.clone()).is_ok());
+        params.decode.min_axial_span = MIN_AXIAL_SPAN - 1;
+        let Err(err) = PuzzlePoleDetector::new(params.clone()) else {
+            panic!("an axial span below the floor must be refused");
+        };
+        assert!(matches!(
+            err,
+            PuzzlePoleDetectError::WindowBelowFloor { .. }
+        ));
+        assert!(!err.is_not_found());
+        params.decode.min_axial_span = MIN_AXIAL_SPAN;
+        params.decode.min_circumference_span = MIN_CIRCUMFERENCE_SPAN - 1;
+        assert!(matches!(
+            PuzzlePoleDetector::new(params),
+            Err(PuzzlePoleDetectError::WindowBelowFloor { .. })
+        ));
     }
 
     #[test]

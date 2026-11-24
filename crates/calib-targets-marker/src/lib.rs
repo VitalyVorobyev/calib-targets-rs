@@ -53,16 +53,8 @@ mod types;
 
 mod detector;
 
-// Opt-in introspection surface, gated behind the `diagnostics` feature (default
-// off), mirroring `calib-targets-chessboard` / `-charuco` / `-puzzleboard`.
-// The diagnostics types are always compiled (the detector captures them
-// internally) but only reach the public surface — the `diagnostics` module,
-// the type re-export, and `MarkerBoardDetector::diagnose` /
-// `diagnose_with_corners` — when the feature is enabled.
 #[cfg(feature = "diagnostics")]
 pub mod diagnostics;
-#[cfg(not(feature = "diagnostics"))]
-pub(crate) mod diagnostics;
 
 pub use circle_score::{CircleCandidate, CirclePolarity, CircleScoreParams};
 pub use coords::{CellCoords, CellOffset};

@@ -225,7 +225,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let params = CharucoParams::for_board(board);
 
-    let result = detect::detect_charuco(&img, &params)?;
+    let result = detect::detect_charuco(&detect::gray_view(&img), &params)?;
     println!(
         "corners: {}, markers: {}",
         result.corners.len(),

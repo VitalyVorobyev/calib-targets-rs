@@ -46,6 +46,7 @@ use calib_targets::core::GrayImageView;
 use calib_targets::detect::DetectorConfig;
 use calib_targets::marker::MarkerBoardDetector;
 use calib_targets::puzzleboard::PuzzleBoardDetector;
+use std::borrow::Cow;
 use std::ffi::c_char;
 use std::panic::{catch_unwind, AssertUnwindSafe};
 use std::ptr;
@@ -78,14 +79,14 @@ pub struct ct_puzzleboard_detector_t {
 
 // ─── Image preparation ───────────────────────────────────────────────────────
 
-struct PreparedGrayImage {
+struct PreparedGrayImage<'a> {
     width_usize: usize,
     height_usize: usize,
-    pixels: Vec<u8>,
+    pixels: Cow<'a, [u8]>,
 }
 
-impl PreparedGrayImage {
-    fn from_descriptor(image: &ct_gray_image_u8_t) -> FfiResult<Self> {
+impl<'a> PreparedGrayImage<'a> {
+    fn from_descriptor(image: &'a ct_gray_image_u8_t) -> FfiResult<Self> {
         image
             .validate()
             .map_err(|_| FfiError::invalid_argument("invalid ct_gray_image_u8_t"))?;
@@ -104,18 +105,23 @@ impl PreparedGrayImage {
         let source = unsafe {
             // SAFETY: `validate` above guarantees `data` is non-null and that
             // `stride * height` does not overflow. The caller owns the backing
-            // memory for the duration of the FFI call.
+            // memory for the duration of the FFI call (`'a`).
             slice::from_raw_parts(image.data, source_len)
         };
 
         let pixel_count = width
             .checked_mul(height)
             .ok_or_else(|| FfiError::invalid_argument("image width * height overflows usize"))?;
-        let mut pixels = Vec::with_capacity(pixel_count);
-        for row in 0..height {
-            let start = row * stride;
-            pixels.extend_from_slice(&source[start..start + width]);
-        }
+        let pixels = if stride == width {
+            Cow::Borrowed(&source[..pixel_count])
+        } else {
+            let mut packed = Vec::with_capacity(pixel_count);
+            for row in 0..height {
+                let start = row * stride;
+                packed.extend_from_slice(&source[start..start + width]);
+            }
+            Cow::Owned(packed)
+        };
 
         Ok(Self {
             width_usize: width,

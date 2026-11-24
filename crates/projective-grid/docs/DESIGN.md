@@ -97,7 +97,7 @@ experimental — see Gap 21 in `docs/algorithms/algorithmic_gaps.md`.
 
 The strategy's job is to **build components** — connected, integer-labelled
 patches of grid. Everything after that is **shared** and lattice-parameterised.
-For square lattices (`topological/square_detector.rs`):
+For square lattices (`topological/square_detector/`):
 
 ```text
 detect_grid_all(request):
@@ -162,7 +162,7 @@ src/
   detect.rs         detect_grid / detect_grid_all, DetectionParams, DetectionTuning;
                     routes (LatticeKind, Evidence) → synthesis → topological strategy
   feature/          AXIS 3: PointFeature, LocalAxis, OrientedFeature<N>, CoordinateHypothesis
-  orient.rs         AXIS 3: synthesize local axes from positions / one axis
+  orient/           AXIS 3: synthesize local axes from positions / one axis
   cluster/          double-angle axis 2-means (cluster_axes, AxisClusterCenters)
   geometry/         projective / homography estimators + quality (one DLT core)
   lattice/          AXIS 1: sealed Lattice trait + Square / Hex impls,
@@ -171,7 +171,8 @@ src/
   result.rs · error.rs · float.rs
   check/            consistency check (caller-supplied hypotheses)
   topological/      AXIS 2, the strategy
-    square_detector.rs  square orchestration (TopologicalParams) + walk-output merge
+    square_detector/    square orchestration (TopologicalParams) + walk-output merge (mod.rs);
+                        component validate / fit / triangulation helpers (solution.rs)
     delaunay.rs · classify.rs · quads.rs · filter.rs · walk.rs · axis.rs
     trace.rs            diagnostics-only traced walk
     hex.rs              hex lattice math: triangle-as-cell classify + axial walk

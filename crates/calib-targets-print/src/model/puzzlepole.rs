@@ -1,6 +1,6 @@
 //! Printable PuzzlePole target specification.
 
-use calib_targets_puzzleboard::{PuzzlePolePeriod, MASTER_COLS};
+use calib_targets_puzzleboard::{PuzzlePolePeriod, PuzzlePoleSpec, MASTER_COLS};
 use serde::{Deserialize, Serialize};
 
 use super::chessboard::validate_square_size;
@@ -118,6 +118,28 @@ impl PuzzlePoleTargetSpec {
         self
     }
 
+    /// Build a printable PuzzlePole target from a detector pole spec whose
+    /// `cell_size_mm` is already expressed in millimetres.
+    pub fn from_pole_spec_mm(pole: &PuzzlePoleSpec) -> Self {
+        Self::at_period(
+            pole.period(),
+            pole.axial_squares,
+            f64::from(pole.cell_size_mm),
+        )
+        .with_axial_start_col(pole.axial_start_col)
+    }
+
+    /// Convert to the detector [`PuzzlePoleSpec`].
+    pub fn to_pole_spec(&self) -> Result<PuzzlePoleSpec, PrintableTargetError> {
+        Ok(PuzzlePoleSpec::with_placement(
+            self.circumference_squares,
+            self.start_row,
+            self.axial_start_col,
+            self.axial_squares,
+            self.square_size_mm as f32,
+        )?)
+    }
+
     /// Pieces printed around the circumference: two more than wraps, leaving
     /// one piece of overlap after trimming mid-piece at both ends.
     #[must_use]
@@ -174,4 +196,26 @@ pub(crate) fn validate_puzzlepole_spec(
         return Err(PrintableTargetError::InvalidPuzzleBoardDotDiameter);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pole_spec_bridge_round_trips_and_rejects_invalid() {
+        let period = PuzzlePolePeriod::canonical(12).expect("canonical period");
+        let spec =
+            PuzzlePoleSpec::with_placement(12, period.start_row, 25, 8, 15.0).expect("valid pole");
+        let printable = PuzzlePoleTargetSpec::from_pole_spec_mm(&spec);
+        let back = printable.to_pole_spec().expect("round trip");
+        assert_eq!(back, spec);
+
+        let mut invalid = printable.clone();
+        invalid.axial_squares = 3;
+        assert!(matches!(
+            invalid.to_pole_spec(),
+            Err(PrintableTargetError::PuzzlePoleSpec(_))
+        ));
+    }
 }

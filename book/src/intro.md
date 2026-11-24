@@ -47,7 +47,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = ImageReader::open("board.png")?.decode()?.to_luma8();
     let params = ChessboardParams::default();
 
-    let result = detect::detect_chessboard(&img, &detect::default_chess_config(), &params);
+    let result = detect::detect_chessboard(
+        &detect::gray_view(&img),
+        &detect::default_chess_config(),
+        &params,
+    );
     println!("detected: {}", result.is_ok());
     Ok(())
 }

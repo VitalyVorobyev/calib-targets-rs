@@ -1,17 +1,14 @@
-//! `init <target>` subcommands — write a printable spec JSON file.
-
-use calib_targets_aruco::builtins::builtin_dictionary;
-use calib_targets_print::{
-    CharucoTargetSpec, ChessboardTargetSpec, MarkerBoardTargetSpec, PrintableTargetDocument,
-    PuzzleBoardTargetSpec, PuzzlePoleTargetSpec, TargetSpec,
-};
+use calib_targets_print::PrintableTargetDocument;
 use clap::{Args, Subcommand};
 use std::{fs, path::PathBuf};
 
-use super::args::{
-    build_page_spec, build_render_options, parse_circles, MarkerLayoutArg, PageArgs, RenderArgs,
-};
+use super::args::{build_page_spec, build_render_options, PageArgs, RenderArgs};
 use super::error::CliError;
+use super::target_args::{
+    charuco_from_args, chessboard_from_args, marker_board_from_args, puzzleboard_from_args,
+    puzzlepole_from_args, CharucoGeometryArgs, ChessboardGeometryArgs, MarkerBoardGeometryArgs,
+    PuzzleboardGeometryArgs, PuzzlepoleGeometryArgs,
+};
 
 #[derive(Subcommand, Debug)]
 pub enum InitCommand {
@@ -32,20 +29,8 @@ pub struct ChessboardInitArgs {
     /// Path to the spec JSON file to write.
     #[arg(long)]
     pub out: PathBuf,
-    /// Number of inner chessboard corners vertically.
-    #[arg(long)]
-    pub inner_rows: u32,
-    /// Number of inner chessboard corners horizontally.
-    #[arg(long)]
-    pub inner_cols: u32,
-    /// Square side length in millimeters.
-    #[arg(long)]
-    pub square_size_mm: f64,
-    /// White inset square drawn centred inside every black square, as a
-    /// fraction of the square side, in `[0, 1)`. Omitted or `0` means no
-    /// inset.
-    #[arg(long)]
-    pub inner_square_rel: Option<f64>,
+    #[command(flatten)]
+    pub geometry: ChessboardGeometryArgs,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -57,32 +42,8 @@ pub struct CharucoInitArgs {
     /// Path to the spec JSON file to write.
     #[arg(long)]
     pub out: PathBuf,
-    /// Number of board squares vertically.
-    #[arg(long)]
-    pub rows: u32,
-    /// Number of board squares horizontally.
-    #[arg(long)]
-    pub cols: u32,
-    /// Square side length in millimeters.
-    #[arg(long)]
-    pub square_size_mm: f64,
-    /// Marker side length relative to square size.
-    #[arg(long)]
-    pub marker_size_rel: f64,
-    /// Built-in dictionary name. Use `list-dictionaries` to discover valid values.
-    #[arg(long)]
-    pub dictionary: String,
-    /// Marker placement scheme.
-    #[arg(long, value_enum, default_value_t = MarkerLayoutArg::OpencvCharuco)]
-    pub marker_layout: MarkerLayoutArg,
-    /// Marker border width in bit cells.
-    #[arg(long, default_value_t = 1)]
-    pub border_bits: usize,
-    /// White inset square drawn centred inside every plain black checker
-    /// square (never inside an ArUco marker's bit cells), as a fraction of
-    /// the square side, in `[0, 1)`. Omitted or `0` means no inset.
-    #[arg(long)]
-    pub inner_square_rel: Option<f64>,
+    #[command(flatten)]
+    pub geometry: CharucoGeometryArgs,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -94,52 +55,21 @@ pub struct PuzzleboardInitArgs {
     /// Path to the spec JSON file to write.
     #[arg(long)]
     pub out: PathBuf,
-    /// Number of board squares vertically (4..=501).
-    #[arg(long)]
-    pub rows: u32,
-    /// Number of board squares horizontally (4..=501).
-    #[arg(long)]
-    pub cols: u32,
-    /// Square side length in millimeters.
-    #[arg(long)]
-    pub square_size_mm: f64,
-    /// Row anchor in the 501×501 master pattern.
-    #[arg(long, default_value_t = 0)]
-    pub origin_row: u32,
-    /// Column anchor in the 501×501 master pattern.
-    #[arg(long, default_value_t = 0)]
-    pub origin_col: u32,
-    /// Dot diameter relative to square size (defaults to 1/3).
-    #[arg(long)]
-    pub dot_diameter_rel: Option<f64>,
+    #[command(flatten)]
+    pub geometry: PuzzleboardGeometryArgs,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
     pub render: RenderArgs,
 }
 
-/// Arguments shared by the PuzzlePole `init` and `gen` subcommands.
 #[derive(Args, Debug)]
 pub struct PuzzlepoleInitArgs {
     /// Path to the spec JSON file to write.
     #[arg(long)]
     pub out: PathBuf,
-    /// Pieces around the circumference. Must be a supported period.
-    #[arg(long)]
-    pub circumference_squares: u32,
-    /// Pieces along the cylinder axis.
-    #[arg(long)]
-    pub axial_squares: u32,
-    /// Piece side length in millimeters.
-    #[arg(long)]
-    pub square_size_mm: f64,
-    /// Column anchor in the 501-column master pattern. Strips cut from
-    /// disjoint column windows are distinguishable poles.
-    #[arg(long, default_value_t = 0)]
-    pub axial_start_col: u32,
-    /// Dot diameter relative to piece size (defaults to 1/3).
-    #[arg(long)]
-    pub dot_diameter_rel: Option<f64>,
+    #[command(flatten)]
+    pub geometry: PuzzlepoleGeometryArgs,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -151,26 +81,8 @@ pub struct MarkerBoardInitArgs {
     /// Path to the spec JSON file to write.
     #[arg(long)]
     pub out: PathBuf,
-    /// Number of inner chessboard corners vertically.
-    #[arg(long)]
-    pub inner_rows: u32,
-    /// Number of inner chessboard corners horizontally.
-    #[arg(long)]
-    pub inner_cols: u32,
-    /// Square side length in millimeters.
-    #[arg(long)]
-    pub square_size_mm: f64,
-    /// Circle diameter relative to square size.
-    #[arg(long, default_value_t = 0.5)]
-    pub circle_diameter_rel: f64,
-    /// Marker circles as `i,j,polarity`; repeat exactly three times when overriding defaults.
-    #[arg(long = "circle", value_name = "I,J,POLARITY")]
-    pub circles: Vec<String>,
-    /// White inset square drawn centred inside every black checkerboard
-    /// square, as a fraction of the square side, in `[0, 1)`. Omitted or
-    /// `0` means no inset.
-    #[arg(long)]
-    pub inner_square_rel: Option<f64>,
+    #[command(flatten)]
+    pub geometry: MarkerBoardGeometryArgs,
     #[command(flatten)]
     pub page: PageArgs,
     #[command(flatten)]
@@ -178,100 +90,42 @@ pub struct MarkerBoardInitArgs {
 }
 
 pub fn run(cmd: InitCommand) -> Result<(), CliError> {
-    match cmd {
-        InitCommand::Chessboard(args) => run_chessboard(args),
-        InitCommand::Charuco(args) => run_charuco(args),
-        InitCommand::Puzzleboard(args) => run_puzzleboard(args),
-        InitCommand::Puzzlepole(args) => run_puzzlepole(args),
-        InitCommand::MarkerBoard(args) => run_marker_board(args),
-    }
-}
-
-fn run_chessboard(args: ChessboardInitArgs) -> Result<(), CliError> {
-    let mut target =
-        ChessboardTargetSpec::new(args.inner_rows, args.inner_cols, args.square_size_mm);
-    if let Some(rel) = args.inner_square_rel {
-        target = target.with_inner_square_rel(rel);
-    }
-    let doc = PrintableTargetDocument::new(TargetSpec::Chessboard(target))
-        .with_page(build_page_spec(&args.page)?)
-        .with_render(build_render_options(&args.render));
-    write_document_json(&doc, args.out)
-}
-
-fn run_charuco(args: CharucoInitArgs) -> Result<(), CliError> {
-    let dictionary = builtin_dictionary(&args.dictionary)
-        .ok_or_else(|| CliError::UnknownDictionary(args.dictionary.clone()))?;
-    let marker_layout = match args.marker_layout {
-        MarkerLayoutArg::OpencvCharuco => calib_targets_charuco::MarkerLayout::OpenCvCharuco,
+    let (mut doc, out, page, render) = match cmd {
+        InitCommand::Chessboard(args) => (
+            chessboard_from_args(args.geometry),
+            args.out,
+            args.page,
+            args.render,
+        ),
+        InitCommand::Charuco(args) => (
+            charuco_from_args(args.geometry)?,
+            args.out,
+            args.page,
+            args.render,
+        ),
+        InitCommand::Puzzleboard(args) => (
+            puzzleboard_from_args(args.geometry),
+            args.out,
+            args.page,
+            args.render,
+        ),
+        InitCommand::Puzzlepole(args) => (
+            puzzlepole_from_args(args.geometry)?,
+            args.out,
+            args.page,
+            args.render,
+        ),
+        InitCommand::MarkerBoard(args) => (
+            marker_board_from_args(args.geometry)?,
+            args.out,
+            args.page,
+            args.render,
+        ),
     };
-    let mut target = CharucoTargetSpec::new(
-        args.rows,
-        args.cols,
-        args.square_size_mm,
-        args.marker_size_rel,
-        dictionary,
-    )
-    .with_marker_layout(marker_layout)
-    .with_border_bits(args.border_bits);
-    if let Some(rel) = args.inner_square_rel {
-        target = target.with_inner_square_rel(rel);
-    }
-    let doc = PrintableTargetDocument::new(TargetSpec::Charuco(target))
-        .with_page(build_page_spec(&args.page)?)
-        .with_render(build_render_options(&args.render));
-    write_document_json(&doc, args.out)
-}
-
-fn run_puzzleboard(args: PuzzleboardInitArgs) -> Result<(), CliError> {
-    let target = PuzzleBoardTargetSpec::new(args.rows, args.cols, args.square_size_mm)
-        .with_origin(args.origin_row, args.origin_col)
-        .with_dot_diameter_rel(args.dot_diameter_rel.unwrap_or(1.0 / 3.0));
-    let doc = PrintableTargetDocument::new(TargetSpec::PuzzleBoard(target))
-        .with_page(build_page_spec(&args.page)?)
-        .with_render(build_render_options(&args.render));
-    write_document_json(&doc, args.out)
-}
-
-fn run_puzzlepole(args: PuzzlepoleInitArgs) -> Result<(), CliError> {
-    let mut target = PuzzlePoleTargetSpec::new(
-        args.circumference_squares,
-        args.axial_squares,
-        args.square_size_mm,
-    )
-    .ok_or(CliError::UnsupportedPuzzlePolePeriod {
-        circumference_squares: args.circumference_squares,
-    })?
-    .with_axial_start_col(args.axial_start_col);
-    if let Some(dot) = args.dot_diameter_rel {
-        target = target.with_dot_diameter_rel(dot);
-    }
-    let doc = PrintableTargetDocument::new(TargetSpec::PuzzlePole(target))
-        .with_page(build_page_spec(&args.page)?)
-        .with_render(build_render_options(&args.render));
-    write_document_json(&doc, args.out)
-}
-
-fn run_marker_board(args: MarkerBoardInitArgs) -> Result<(), CliError> {
-    let circles = if args.circles.is_empty() {
-        MarkerBoardTargetSpec::default_circles(args.inner_rows, args.inner_cols)
-    } else {
-        parse_circles(&args.circles)?
-    };
-    let mut target = MarkerBoardTargetSpec::new(
-        args.inner_rows,
-        args.inner_cols,
-        args.square_size_mm,
-        circles,
-    )
-    .with_circle_diameter_rel(args.circle_diameter_rel);
-    if let Some(rel) = args.inner_square_rel {
-        target = target.with_inner_square_rel(rel);
-    }
-    let doc = PrintableTargetDocument::new(TargetSpec::MarkerBoard(target))
-        .with_page(build_page_spec(&args.page)?)
-        .with_render(build_render_options(&args.render));
-    write_document_json(&doc, args.out)
+    doc = doc
+        .with_page(build_page_spec(&page)?)
+        .with_render(build_render_options(&render));
+    write_document_json(&doc, out)
 }
 
 fn write_document_json(doc: &PrintableTargetDocument, out: PathBuf) -> Result<(), CliError> {

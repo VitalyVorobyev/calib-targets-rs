@@ -177,21 +177,9 @@ mod tests {
     }
 
     /// A decode summary standing in for a real one. These tests are about the
-    /// corner algebra, not the decode, so the numbers are irrelevant -- but
-    /// the type is `#[non_exhaustive]` with no `Default`, deliberately, so a
-    /// stand-in has to be written out rather than conjured.
+    /// corner algebra, not the decode, so the numbers are irrelevant.
     fn stub_decode() -> PuzzleBoardDecodeInfo {
-        PuzzleBoardDecodeInfo {
-            edges_observed: 0,
-            edges_matched: 0,
-            mean_confidence: 0.0,
-            bit_error_rate: 0.0,
-            logical_bits: 0,
-            logical_bit_error_rate: 0.0,
-            dot_dissent_rate: 0.0,
-            master_origin_row: 0,
-            master_origin_col: 0,
-        }
+        PuzzleBoardDecodeInfo::new(0, 0, 0.0, 0.0, 0, 0)
     }
 
     #[test]

@@ -35,7 +35,6 @@ resolver = "3"
 [dependencies]
 calib-targets = {{ path = '{crate_dir}' }}
 chess-corners = "2.0"
-image = "0.25"
 "#
         ),
     );
@@ -70,7 +69,8 @@ fn main() {
         });
     assert!(matches!(cfg.strategy, DetectionStrategy::Chess(_)));
 
-    let img = image::GrayImage::new(16, 16);
+    let pixels = vec![0u8; 16 * 16];
+    let img = detect::gray_view_from_slice(16, 16, &pixels).expect("valid gray view");
     let _ = detect::detect_corners(&img, &cfg);
 }
 "#,

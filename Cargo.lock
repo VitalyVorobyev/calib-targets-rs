@@ -409,7 +409,6 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tracing",
- "tracing-log",
  "tracing-subscriber",
 ]
 
@@ -584,7 +583,6 @@ version = "0.17.0"
 dependencies = [
  "calib-targets",
  "chess-corners",
- "image",
  "numpy",
  "pyo3",
  "pyo3-build-config",

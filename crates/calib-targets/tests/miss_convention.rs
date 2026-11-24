@@ -6,12 +6,23 @@
 use calib_targets::aruco::builtins::builtin_dictionary;
 use calib_targets::charuco::{CharucoBoardSpec, CharucoParams};
 use calib_targets::chessboard::ChessboardParams;
+use calib_targets::core::GrayImageView;
 use calib_targets::detect::{self, DetectError};
 use calib_targets::puzzleboard::{PuzzleBoardParams, PuzzleBoardSpec};
-use image::GrayImage;
 
-fn blank() -> GrayImage {
-    GrayImage::from_pixel(320, 240, image::Luma([128]))
+const BLANK_W: usize = 320;
+const BLANK_H: usize = 240;
+
+fn blank_pixels() -> Vec<u8> {
+    vec![128; BLANK_W * BLANK_H]
+}
+
+fn blank_view(pixels: &[u8]) -> GrayImageView<'_> {
+    GrayImageView {
+        width: BLANK_W,
+        height: BLANK_H,
+        data: pixels,
+    }
 }
 
 fn charuco_board() -> CharucoBoardSpec {
@@ -21,7 +32,8 @@ fn charuco_board() -> CharucoBoardSpec {
 
 #[test]
 fn a_blank_image_is_a_miss_for_every_detector() {
-    let img = blank();
+    let pixels = blank_pixels();
+    let img = blank_view(&pixels);
     let chess = detect::default_chess_config();
     let errors: Vec<DetectError> = vec![
         detect::detect_chessboard(&img, &chess, &ChessboardParams::default()).unwrap_err(),
@@ -40,13 +52,14 @@ fn a_blank_image_is_a_miss_for_every_detector() {
 #[test]
 fn an_invalid_board_spec_is_a_misuse() {
     // A marker needs a black ring around its payload.
+    let pixels = blank_pixels();
     let params = CharucoParams::for_board(charuco_board().with_border_bits(0));
-    let err = detect::detect_charuco(&blank(), &params).unwrap_err();
+    let err = detect::detect_charuco(&blank_view(&pixels), &params).unwrap_err();
     assert!(!err.is_not_found(), "{err} should be a misuse");
 }
 
 #[test]
 fn a_malformed_image_buffer_is_a_misuse() {
-    let err = detect::gray_image_from_slice(4, 4, &[0; 3]).unwrap_err();
+    let err = detect::gray_view_from_slice(4, 4, &[0; 3]).unwrap_err();
     assert!(!err.is_not_found(), "{err} should be a misuse");
 }

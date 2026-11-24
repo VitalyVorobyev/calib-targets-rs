@@ -92,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let img = image::open("testdata/puzzleboard_small.png")?.to_luma8();
     let spec = PuzzleBoardSpec::new(10, 10, 12.0)?;
     let params = PuzzleBoardParams::for_board(spec);
-    let result = detect::detect_puzzleboard(&img, &params)?;
+    let result = detect::detect_puzzleboard(&detect::gray_view(&img), &params)?;
     println!("{} corners", result.corners.len());
     Ok(())
 }
@@ -106,7 +106,7 @@ For threshold-sensitive images, use:
 # fn run(img: &image::GrayImage) -> Result<(), Box<dyn std::error::Error>> {
 let spec = PuzzleBoardSpec::new(10, 10, 12.0)?;
 let configs = PuzzleBoardParams::sweep_for_board(&spec);
-let result = detect::detect_puzzleboard_best(img, &configs)?;
+let result = detect::detect_puzzleboard_best(&detect::gray_view(img), &configs)?;
 # let _ = result;
 # Ok(()) }
 ```
@@ -130,7 +130,7 @@ outside the printed board:
 let spec = PuzzleBoardSpec::new(50, 50, 1.0)?;
 let mut params = PuzzleBoardParams::for_board(spec);
 params.decode.search_mode = PuzzleBoardSearchMode::FixedBoard;
-let _ = detect::detect_puzzleboard(img, &params)?;
+let _ = detect::detect_puzzleboard(&detect::gray_view(img), &params)?;
 # Ok(()) }
 ```
 

@@ -33,7 +33,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
 
     let configs = PuzzlePoleParams::sweep_for_pole(&spec);
-    match detect::detect_puzzlepole_best(&img, &configs) {
+    match detect::detect_puzzlepole_best(&detect::gray_view(&img), &configs) {
         Ok(found) => {
             println!(
                 "decoded {} corners over {} configs (mean confidence {:.3})",

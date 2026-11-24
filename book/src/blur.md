@@ -12,13 +12,14 @@ use calib_targets::{blur, detect};
 use calib_targets::chessboard::ChessboardParams;
 
 let img = calib_targets::image::open("board.png").unwrap().to_luma8();
+let view = detect::gray_view(&img);
 let detection = detect::detect_chessboard(
-    &img,
+    &view,
     &detect::default_chess_config(),
     &ChessboardParams::default(),
 )
 .unwrap();
-for (corner, b) in detection.corners.iter().zip(blur::chessboard_blur(&img, &detection)) {
+for (corner, b) in detection.corners.iter().zip(blur::chessboard_blur(&view, &detection)) {
     match b {
         Ok(b) => println!(
             "{:?}: σ = {:.3} ± {:.3} px, Σ = [{:.3} {:.3}; {:.3} {:.3}] px²",

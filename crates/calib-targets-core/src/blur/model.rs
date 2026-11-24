@@ -202,25 +202,14 @@ pub(super) fn sigma_of(theta: &Vector) -> [f64; 3] {
 
 /// Eigenvalues `(λ_min, λ_max)` of a symmetric 2 × 2 `[a, b, c]`.
 pub(super) fn eig2(s: [f64; 3]) -> (f64, f64) {
-    let mean = 0.5 * (s[0] + s[2]);
-    let r = (0.5 * (s[0] - s[2])).hypot(s[1]);
-    (mean - r, mean + r)
+    crate::sym2::Sym2x2::new(s[0], s[1], s[2]).eigenvalues()
 }
 
 /// Lower Cholesky factor `(l11, l21, l22)` of `[[a, b], [b, c]]`, or `None`
 /// when it is not positive definite.
 #[inline]
 pub(super) fn cholesky2(s: [f64; 3]) -> Option<[f64; 3]> {
-    if s[0].partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-        return None;
-    }
-    let l11 = s[0].sqrt();
-    let l21 = s[1] / l11;
-    let r = s[2] - l21 * l21;
-    if r.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
-        return None;
-    }
-    Some([l11, l21, r.sqrt()])
+    crate::sym2::Sym2x2::new(s[0], s[1], s[2]).cholesky()
 }
 
 impl Model<'_> {
