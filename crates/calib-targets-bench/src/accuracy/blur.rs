@@ -26,10 +26,11 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use calib_targets::blur::{BlurDecline, CornerBlur};
+use calib_targets::blur::{BlurDecline, BoardPhotometricOptions, CornerBlur};
 use serde::{Deserialize, Serialize};
 
 use super::families::{Board, Family, FamilyRun};
+use super::metrics::score;
 use super::render::{supersample, Camera, Psf, RenderSpec, Rendered};
 use super::{Condition, Refiner, Row, BLACK, K1, QUIET_ZONE_SQUARES, SUPERSAMPLE, WHITE};
 
@@ -126,17 +127,21 @@ pub fn iso_truth_kernel(blur_px: f64) -> [f64; 3] {
     [v, 0.0, v]
 }
 
-/// The families with a blur entry point (ChArUco has none yet).
-pub const BLUR_FAMILIES: [Family; 3] =
-    [Family::Chessboard, Family::PuzzleBoard, Family::MarkerBoard];
+/// All four target families expose per-corner blur and photometric refinement.
+pub const BLUR_FAMILIES: [Family; 4] = [
+    Family::Chessboard,
+    Family::Charuco,
+    Family::PuzzleBoard,
+    Family::MarkerBoard,
+];
 
 /// The rendered Gaussian blur levels of the study, px.
 pub const BLUR_LEVELS: [f64; 6] = [0.5, 1.0, 1.5, 2.5, 4.0, 6.0];
 
-/// The blur-study condition grid over `families` (ChArUco is skipped): three
-/// cell sizes, every blur level up to `σ/cell ≈ 0.4`, rotations on and off
-/// the pixel axes, with and without perspective, both noise levels, plus
-/// radial distortion on the largest cell.
+/// The blur-study condition grid over `families`: three cell sizes, every blur
+/// level up to `σ/cell ≈ 0.4`, rotations on and off the pixel axes, with and
+/// without perspective, both noise levels, plus radial distortion on the
+/// largest cell.
 ///
 /// `quick` is the subset the integration test runs.
 pub fn blur_conditions(families: &[Family], quick: bool) -> Vec<Condition> {
@@ -152,12 +157,17 @@ pub fn blur_conditions(families: &[Family], quick: bool) -> Vec<Condition> {
                     (16.0, 8.0, 0.0, 4.0, 1.0, 0.0),
                     (32.0, 8.0, 0.0, 1.0, 1.0, K1),
                 ],
+                Family::Charuco => &[
+                    (32.0, 8.0, 0.0, 0.5, 1.0, 0.0),
+                    (32.0, 30.0, 30.0, 1.5, 4.0, 0.0),
+                    (32.0, 8.0, 0.0, 2.5, 1.0, 0.0),
+                ],
                 Family::PuzzleBoard => &[
                     (16.0, 8.0, 0.0, 0.5, 1.0, 0.0),
                     (32.0, 30.0, 30.0, 1.0, 4.0, 0.0),
                     (16.0, 8.0, 0.0, 2.5, 1.0, 0.0),
                 ],
-                _ => &[
+                Family::MarkerBoard => &[
                     (32.0, 8.0, 0.0, 0.5, 4.0, 0.0),
                     (32.0, 8.0, 0.0, 2.5, 1.0, 0.0),
                 ],
@@ -428,6 +438,8 @@ impl PsfCondition {
                 format!("gauss[{:.3},{:.3},{:.3}]", c[0], c[1], c[2])
             }
             Psf::Disk { radius } => format!("disk r{radius}"),
+            Psf::Moffat { alpha, beta } => format!("moffat a{alpha} b{beta}"),
+            Psf::Airy { first_zero_radius } => format!("airy r{first_zero_radius}"),
         };
         format!(
             "{} c{} {psf} n{}",
@@ -450,18 +462,19 @@ pub fn gaussian_covariance(major: f64, minor: f64, angle_deg: f64) -> [f64; 3] {
     ]
 }
 
-/// The PSF conditions: anisotropic Gaussians at several orientations, and
-/// defocus disks, on the chessboard and the PuzzleBoard.
+/// The PSF conditions: anisotropic Gaussians at several orientations, defocus
+/// disks, Moffat, and Airy PSFs on the chessboard and the PuzzleBoard.
 pub fn psf_conditions(quick: bool) -> Vec<PsfCondition> {
     let mut psfs: Vec<Psf> = Vec::new();
     let shapes: &[(f64, f64, f64)] = if quick {
-        &[(2.0, 1.0, 30.0)]
+        &[(2.0, 1.0, 30.0), (2.0, 0.67, 35.0)]
     } else {
         &[
             (2.0, 1.0, 0.0),
             (2.0, 1.0, 30.0),
             (2.0, 1.0, 60.0),
             (2.0, 1.0, 135.0),
+            (2.0, 0.67, 35.0),
             (1.2, 0.8, 45.0),
         ]
     };
@@ -474,6 +487,13 @@ pub fn psf_conditions(quick: bool) -> Vec<PsfCondition> {
     for &radius in radii {
         psfs.push(Psf::Disk { radius });
     }
+    psfs.push(Psf::Moffat {
+        alpha: 1.4,
+        beta: 3.5,
+    });
+    psfs.push(Psf::Airy {
+        first_zero_radius: 1.8,
+    });
     let mut out = Vec::new();
     for family in [Family::Chessboard, Family::PuzzleBoard] {
         for &psf in &psfs {
@@ -488,13 +508,19 @@ pub fn psf_conditions(quick: bool) -> Vec<PsfCondition> {
     out
 }
 
-/// One PSF condition's outcome (the default corner refiner).
+/// One PSF condition's outcome (default corner refiner and photometric refiner).
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PsfRow {
     /// The condition.
     pub condition: PsfCondition,
     /// The estimates, `None` on a miss.
     pub blur: Option<BlurScore>,
+    /// Ground-truth corner position RMSE before photometric refinement, px.
+    #[serde(default)]
+    pub baseline_rmse_px: Option<f64>,
+    /// Ground-truth corner position RMSE after photometric refinement, px.
+    #[serde(default)]
+    pub refined_rmse_px: Option<f64>,
 }
 
 /// Render and score every PSF condition on `threads` worker threads.
@@ -558,13 +584,24 @@ fn run_psf_condition(c: &PsfCondition) -> PsfRow {
     };
     let image = irradiance.expose(&spec);
     let truth = [lens[0] + BOX_VAR, lens[1], lens[2] + BOX_VAR];
-    let blur = board
+    let run = board
         .detect(&image, &|cfg| Refiner::CenterOfMass.apply(cfg))
-        .ok()
-        .and_then(|run| BlurScore::measure(&board, &image, &run, truth));
+        .ok();
+    let blur = run
+        .as_ref()
+        .and_then(|r| BlurScore::measure(&board, &image, r, truth));
+    let baseline_rmse_px = run
+        .as_ref()
+        .and_then(|r| score(r, &board.gt, &camera).rmse_px);
+    let refined_rmse_px = run.as_ref().and_then(|r| {
+        let (refined, _) = board.refine_run(&image, r, &BoardPhotometricOptions::default());
+        score(&refined, &board.gt, &camera).rmse_px
+    });
     PsfRow {
         condition: *c,
         blur,
+        baseline_rmse_px,
+        refined_rmse_px,
     }
 }
 
@@ -585,6 +622,12 @@ pub struct PsfSummary {
     pub angle_error_deg: Option<f64>,
     /// Per component, the robust spread of `(Σ̂_k − median Σ̂_k)/SE_k`.
     pub component_honesty: [Option<f64>; 3],
+    /// Ground-truth corner RMSE before photometric refinement, px.
+    #[serde(default)]
+    pub baseline_rmse_px: Option<f64>,
+    /// Ground-truth corner RMSE after photometric refinement, px.
+    #[serde(default)]
+    pub refined_rmse_px: Option<f64>,
 }
 
 /// Summaries of the PSF rows.
@@ -641,6 +684,8 @@ pub fn summarize_psf(rows: &[PsfRow]) -> Vec<PsfSummary> {
                 rel_bias,
                 angle_error_deg,
                 component_honesty,
+                baseline_rmse_px: r.baseline_rmse_px,
+                refined_rmse_px: r.refined_rmse_px,
             })
         })
         .collect()
@@ -651,14 +696,14 @@ pub fn psf_markdown(summary: &[PsfSummary]) -> String {
     let mut s = String::new();
     let _ = writeln!(
         s,
-        "## Blur under other PSFs\n\nTruth = the discrete lens kernel's covariance + I/12. Bias of σ = √(tr Σ/2) against the truth's second moment; angle error of the major axis; honesty per component (xx, xy, yy) = robust SD of (Σ̂ − median)/SE.\n\n| condition | truth Σ | median Σ̂ | coverage | σ bias | angle err ° | honesty xx / xy / yy |\n|---|---|---|---|---|---|---|"
+        "## Blur under other PSFs\n\nTruth = the discrete lens kernel's covariance + I/12. Bias of σ = √(tr Σ/2) against the truth's second moment; angle error of the major axis; honesty per component (xx, xy, yy) = robust SD of (Σ̂ − median)/SE.\n\n| condition | truth Σ | median Σ̂ | coverage | σ bias | angle err ° | honesty xx / xy / yy | rmse base → photo |\n|---|---|---|---|---|---|---|---|"
     );
     for m in summary {
         let t = m.truth_kernel;
         let k = m.median_kernel;
         let _ = writeln!(
             s,
-            "| {} | {:.3}, {:.3}, {:.3} | {}, {}, {} | {} | {} | {} | {} / {} / {} |",
+            "| {} | {:.3}, {:.3}, {:.3} | {}, {}, {} | {} | {} | {} | {} / {} / {} | {} → {} |",
             m.condition.label(),
             t[0],
             t[1],
@@ -672,6 +717,8 @@ pub fn psf_markdown(summary: &[PsfSummary]) -> String {
             fmt(m.component_honesty[0], 2),
             fmt(m.component_honesty[1], 2),
             fmt(m.component_honesty[2], 2),
+            fmt(m.baseline_rmse_px, 4),
+            fmt(m.refined_rmse_px, 4),
         );
     }
     s

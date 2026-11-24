@@ -67,7 +67,7 @@ const SCAN_STEP: f64 = 2.0;
 /// four-point mixture (see `model`).
 const GAUSSIAN_BOX_MIN_SIGMA: f64 = 1.3;
 
-fn box_model_for(sigma: [f64; 3]) -> BoxModel {
+pub(super) fn box_model_for(sigma: [f64; 3]) -> BoxModel {
     if eig2(sigma).0.sqrt() >= GAUSSIAN_BOX_MIN_SIGMA {
         BoxModel::Gaussian
     } else {

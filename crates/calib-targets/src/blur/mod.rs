@@ -53,8 +53,9 @@ use pattern::{Lattice, DEFAULT_PUZZLE_DOT_DIAMETER_REL};
 
 pub use crate::core::blur::{
     BlurDecline, BlurField, BlurFitQuality, BlurGradient, BlurKernel, BoardPhotometricOptions,
-    BoardPhotometricRefinement, CornerBlur, CornerPhotometricFit, DisplaySurfaceModel,
-    PhotometricFitOptions, RadiometricModel,
+    BoardPhotometricRefinement, CornerBlur, CornerPhotometricFit, DefocusPrediction,
+    DisplaySurfaceModel, PatchEval, PatchEvalInput, PatchPixel, PatchResidual,
+    PhotometricFitOptions, RadiometricModel, ThinLensDefocusModel,
 };
 
 type PreparedCorner = Result<(BlurPattern, Homography<f64>), BlurDecline>;
@@ -390,4 +391,167 @@ pub fn refine_marker_board_corners(
         |c| c.to_labeled(),
     );
     refinement
+}
+
+fn extract_board_patches(
+    prepared: &[PreparedCorner],
+    image: &GrayImageView<'_>,
+    window_cells: f64,
+    options: &BoardPhotometricOptions,
+) -> Vec<Result<PatchResidual, BlurDecline>> {
+    prepared
+        .iter()
+        .map(|entry| match entry {
+            Ok((pat, frame)) => {
+                PatchResidual::extract(image, pat, frame, window_cells, &options.fit)
+            }
+            Err(why) => Err(*why),
+        })
+        .collect()
+}
+
+/// Extract per-corner [`PatchResidual`]s for sparse photometric bundle adjustment
+/// from a detected chessboard.
+pub fn chessboard_patches(
+    image: &GrayImageView<'_>,
+    detection: &ChessboardDetection,
+    window_cells: f64,
+    options: &BoardPhotometricOptions,
+) -> Vec<Result<PatchResidual, BlurDecline>> {
+    let prepared = prepare_chessboard(detection);
+    extract_board_patches(&prepared, image, window_cells, options)
+}
+
+/// Extract per-corner [`PatchResidual`]s for sparse photometric bundle adjustment
+/// from a detected ChArUco board.
+pub fn charuco_patches(
+    image: &GrayImageView<'_>,
+    board: &CharucoBoardSpec,
+    detection: &CharucoDetection,
+    window_cells: f64,
+    options: &BoardPhotometricOptions,
+) -> Vec<Result<PatchResidual, BlurDecline>> {
+    let prepared = prepare_charuco(board, detection);
+    extract_board_patches(&prepared, image, window_cells, options)
+}
+
+/// Extract per-corner [`PatchResidual`]s for sparse photometric bundle adjustment
+/// from a detected PuzzleBoard.
+pub fn puzzleboard_patches(
+    image: &GrayImageView<'_>,
+    detection: &PuzzleBoardDetection,
+    window_cells: f64,
+    options: &BoardPhotometricOptions,
+) -> Vec<Result<PatchResidual, BlurDecline>> {
+    let prepared = prepare_puzzleboard(
+        detection,
+        options.puzzle_dot_diameter_rel,
+        options.fit.display.as_ref(),
+    );
+    extract_board_patches(&prepared, image, window_cells, options)
+}
+
+/// Extract per-corner [`PatchResidual`]s for sparse photometric bundle adjustment
+/// from a detected marker board.
+pub fn marker_board_patches(
+    image: &GrayImageView<'_>,
+    board: &MarkerBoardSpec,
+    detection: &MarkerBoardDetection,
+    window_cells: f64,
+    options: &BoardPhotometricOptions,
+) -> Vec<Result<PatchResidual, BlurDecline>> {
+    let prepared = prepare_marker_board(board, detection, options.fit.display.as_ref());
+    extract_board_patches(&prepared, image, window_cells, options)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chessboard::ChessboardCorner;
+    use crate::core::Coord;
+
+    fn erf_approx(x: f64) -> f64 {
+        let sign = if x < 0.0 { -1.0 } else { 1.0 };
+        let ax = x.abs();
+        let t = 1.0 / (1.0 + 0.327_591_1 * ax);
+        let poly = t
+            * (0.254_829_592
+                + t * (-0.284_496_736
+                    + t * (1.421_413_741 + t * (-1.453_152_027 + t * 1.061_405_429))));
+        sign * (1.0 - poly * (-ax * ax).exp())
+    }
+
+    #[test]
+    fn chessboard_patches_extracts_and_evaluates_cleanly() {
+        let width = 160usize;
+        let height = 160usize;
+        let cell = 24.0f64;
+        let origin = 44.0f64;
+        let sigma = 1.6f64;
+        let mut pixels = vec![128u8; width * height];
+        for y in 0..height {
+            for x in 0..width {
+                let gx = (x as f64 - origin) / cell;
+                let gy = (y as f64 - origin) / cell;
+                let mut acc = 0.0f64;
+                for j in -1_i32..=2 {
+                    for i in -1_i32..=2 {
+                        if (i + j).rem_euclid(2) == 0 {
+                            let inv = 1.0 / (sigma * std::f64::consts::SQRT_2);
+                            let px0 = 0.5
+                                * (erf_approx((f64::from(i) + 1.0 - gx) * cell * inv)
+                                    - erf_approx((f64::from(i) - gx) * cell * inv));
+                            let py0 = 0.5
+                                * (erf_approx((f64::from(j) + 1.0 - gy) * cell * inv)
+                                    - erf_approx((f64::from(j) - gy) * cell * inv));
+                            acc += px0 * py0;
+                        }
+                    }
+                }
+                pixels[y * width + x] =
+                    (40.0 + 160.0 * (1.0 - acc)).round().clamp(1.0, 254.0) as u8;
+            }
+        }
+        let view = GrayImageView {
+            width,
+            height,
+            data: &pixels,
+        };
+        let mut corners = Vec::new();
+        for v in 0..=2 {
+            for u in 0..=2 {
+                corners.push(ChessboardCorner::new(
+                    Point2::new(
+                        (origin + f64::from(u) * cell) as f32,
+                        (origin + f64::from(v) * cell) as f32,
+                    ),
+                    Coord::new(u, v),
+                    corners.len(),
+                    1.0,
+                ));
+            }
+        }
+        let detection = ChessboardDetection::new(corners).with_cell_size(cell as f32);
+        let opts = BoardPhotometricOptions::default();
+        let patches = chessboard_patches(&view, &detection, 0.75, &opts);
+        assert_eq!(patches.len(), 9);
+        let center_patch = patches[4].as_ref().expect("centre patch extracts");
+        let true_h = Homography::new(nalgebra::Matrix3::new(
+            cell,
+            0.0,
+            origin + cell,
+            0.0,
+            cell,
+            origin + cell,
+            0.0,
+            0.0,
+            1.0,
+        ));
+        let s2 = (sigma * sigma) as f32;
+        let eval = center_patch
+            .evaluate(&PatchEvalInput::new(true_h, BlurKernel::new(s2, 0.0, s2)))
+            .expect("patch evaluates");
+        let rms = (eval.cost / center_patch.pixel_count() as f64).sqrt();
+        assert!(rms < 1.5, "unexpected photometric residual RMS: {rms:.3}");
+    }
 }

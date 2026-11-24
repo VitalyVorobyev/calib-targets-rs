@@ -669,9 +669,8 @@ mod tests {
             blur::blur_conditions(&[Family::Chessboard], false).len(),
             222
         );
-        // ChArUco has no blur entry point.
-        assert!(blur::blur_conditions(&[Family::Charuco], false).is_empty());
-        assert_eq!(blur::blur_conditions(&Family::ALL, true).len(), 9);
+        assert_eq!(blur::blur_conditions(&[Family::Charuco], false).len(), 222);
+        assert_eq!(blur::blur_conditions(&Family::ALL, true).len(), 12);
     }
 
     #[test]

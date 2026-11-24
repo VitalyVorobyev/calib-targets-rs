@@ -63,6 +63,18 @@ See the [0.18.0 migration guide](docs/migrations/0.18.0.md).
   targets: pixel pitch, display MTF and gray quantization. `charuco_blur`
   joins the per-corner blur functions. Opt-in: detection results are
   unchanged unless you call these.
+- **Physical defocus and a photometric bundle-adjustment interface.**
+  `calib_targets_core::blur::ThinLensDefocusModel` predicts the blur
+  covariance and signed circle of confusion from depth, focal length,
+  aperture, focus distance and Scheimpflug sensor tilt, with analytic
+  derivatives. `PatchResidual` extracts a corner's in-support pixels and
+  evaluates residuals with exact Jacobians in the homography, image
+  displacement, blur covariance, gamma and ink bleed, eliminating contrast and
+  black level by Golub–Pereyra variable projection, so an outer solver can
+  refine pose, focus and tilt from pixels. The facade's `*_patches` functions
+  extract the patches of a detection. The bench accuracy suite renders
+  rotated anisotropic Gaussian, Moffat and Airy kernels, tilted-sensor
+  defocus, exposure and e-ink surfaces.
 - **PuzzlePole parity:** `diagnose_puzzlepole{,_with_corners}` in Rust,
   Python and WASM, the WASM PuzzlePole detect / params functions,
   `schemas/puzzlepole_params.json`, and the TypeScript declarations.
